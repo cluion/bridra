@@ -290,6 +290,9 @@ func (item createCommand) create(options createOptions, stdout io.Writer) (resul
 	}); err != nil {
 		return fmt.Errorf("create: render project: %w", err)
 	}
+	if err := item.execute(filepath.Join(staging, "backend"), "go", "mod", "tidy"); err != nil {
+		return fmt.Errorf("create: resolve Go dependencies: %w", err)
+	}
 	if err := item.execute(filepath.Join(staging, "backend"), "go", "test", "./..."); err != nil {
 		return fmt.Errorf("create: verify Go consumer: %w", err)
 	}

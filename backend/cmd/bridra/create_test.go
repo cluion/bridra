@@ -52,16 +52,25 @@ func TestCreateBuildsAndAtomicallyPublishesProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v, stderr: %s", err, stderr.String())
 	}
-	if len(invocations) != 4 {
-		t.Fatalf("invocations = %#v, want Flutter create, Go test, pub get, and format", invocations)
+	if len(invocations) != 5 {
+		t.Fatalf(
+			"invocations = %#v, want Flutter create, Go tidy, Go test, pub get, and format",
+			invocations,
+		)
 	}
 	if invocations[0].name != "fvm" ||
 		!containsArguments(invocations[0].arguments, "flutter", "create", "--no-pub") {
 		t.Fatalf("Flutter create invocation = %#v", invocations[0])
 	}
 	if invocations[1].name != "go" ||
+		!containsArguments(invocations[1].arguments, "mod", "tidy") ||
 		invocations[1].directory != filepath.Join(invocations[0].directory, "backend") {
-		t.Fatalf("Go verification invocation = %#v", invocations[1])
+		t.Fatalf("Go dependency invocation = %#v", invocations[1])
+	}
+	if invocations[2].name != "go" ||
+		!containsArguments(invocations[2].arguments, "test", "./...") ||
+		invocations[2].directory != filepath.Join(invocations[0].directory, "backend") {
+		t.Fatalf("Go verification invocation = %#v", invocations[2])
 	}
 	if _, err := os.Stat(filepath.Join(destination, "flutter-runner.marker")); err != nil {
 		t.Fatalf("published Flutter marker: %v", err)
@@ -128,8 +137,19 @@ func TestCreateDefaultsToVersionedPublishedDependencies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if len(invocations) != 4 {
-		t.Fatalf("invocations = %#v, want Flutter create, Go test, pub get, and format", invocations)
+	if len(invocations) != 5 {
+		t.Fatalf(
+			"invocations = %#v, want Flutter create, Go tidy, Go test, pub get, and format",
+			invocations,
+		)
+	}
+	if invocations[1].name != "go" ||
+		!containsArguments(invocations[1].arguments, "mod", "tidy") {
+		t.Fatalf("Go dependency invocation = %#v", invocations[1])
+	}
+	if invocations[2].name != "go" ||
+		!containsArguments(invocations[2].arguments, "test", "./...") {
+		t.Fatalf("Go verification invocation = %#v", invocations[2])
 	}
 	goMod, err := os.ReadFile(filepath.Join(destination, "backend", "go.mod"))
 	if err != nil {
@@ -225,6 +245,51 @@ func TestCreateCleansStagingDirectoryAfterFailure(t *testing.T) {
 	}, &bytes.Buffer{}, &bytes.Buffer{})
 	if err == nil || !strings.Contains(err.Error(), "Flutter create failed") {
 		t.Fatalf("create error = %v", err)
+	}
+	if _, err := os.Stat(destination); !os.IsNotExist(err) {
+		t.Fatalf("destination should not exist, stat error = %v", err)
+	}
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		t.Fatalf("read parent: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("staging directory leaked: %#v", entries)
+	}
+}
+
+func TestCreateStopsAndCleansUpWhenGoDependenciesCannotResolve(t *testing.T) {
+	parent := t.TempDir()
+	destination := filepath.Join(parent, "offline_app")
+	var invocations []createInvocation
+	system := testCreateSystem(func(
+		_ context.Context,
+		directory string,
+		name string,
+		arguments ...string,
+	) ([]byte, error) {
+		invocations = append(invocations, createInvocation{
+			directory: directory,
+			name:      name,
+			arguments: append([]string(nil), arguments...),
+		})
+		if name == "go" && containsArguments(arguments, "mod", "tidy") {
+			return []byte("module proxy unavailable"), errors.New("exit status 1")
+		}
+		return nil, nil
+	})
+	err := (createCommand{system: system}).run([]string{
+		"offline_app",
+		"--module", "example.test/acme/offline",
+		"--directory", destination,
+	}, &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil ||
+		!strings.Contains(err.Error(), "resolve Go dependencies") ||
+		!strings.Contains(err.Error(), "module proxy unavailable") {
+		t.Fatalf("create error = %v", err)
+	}
+	if len(invocations) != 2 {
+		t.Fatalf("invocations = %#v, want Flutter create followed by Go tidy", invocations)
 	}
 	if _, err := os.Stat(destination); !os.IsNotExist(err) {
 		t.Fatalf("destination should not exist, stat error = %v", err)
