@@ -3,6 +3,19 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
+## [0.1.1] - 2026-07-24
+
+### Fixed
+
+- Made `bridra create` resolve hosted Go module dependencies with `go mod tidy`
+  before testing the generated backend, so first-time projects receive a valid
+  `go.sum` without requiring a local Bridra checkout.
+
+### Changed
+
+- Registered an automatic `0.1.0` to `0.1.1` upgrade path for the synchronized
+  Go and Flutter framework dependencies.
+
 ## [0.1.0] - 2026-07-24
 
 ### Added

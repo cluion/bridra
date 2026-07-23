@@ -60,8 +60,8 @@ approval. CI success alone is not publication authorization.
    changelogs, and live documentation from one version:
 
    ```bash
-   make release-prepare VERSION=0.1.0
-   make release-check VERSION=0.1.0
+   make release-prepare VERSION=0.1.1
+   make release-check VERSION=0.1.1
    ```
 
    The prepare command never creates a tag, publishes a package, or creates a
@@ -73,7 +73,7 @@ approval. CI success alone is not publication authorization.
    verification rejects a new current version without a complete path from each
    older registered release.
 4. Replace `Unreleased` in both changelogs with the intended release date, then
-   run `make release-check VERSION=0.1.0 FINAL=1`. The protected release workflow
+   run `make release-check VERSION=0.1.1 FINAL=1`. The protected release workflow
    repeats this final check and refuses an unfinished changelog.
 5. Run the full local verification and attach `coverage/summary.md` plus the CLI
    release manifest/checksums to the Pull Request.
@@ -84,9 +84,9 @@ approval. CI success alone is not publication authorization.
 Windows maintainers use:
 
 ```powershell
-.\tool\windows.ps1 -Task release-prepare -Version 0.1.0
-.\tool\windows.ps1 -Task release-check -Version 0.1.0
-.\tool\windows.ps1 -Task release-check -Version 0.1.0 -Final
+.\tool\windows.ps1 -Task release-prepare -Version 0.1.1
+.\tool\windows.ps1 -Task release-check -Version 0.1.1
+.\tool\windows.ps1 -Task release-check -Version 0.1.1 -Final
 ```
 
 Security fixes under embargo use a private advisory and private fork until the
@@ -99,7 +99,7 @@ Request before the agreed disclosure time.
 make cli-release
 ```
 
-This produces the following under `build/bridra/cli/0.1.0/`:
+This produces the following under `build/bridra/cli/0.1.1/`:
 
 - macOS amd64 and arm64 `tar.gz` archives
 - Linux amd64 and arm64 `tar.gz` archives
@@ -111,7 +111,7 @@ The source commit and commit timestamp are embedded into each binary. Confirm
 the native archive before publishing:
 
 ```bash
-shasum -a 256 -c build/bridra/cli/0.1.0/SHA256SUMS
+shasum -a 256 -c build/bridra/cli/0.1.1/SHA256SUMS
 bridra version --json
 ```
 
@@ -125,12 +125,12 @@ must not be implied by these unsigned CLI archives.
 
 ## Tag and publish
 
-For Bridra 0.1.0, create the annotated Go submodule tag only after the release
+For Bridra 0.1.1, create the annotated Go submodule tag only after the release
 Pull Request is merged and the repository owner gives final authorization:
 
 ```bash
-git tag -a backend/v0.1.0 -m "Bridra 0.1.0"
-git push public backend/v0.1.0
+git tag -a backend/v0.1.1 -m "Bridra 0.1.1"
+git push public backend/v0.1.1
 ```
 
 The protected GitHub workflow re-runs version alignment, verification, coverage,
@@ -164,7 +164,7 @@ publication before approving the tag workflow.
 Verify installation without a repository checkout:
 
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.1.0
+go install github.com/cluion/bridra/backend/cmd/bridra@v0.1.1
 bridra version --json
 bridra create release_smoke --module example.com/acme/release-smoke
 ```

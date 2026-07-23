@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1 - 2026-07-24
+
+- Kept the package version aligned with the Bridra 0.1.1 framework hotfix.
+- No public Dart API changes.
+
 ## 0.1.0 - 2026-07-24
 
 - Extracted the reusable RPC client contract.

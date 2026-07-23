@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/cluion/bridra/backend/internal/releaseinfo"
 )
 
 func TestBuildCreatesDeterministicCrossPlatformArchivesAndMetadata(t *testing.T) {
@@ -33,7 +35,7 @@ func TestBuildCreatesDeterministicCrossPlatformArchivesAndMetadata(t *testing.T)
 	}
 	firstOutput := filepath.Join(t.TempDir(), "first")
 	config := Config{
-		Root: root, Output: firstOutput, Version: "0.1.0",
+		Root: root, Output: firstOutput, Version: releaseinfo.Version,
 		Commit: "abc123", BuildDate: "2026-07-22T08:00:00+08:00", Targets: targets,
 	}
 	manifest, err := Build(config, system)
@@ -42,7 +44,7 @@ func TestBuildCreatesDeterministicCrossPlatformArchivesAndMetadata(t *testing.T)
 	}
 	if manifest.SchemaVersion != 2 || manifest.License != "MIT" ||
 		manifest.BuildDate != "2026-07-22T00:00:00Z" ||
-		manifest.Tag != "backend/v0.1.0" || len(manifest.Artifacts) != 2 {
+		manifest.Tag != "backend/v"+releaseinfo.Version || len(manifest.Artifacts) != 2 {
 		t.Fatalf("manifest = %#v", manifest)
 	}
 	if len(specifications) != 2 {
@@ -52,7 +54,7 @@ func TestBuildCreatesDeterministicCrossPlatformArchivesAndMetadata(t *testing.T)
 		joined := strings.Join(specification.Arguments, " ")
 		for _, expected := range []string{
 			"-trimpath", "-buildvcs=false", "-buildid=",
-			"releaseinfo.Version=0.1.0", "releaseinfo.Commit=abc123",
+			"releaseinfo.Version=" + releaseinfo.Version, "releaseinfo.Commit=abc123",
 			"releaseinfo.BuildDate=2026-07-22T00:00:00Z",
 		} {
 			if !strings.Contains(joined, expected) {
@@ -135,8 +137,8 @@ func TestBuildRejectsInvalidReleaseMetadata(t *testing.T) {
 	tests := []Config{
 		{Version: "v0.1.0", Commit: "abc123", BuildDate: "2026-07-22T00:00:00Z"},
 		{Version: "9.9.9", Commit: "abc123", BuildDate: "2026-07-22T00:00:00Z"},
-		{Version: "0.1.0", Commit: "bad commit", BuildDate: "2026-07-22T00:00:00Z"},
-		{Version: "0.1.0", Commit: "abc123", BuildDate: "today"},
+		{Version: releaseinfo.Version, Commit: "bad commit", BuildDate: "2026-07-22T00:00:00Z"},
+		{Version: releaseinfo.Version, Commit: "abc123", BuildDate: "today"},
 	}
 	for _, config := range tests {
 		_, err := Build(config, DefaultSystem())
@@ -152,7 +154,7 @@ func TestBuildRequiresMITLicense(t *testing.T) {
 		t.Fatalf("replace LICENSE: %v", err)
 	}
 	_, err := Build(Config{
-		Root: root, Output: t.TempDir(), Version: "0.1.0",
+		Root: root, Output: t.TempDir(), Version: releaseinfo.Version,
 		Commit: "abc123", BuildDate: "2026-07-22T00:00:00Z",
 		Targets: []Target{{GOOS: "linux", GOARCH: "arm64"}},
 	}, DefaultSystem())

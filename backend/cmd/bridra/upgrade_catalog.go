@@ -41,9 +41,23 @@ var registeredUpgradeReleases = []upgradeRelease{
 		TemplateVersion:        2,
 		ProtocolVersion:        1,
 	},
+	{
+		FrameworkVersion:       "0.1.1",
+		ProjectMetadataVersion: 2,
+		TemplateVersion:        2,
+		ProtocolVersion:        1,
+	},
 }
 
-var registeredFrameworkMigrations = []frameworkMigration{}
+var registeredFrameworkMigrations = []frameworkMigration{
+	{
+		ID:          "framework-0.1.0-to-0.1.1",
+		From:        "0.1.0",
+		To:          "0.1.1",
+		Description: "Update the Go and Flutter framework dependencies to the create hotfix.",
+		Automatic:   true,
+	},
+}
 
 func currentUpgradeCatalog() upgradeCatalog {
 	metadata := releaseinfo.Current()

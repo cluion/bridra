@@ -7,7 +7,7 @@ import (
 	"fmt"
 )
 
-const FrameworkVersion = "0.1.0"
+const FrameworkVersion = "0.1.1"
 const MaxRequestBytes = 4 * 1024 * 1024
 
 type Request struct {
