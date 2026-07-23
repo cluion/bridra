@@ -1,0 +1,12 @@
+package providers
+
+import (
+	"testing"
+
+	"{{.FrameworkModule}}/framework"
+)
+
+func Test{{.Name}}ServiceProviderContract(t *testing.T) {
+	var provider framework.ServiceProvider = {{.Name}}ServiceProvider{}
+	_ = provider
+}

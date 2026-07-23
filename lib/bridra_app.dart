@@ -1,0 +1,1226 @@
+import 'dart:async';
+
+import 'package:bridra_flutter/bridra_flutter.dart';
+import 'package:flutter/material.dart';
+
+import 'api/backend_gateway.dart';
+
+typedef BackendConnector = Future<BackendGateway> Function();
+
+const _background = Color(0xFF080A0F);
+const _surface = Color(0xFF11141C);
+const _surfaceRaised = Color(0xFF171B25);
+const _border = Color(0xFF252A38);
+const _primary = Color(0xFF9B8CFF);
+const _primaryBright = Color(0xFFC7BDFF);
+const _mint = Color(0xFF59E1B1);
+const _muted = Color(0xFF969BAD);
+const _subtle = Color(0xFF676D7E);
+const _danger = Color(0xFFFF7184);
+const _warning = Color(0xFFF4C66A);
+
+class BridraApp extends StatelessWidget {
+  const BridraApp({super.key, this.connector = RpcBackend.connect});
+
+  final BackendConnector connector;
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'Bridra',
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: _background,
+        colorScheme: const ColorScheme.dark(
+          primary: _primary,
+          onPrimary: Color(0xFF161126),
+          secondary: _mint,
+          surface: _surface,
+          error: _danger,
+        ),
+        textTheme: const TextTheme(
+          headlineLarge: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -1.8,
+            height: 1.03,
+          ),
+          headlineSmall: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.5,
+          ),
+          titleLarge: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.3,
+          ),
+          bodyLarge: TextStyle(color: Color(0xFFB9BDCA), height: 1.55),
+          bodyMedium: TextStyle(color: _muted, height: 1.5),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: const Color(0xFF0B0E14),
+          labelStyle: const TextStyle(color: _muted),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: _border),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: _border),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: _primary),
+          ),
+          disabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: Color(0xFF1D212C)),
+          ),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            backgroundColor: _primaryBright,
+            foregroundColor: const Color(0xFF171126),
+            disabledBackgroundColor: const Color(0xFF29273A),
+            disabledForegroundColor: const Color(0xFF747184),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            textStyle: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xFFD7D2F2),
+            side: const BorderSide(color: Color(0xFF3A3B50)),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+        ),
+        useMaterial3: true,
+      ),
+      home: BridraHomePage(connector: connector),
+    );
+  }
+}
+
+class BridraHomePage extends StatefulWidget {
+  const BridraHomePage({super.key, required this.connector});
+
+  final BackendConnector connector;
+
+  @override
+  State<BridraHomePage> createState() => _BridraHomePageState();
+}
+
+class _BridraHomePageState extends State<BridraHomePage> {
+  final _nameController = TextEditingController(text: 'Flutter');
+  BackendGateway? _backend;
+  HealthInfo? _health;
+  GreetingResult? _greeting;
+  Object? _error;
+  var _busy = true;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_connect());
+  }
+
+  Future<void> _connect() async {
+    if (mounted) {
+      setState(() {
+        _busy = true;
+        _error = null;
+        _backend = null;
+        _health = null;
+      });
+    }
+    BackendGateway? backend;
+    try {
+      backend = await widget.connector();
+      final health = await backend.health();
+      if (!mounted) {
+        await backend.close();
+        return;
+      }
+      setState(() {
+        _backend = backend;
+        _health = health;
+        _busy = false;
+      });
+    } on Object catch (error) {
+      await backend?.close();
+      if (mounted) {
+        setState(() {
+          _error = error;
+          _busy = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _greet() async {
+    final backend = _backend;
+    if (backend == null || _busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final result = await backend.greet(
+        GreetingRequest(name: _nameController.text),
+      );
+      if (mounted) setState(() => _greeting = result);
+    } on BackendConnectionException catch (error) {
+      await backend.close();
+      if (mounted) {
+        setState(() {
+          _backend = null;
+          _health = null;
+          _error = error;
+        });
+      }
+    } on Object catch (error) {
+      if (mounted) setState(() => _error = error);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    if (_backend case final backend?) unawaited(backend.close());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final connected = _health?.status == 'ok';
+    final connecting = _busy && _backend == null && _error == null;
+    return Scaffold(
+      body: Stack(
+        children: [
+          const Positioned.fill(child: _Backdrop()),
+          SafeArea(
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 1120),
+                      child: _TopBar(
+                        connected: connected,
+                        connecting: connecting,
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(24, 38, 24, 32),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 1120),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            LayoutBuilder(
+                              builder: (context, constraints) {
+                                final introduction = _Introduction(
+                                  frameworkVersion: _health?.frameworkVersion,
+                                );
+                                final stack = _LiveStack(
+                                  health: _health,
+                                  connected: connected,
+                                  connecting: connecting,
+                                );
+                                if (constraints.maxWidth >= 720) {
+                                  return Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.center,
+                                    children: [
+                                      Expanded(flex: 11, child: introduction),
+                                      const SizedBox(width: 44),
+                                      Expanded(flex: 9, child: stack),
+                                    ],
+                                  );
+                                }
+                                return Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    introduction,
+                                    const SizedBox(height: 34),
+                                    stack,
+                                  ],
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 56),
+                            _TryBridraPanel(
+                              controller: _nameController,
+                              busy: _busy,
+                              enabled: _backend != null,
+                              onSubmit: _greet,
+                              onRetry: _connect,
+                              greeting: _greeting,
+                              error: _error,
+                            ),
+                            const SizedBox(height: 22),
+                            const _GettingStarted(),
+                            const SizedBox(height: 30),
+                            _Footer(health: _health),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Backdrop extends StatelessWidget {
+  const _Backdrop();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF0E1020), _background, Color(0xFF07110F)],
+          stops: [0, 0.48, 1],
+        ),
+      ),
+      child: CustomPaint(painter: _GridPainter()),
+    );
+  }
+}
+
+class _GridPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0x0AFFFFFF)
+      ..strokeWidth = 1;
+    const gap = 48.0;
+    for (var x = 0.0; x < size.width; x += gap) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    }
+    for (var y = 0.0; y < size.height; y += gap) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _TopBar extends StatelessWidget {
+  const _TopBar({required this.connected, required this.connecting});
+
+  final bool connected;
+  final bool connecting;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const _BridraMark(size: 42),
+        const SizedBox(width: 13),
+        const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'BRIDRA',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 2.4,
+              ),
+            ),
+            Text(
+              'APPLICATION FRAMEWORK',
+              style: TextStyle(
+                color: _subtle,
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.4,
+              ),
+            ),
+          ],
+        ),
+        const Spacer(),
+        _ConnectionPill(connected: connected, connecting: connecting),
+      ],
+    );
+  }
+}
+
+class _BridraMark extends StatelessWidget {
+  const _BridraMark({required this.size});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [_primaryBright, Color(0xFF7865F4)],
+        ),
+        borderRadius: BorderRadius.circular(size * 0.3),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x447C69FF),
+            blurRadius: 24,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Icon(
+        Icons.account_tree_rounded,
+        size: size * 0.54,
+        color: const Color(0xFF171126),
+      ),
+    );
+  }
+}
+
+class _ConnectionPill extends StatelessWidget {
+  const _ConnectionPill({required this.connected, required this.connecting});
+
+  final bool connected;
+  final bool connecting;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = connected
+        ? _mint
+        : connecting
+        ? _warning
+        : _danger;
+    final label = connected
+        ? 'Go core online'
+        : connecting
+        ? 'Starting Go core'
+        : 'Go core unavailable';
+    return Container(
+      key: const Key('backend-status'),
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.09),
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: color.withValues(alpha: 0.27)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 7,
+            height: 7,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(color: color.withValues(alpha: 0.55), blurRadius: 8),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Introduction extends StatelessWidget {
+  const _Introduction({required this.frameworkVersion});
+
+  final String? frameworkVersion;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+          decoration: BoxDecoration(
+            color: _primary.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: _primary.withValues(alpha: 0.2)),
+          ),
+          child: Text(
+            frameworkVersion == null
+                ? 'FOUNDATION RELEASE'
+                : 'BRIDRA $frameworkVersion · FOUNDATION',
+            key: const Key('framework-version'),
+            style: const TextStyle(
+              color: _primaryBright,
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.4,
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
+        Text(
+          'Flutter in front.\nGo at the core.',
+          style: Theme.of(
+            context,
+          ).textTheme.headlineLarge?.copyWith(fontSize: 52),
+        ),
+        const SizedBox(height: 22),
+        const Text(
+          'Build cross-platform applications with a typed Flutter gateway '
+          'and the structured Go backend your team expects.',
+          style: TextStyle(
+            color: Color(0xFFB1B5C3),
+            fontSize: 17,
+            height: 1.55,
+          ),
+        ),
+        const SizedBox(height: 25),
+        const Wrap(
+          spacing: 9,
+          runSpacing: 9,
+          children: [
+            _FeatureTag('Middleware'),
+            _FeatureTag('Controllers'),
+            _FeatureTag('Services'),
+            _FeatureTag('Events'),
+            _FeatureTag('Jobs'),
+          ],
+        ),
+        const SizedBox(height: 28),
+        const _CommandBar(command: 'bridra create my_app'),
+      ],
+    );
+  }
+}
+
+class _FeatureTag extends StatelessWidget {
+  const _FeatureTag(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0x9912161E),
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: _border),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Color(0xFFAAAFBF),
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _CommandBar extends StatelessWidget {
+  const _CommandBar({required this.command});
+
+  final String command;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 420),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF090B10),
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: const Color(0xFF292E3B)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x33000000),
+            blurRadius: 20,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const Text(
+            r'$',
+            style: TextStyle(
+              color: _mint,
+              fontFamily: 'monospace',
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Text(
+              command,
+              style: const TextStyle(
+                color: Color(0xFFE0E3EC),
+                fontFamily: 'monospace',
+                fontSize: 13,
+              ),
+            ),
+          ),
+          const Text(
+            '↵',
+            style: TextStyle(color: _subtle, fontFamily: 'monospace'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LiveStack extends StatelessWidget {
+  const _LiveStack({
+    required this.health,
+    required this.connected,
+    required this.connecting,
+  });
+
+  final HealthInfo? health;
+  final bool connected;
+  final bool connecting;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = connected
+        ? _mint
+        : connecting
+        ? _warning
+        : _danger;
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: const Color(0xE611141C),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFF2B3040)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x66000000),
+            blurRadius: 42,
+            offset: Offset(0, 24),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Text(
+                'LIVE REQUEST PATH',
+                style: TextStyle(
+                  color: _muted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.5,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: accent,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          const _LayerNode(
+            icon: Icons.widgets_rounded,
+            title: 'Flutter UI',
+            subtitle: 'One interface · six platforms',
+            tint: _primary,
+          ),
+          const _FlowLine(),
+          const _LayerNode(
+            icon: Icons.swap_vert_rounded,
+            title: 'Typed RPC',
+            subtitle: 'Generated contract · Protocol v1',
+            tint: Color(0xFF75B8FF),
+          ),
+          const _FlowLine(),
+          _LayerNode(
+            icon: Icons.data_object_rounded,
+            title: 'Go application',
+            subtitle: health?.architecture ?? 'Starting application lifecycle…',
+            tint: _mint,
+          ),
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(13),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0B0E14),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF202531)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.verified_rounded, color: _mint, size: 17),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    health == null
+                        ? 'Waiting for framework health'
+                        : 'Bridra ${health!.frameworkVersion} · ${health!.runtime}',
+                    style: const TextStyle(
+                      color: Color(0xFFB5BAC8),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LayerNode extends StatelessWidget {
+  const _LayerNode({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.tint,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color tint;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: _surfaceRaised,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: tint.withValues(alpha: 0.18)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 35,
+            height: 35,
+            decoration: BoxDecoration(
+              color: tint.withValues(alpha: 0.11),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: tint, size: 19),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: _subtle, fontSize: 10),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FlowLine extends StatelessWidget {
+  const _FlowLine();
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox(
+      height: 23,
+      child: Center(
+        child: SizedBox(
+          height: 23,
+          child: VerticalDivider(
+            color: Color(0xFF34394A),
+            thickness: 1,
+            width: 1,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TryBridraPanel extends StatelessWidget {
+  const _TryBridraPanel({
+    required this.controller,
+    required this.busy,
+    required this.enabled,
+    required this.onSubmit,
+    required this.onRetry,
+    required this.greeting,
+    required this.error,
+  });
+
+  final TextEditingController controller;
+  final bool busy;
+  final bool enabled;
+  final VoidCallback onSubmit;
+  final VoidCallback onRetry;
+  final GreetingResult? greeting;
+  final Object? error;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Surface(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final form = _RequestForm(
+            controller: controller,
+            busy: busy,
+            enabled: enabled,
+            onSubmit: onSubmit,
+            onRetry: onRetry,
+            error: error,
+          );
+          final result = _RequestResult(greeting: greeting, error: error);
+          if (constraints.maxWidth >= 700) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(flex: 9, child: form),
+                const SizedBox(width: 30),
+                Expanded(flex: 11, child: result),
+              ],
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [form, const SizedBox(height: 24), result],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _RequestForm extends StatelessWidget {
+  const _RequestForm({
+    required this.controller,
+    required this.busy,
+    required this.enabled,
+    required this.onSubmit,
+    required this.onRetry,
+    required this.error,
+  });
+
+  final TextEditingController controller;
+  final bool busy;
+  final bool enabled;
+  final VoidCallback onSubmit;
+  final VoidCallback onRetry;
+  final Object? error;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'YOUR FIRST ROUND TRIP',
+          style: TextStyle(
+            color: _primaryBright,
+            fontSize: 10,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.4,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          'Call a real Go Controller',
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Change the payload and watch it move through the live framework.',
+          style: TextStyle(color: _muted, fontSize: 13, height: 1.45),
+        ),
+        const SizedBox(height: 20),
+        TextField(
+          key: const Key('name-field'),
+          controller: controller,
+          enabled: enabled && !busy,
+          onSubmitted: (_) => onSubmit(),
+          decoration: const InputDecoration(labelText: 'Your name'),
+        ),
+        const SizedBox(height: 12),
+        FilledButton.icon(
+          key: const Key('call-button'),
+          onPressed: enabled && !busy ? onSubmit : null,
+          icon: busy
+              ? const SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.arrow_forward_rounded, size: 18),
+          label: Text(enabled ? 'Run greeting.hello' : 'Waiting for Go core'),
+        ),
+        if (!enabled && error != null && !busy) ...[
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            key: const Key('retry-button'),
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh_rounded, size: 18),
+            label: const Text('Restart Go core'),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _RequestResult extends StatelessWidget {
+  const _RequestResult({required this.greeting, required this.error});
+
+  final GreetingResult? greeting;
+  final Object? error;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasResult = greeting != null;
+    final accent = error != null
+        ? _danger
+        : hasResult
+        ? _mint
+        : _primary;
+    return Container(
+      key: const Key('request-result'),
+      constraints: const BoxConstraints(minHeight: 230),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFF090C12),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: accent.withValues(alpha: 0.24)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: accent,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 9),
+              Text(
+                error != null
+                    ? 'REQUEST FAILED'
+                    : hasResult
+                    ? '200 · CONTROLLER RESPONSE'
+                    : 'READY · AWAITING REQUEST',
+                style: TextStyle(
+                  color: accent,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.15,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 22),
+          Text(
+            error != null
+                ? '$error'
+                : greeting?.message ?? 'The response will appear here.',
+            style: TextStyle(
+              color: hasResult ? Colors.white : const Color(0xFF898F9F),
+              fontSize: hasResult ? 22 : 15,
+              fontWeight: hasResult ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 13),
+          if (greeting case final greeting?) ...[
+            Text(
+              '${greeting.servedBy} · ${greeting.timestamp.toLocal()}',
+              style: const TextStyle(color: _subtle, fontSize: 11),
+            ),
+            const SizedBox(height: 20),
+            Wrap(
+              spacing: 7,
+              runSpacing: 7,
+              children: greeting.pipeline
+                  .map((step) => _PipelineChip(label: step))
+                  .toList(),
+            ),
+          ] else
+            const Text(
+              'Flutter → Typed RPC → Middleware → Controller → Service',
+              style: TextStyle(
+                color: _subtle,
+                fontFamily: 'monospace',
+                fontSize: 11,
+                height: 1.6,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PipelineChip extends StatelessWidget {
+  const _PipelineChip({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: _mint.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: _mint.withValues(alpha: 0.17)),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Color(0xFFA7DCCB),
+          fontFamily: 'monospace',
+          fontSize: 10,
+        ),
+      ),
+    );
+  }
+}
+
+class _GettingStarted extends StatelessWidget {
+  const _GettingStarted();
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const cards = [
+          _ResourceCard(
+            number: '01',
+            title: 'Build your first feature',
+            detail: 'docs/GUIDE.md',
+            icon: Icons.rocket_launch_rounded,
+          ),
+          _ResourceCard(
+            number: '02',
+            title: 'Understand the core',
+            detail: 'docs/ARCHITECTURE.md',
+            icon: Icons.account_tree_rounded,
+          ),
+          _ResourceCard(
+            number: '03',
+            title: 'Generate application code',
+            detail: 'bridra make controller User',
+            icon: Icons.terminal_rounded,
+          ),
+        ];
+        if (constraints.maxWidth >= 720) {
+          return Row(
+            children: [
+              Expanded(child: cards[0]),
+              const SizedBox(width: 14),
+              Expanded(child: cards[1]),
+              const SizedBox(width: 14),
+              Expanded(child: cards[2]),
+            ],
+          );
+        }
+        return Column(
+          children: [
+            cards[0],
+            const SizedBox(height: 12),
+            cards[1],
+            const SizedBox(height: 12),
+            cards[2],
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _ResourceCard extends StatelessWidget {
+  const _ResourceCard({
+    required this.number,
+    required this.title,
+    required this.detail,
+    required this.icon,
+  });
+
+  final String number;
+  final String title;
+  final String detail;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(17),
+      decoration: BoxDecoration(
+        color: const Color(0x9911141C),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF222735)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: _primary.withValues(alpha: 0.09),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Icon(icon, color: _primaryBright, size: 19),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$number  $title',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFFD9DCE6),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  detail,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _subtle,
+                    fontFamily: 'monospace',
+                    fontSize: 9,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Surface extends StatelessWidget {
+  const _Surface({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(26),
+      decoration: BoxDecoration(
+        color: const Color(0xE611141C),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: _border),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _Footer extends StatelessWidget {
+  const _Footer({required this.health});
+
+  final HealthInfo? health;
+
+  @override
+  Widget build(BuildContext context) {
+    final version = health?.frameworkVersion;
+    final protocol = health?.protocolVersion;
+    return Wrap(
+      alignment: WrapAlignment.spaceBetween,
+      runAlignment: WrapAlignment.center,
+      spacing: 16,
+      runSpacing: 8,
+      children: [
+        const Text(
+          'BRIDRA · BUILT BY CLUION',
+          style: TextStyle(
+            color: _subtle,
+            fontSize: 9,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.2,
+          ),
+        ),
+        Text(
+          [
+            if (version != null) 'Framework $version',
+            if (protocol != null) 'Protocol v$protocol',
+            'MIT License',
+          ].join('  ·  '),
+          style: const TextStyle(color: _subtle, fontSize: 10),
+        ),
+      ],
+    );
+  }
+}

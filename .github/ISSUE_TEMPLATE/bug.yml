@@ -1,0 +1,77 @@
+name: Bug report
+description: Report a reproducible Bridra framework defect
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report vulnerabilities or include secrets here. Use SECURITY.md and GitHub private vulnerability reporting.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing Issues and this is not a duplicate.
+          required: true
+        - label: This report contains no vulnerability details, secrets, credentials, or private data.
+          required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Affected surface
+      options:
+        - Go framework / application lifecycle
+        - Bridra CLI / create / make / dev / build / upgrade
+        - Codegen / RPC schema / generated contract
+        - Flutter runtime / Sidecar / HTTP connector
+        - Project Template / platform runner
+        - Packaging / release / coverage / CI
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Bridra version or commit
+      placeholder: "0.1.0 or git commit"
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include host/target OS and architecture, Go, FVM, Flutter, Dart, device, and transport.
+      placeholder: |
+        Host: macOS arm64
+        Target: Web / Chrome
+        Go: 1.25.x
+        FVM / Flutter / Dart: ...
+        Transport: HTTP
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Provide the smallest project, schema, code, and exact commands needed to reproduce the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and redacted logs
+      description: Redact tokens, credentials, user data, local private paths, and production details.
+    validations:
+      required: true
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Include suspected regression commit, workaround, screenshots, or related Issues if useful.

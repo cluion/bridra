@@ -1,0 +1,28 @@
+package controllers
+
+import (
+	"{{.GoModule}}/app/responses"
+	applicationprotocol "{{.GoModule}}/framework"
+	"{{.BridraGoModule}}/framework"
+)
+
+type SystemController struct {
+	runtime string
+}
+
+func NewSystemController(runtime string) *SystemController {
+	if runtime == "" {
+		runtime = "Go backend"
+	}
+	return &SystemController{runtime: runtime}
+}
+
+func (controller *SystemController) Health(*framework.Context) (any, error) {
+	return responses.HealthResponse{
+		Status:           "ok",
+		FrameworkVersion: framework.FrameworkVersion,
+		ProtocolVersion:  applicationprotocol.ProtocolVersion,
+		Runtime:          controller.runtime,
+		Architecture:     "Middleware -> Controller -> Service",
+	}, nil
+}

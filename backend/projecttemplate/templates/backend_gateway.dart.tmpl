@@ -1,0 +1,47 @@
+import '{{.BridraDartImport}}';
+
+import 'generated/bridra_api.g.dart';
+
+export 'generated/bridra_api.g.dart';
+
+abstract interface class BackendGateway implements BridraApi {
+  Future<void> close();
+}
+
+class RpcBackend implements BackendGateway {
+  RpcBackend._(this._client) : _api = BridraRpcApi(_client);
+
+  final RpcClient _client;
+  final BridraRpcApi _api;
+  late final HealthInfo _health;
+
+  static Future<RpcBackend> connect() async {
+    final client = await connectDefaultRpcClient();
+    final backend = RpcBackend._(client);
+    try {
+      backend._health = await backend._api.health();
+      if (backend._health.protocolVersion != supportedBackendProtocolVersion) {
+        throw BackendProtocolException(
+          'Unsupported backend protocol '
+          '${backend._health.protocolVersion}; '
+          'expected $supportedBackendProtocolVersion.',
+        );
+      }
+      return backend;
+    } on Object {
+      await client.close();
+      rethrow;
+    }
+  }
+
+  @override
+  Future<HealthInfo> health() async => _health;
+
+  @override
+  Future<GreetingResult> greet(GreetingRequest request) {
+    return _api.greet(request);
+  }
+
+  @override
+  Future<void> close() => _client.close();
+}

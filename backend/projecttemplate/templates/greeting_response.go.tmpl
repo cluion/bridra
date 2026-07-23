@@ -1,0 +1,14 @@
+package responses
+
+import (
+	"time"
+
+	"{{.GoModule}}/app/models"
+)
+
+func NewGreetingResponse(greeting models.Greeting) GreetingResponse {
+	return GreetingResponse{
+		Message: greeting.Message, ServedBy: greeting.ServedBy,
+		Timestamp: greeting.Timestamp.UTC().Format(time.RFC3339),
+	}
+}

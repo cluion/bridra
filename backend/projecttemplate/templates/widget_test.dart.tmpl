@@ -1,0 +1,52 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:{{.ProjectName}}/api/backend_gateway.dart';
+import 'package:{{.ProjectName}}/main.dart';
+
+class FakeBackend implements BackendGateway {
+  @override
+  Future<void> close() async {}
+
+  @override
+  Future<HealthInfo> health() async {
+    return HealthInfo(
+      status: 'ok',
+      frameworkVersion: '{{.FrameworkVersion}}',
+      protocolVersion: {{.ProtocolVersion}},
+      runtime: 'Go sidecar',
+      architecture: 'Middleware -> Controller -> Service',
+    );
+  }
+
+  @override
+  Future<GreetingResult> greet(GreetingRequest request) async {
+    return GreetingResult(
+      message: 'Hello, ${request.name}!',
+      servedBy: 'Go GreetingService',
+      timestamp: DateTime.utc(2026),
+      pipeline: const ['middleware', 'controller', 'service'],
+    );
+  }
+}
+
+void main() {
+  testWidgets('renders the generated Bridra welcome page', (tester) async {
+    await tester.pumpWidget(
+      StarterApp(connector: () async => FakeBackend()),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('{{.DisplayName}}'), findsOneWidget);
+    expect(find.text('Flutter in front.\nGo at the core.'), findsOneWidget);
+    expect(find.text('Go core online'), findsOneWidget);
+
+    final callButton = find.byKey(const Key('call-button'));
+    await tester.ensureVisible(callButton);
+    await tester.enterText(find.byKey(const Key('name-field')), 'Bridra');
+    await tester.tap(callButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Hello, Bridra!'), findsOneWidget);
+    expect(find.text('200 · CONTROLLER RESPONSE'), findsOneWidget);
+  });
+}

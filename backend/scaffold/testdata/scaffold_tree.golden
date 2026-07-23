@@ -1,0 +1,15 @@
+backend/app/application_smoke_test.go
+backend/app/controllers/user_controller.go
+backend/app/controllers/user_controller_test.go
+backend/app/middleware/audit_middleware.go
+backend/app/middleware/audit_middleware_test.go
+backend/app/models/account.go
+backend/app/models/account_test.go
+backend/app/providers/metrics_service_provider.go
+backend/app/providers/metrics_service_provider_test.go
+backend/app/requests/create_user_request.go
+backend/app/requests/create_user_request_test.go
+backend/app/responses/account_response.go
+backend/app/responses/account_response_test.go
+backend/app/services/billing_service.go
+backend/app/services/billing_service_test.go

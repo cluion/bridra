@@ -1,0 +1,9 @@
+package requests
+
+import "testing"
+
+func Test{{.Name}}RequestPayload(t *testing.T) {
+	if err := ({{.Name}}Request{}).ValidatePayload([]byte(`{}`)); err != nil {
+		t.Fatalf("validate payload: %v", err)
+	}
+}

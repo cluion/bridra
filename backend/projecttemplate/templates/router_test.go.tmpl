@@ -1,0 +1,43 @@
+package app_test
+
+import (
+	"context"
+	"encoding/json"
+	"testing"
+
+	"{{.GoModule}}/app"
+	"{{.GoModule}}/app/contracts"
+	"{{.BridraGoModule}}/framework"
+)
+
+func TestGeneratedApplicationPipeline(t *testing.T) {
+	router := app.NewRouter("test-token", nil, "test")
+	params, err := json.Marshal(map[string]any{"name": "Bridra"})
+	if err != nil {
+		t.Fatalf("marshal params: %v", err)
+	}
+	response := router.Dispatch(context.Background(), framework.Request{
+		ID:     "request-1",
+		Method: contracts.MethodGreetingHello,
+		Params: params,
+		Meta:   map[string]string{"token": "test-token"},
+	})
+	if response.Error != nil {
+		t.Fatalf("dispatch error: %v", response.Error)
+	}
+	if response.Meta == nil {
+		t.Fatal("response metadata is missing")
+	}
+}
+
+func TestGeneratedApplicationRejectsInvalidToken(t *testing.T) {
+	router := app.NewRouter("test-token", nil, "test")
+	response := router.Dispatch(context.Background(), framework.Request{
+		ID:     "request-2",
+		Method: contracts.MethodSystemHealth,
+		Meta:   map[string]string{"token": "wrong-token"},
+	})
+	if response.Error == nil || response.Error.Code != "unauthorized" {
+		t.Fatalf("response error = %#v, want unauthorized", response.Error)
+	}
+}

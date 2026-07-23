@@ -1,0 +1,16 @@
+package responses
+
+import (
+	"encoding/json"
+	"testing"
+)
+
+func Test{{.Name}}ResponseJSON(t *testing.T) {
+	encoded, err := json.Marshal({{.Name}}Response{ID: "example"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if string(encoded) != `{"id":"example"}` {
+		t.Fatalf("JSON = %s", encoded)
+	}
+}

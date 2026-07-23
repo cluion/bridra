@@ -1,0 +1,25 @@
+package controllers
+
+import (
+	"{{.GoModule}}/app/requests"
+	"{{.GoModule}}/app/responses"
+	"{{.GoModule}}/app/services"
+	"{{.BridraGoModule}}/framework"
+)
+
+type GreetingController struct {
+	service services.GreetingService
+}
+
+func NewGreetingController(service services.GreetingService) *GreetingController {
+	return &GreetingController{service: service}
+}
+
+func (controller *GreetingController) Hello(ctx *framework.Context) (any, error) {
+	request, err := framework.BindAndValidate[requests.HelloRequest](ctx)
+	if err != nil {
+		return nil, err
+	}
+	greeting := controller.service.Greet(request.Name)
+	return responses.NewGreetingResponse(greeting), nil
+}

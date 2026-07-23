@@ -1,0 +1,13 @@
+package requests
+
+import "{{.FrameworkModule}}/framework"
+
+type {{.Name}}Request struct{}
+
+func ({{.Name}}Request) ValidatePayload(payload []byte) error {
+	return framework.ValidateRequestPayload[{{.Name}}Request](payload)
+}
+
+func ({{.Name}}Request) Validate() error {
+	return nil
+}

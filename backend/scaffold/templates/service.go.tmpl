@@ -1,0 +1,17 @@
+package services
+
+import "context"
+
+type {{.Name}}Service interface {
+	Execute(context.Context) error
+}
+
+type {{.SnakeName}}Service struct{}
+
+func New{{.Name}}Service() {{.Name}}Service {
+	return &{{.SnakeName}}Service{}
+}
+
+func (service *{{.SnakeName}}Service) Execute(ctx context.Context) error {
+	return ctx.Err()
+}

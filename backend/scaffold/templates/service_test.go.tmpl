@@ -1,0 +1,13 @@
+package services
+
+import (
+	"context"
+	"testing"
+)
+
+func Test{{.Name}}ServiceExecute(t *testing.T) {
+	service := New{{.Name}}Service()
+	if err := service.Execute(context.Background()); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+}

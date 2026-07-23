@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "scaffolds": {
+    "controller": {
+      "files": [
+        {"source": "controller.go.tmpl", "destination": "backend/app/controllers/{{.SnakeName}}_controller.go"},
+        {"source": "controller_test.go.tmpl", "destination": "backend/app/controllers/{{.SnakeName}}_controller_test.go"}
+      ]
+    },
+    "service": {
+      "files": [
+        {"source": "service.go.tmpl", "destination": "backend/app/services/{{.SnakeName}}_service.go"},
+        {"source": "service_test.go.tmpl", "destination": "backend/app/services/{{.SnakeName}}_service_test.go"}
+      ]
+    },
+    "middleware": {
+      "files": [
+        {"source": "middleware.go.tmpl", "destination": "backend/app/middleware/{{.SnakeName}}_middleware.go"},
+        {"source": "middleware_test.go.tmpl", "destination": "backend/app/middleware/{{.SnakeName}}_middleware_test.go"}
+      ]
+    },
+    "request": {
+      "files": [
+        {"source": "request.go.tmpl", "destination": "backend/app/requests/{{.SnakeName}}_request.go"},
+        {"source": "request_test.go.tmpl", "destination": "backend/app/requests/{{.SnakeName}}_request_test.go"}
+      ]
+    },
+    "model": {
+      "files": [
+        {"source": "model.go.tmpl", "destination": "backend/app/models/{{.SnakeName}}.go"},
+        {"source": "model_test.go.tmpl", "destination": "backend/app/models/{{.SnakeName}}_test.go"}
+      ]
+    },
+    "response": {
+      "files": [
+        {"source": "response.go.tmpl", "destination": "backend/app/responses/{{.SnakeName}}_response.go"},
+        {"source": "response_test.go.tmpl", "destination": "backend/app/responses/{{.SnakeName}}_response_test.go"}
+      ]
+    },
+    "provider": {
+      "files": [
+        {"source": "provider.go.tmpl", "destination": "backend/app/providers/{{.SnakeName}}_service_provider.go"},
+        {"source": "provider_test.go.tmpl", "destination": "backend/app/providers/{{.SnakeName}}_service_provider_test.go"}
+      ]
+    },
+    "test": {
+      "files": [
+        {"source": "test.go.tmpl", "destination": "backend/app/{{.SnakeName}}_test.go"}
+      ]
+    }
+  }
+}

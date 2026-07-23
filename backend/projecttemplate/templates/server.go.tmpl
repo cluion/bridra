@@ -1,0 +1,35 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"net/http"
+	"os"
+
+	"{{.GoModule}}/app"
+	"{{.BridraGoModule}}/framework"
+)
+
+func main() {
+	listen := flag.String("listen", "127.0.0.1:8080", "HTTP listen address")
+	token := flag.String("token", "", "RPC token; defaults to BRIDRA_BACKEND_TOKEN")
+	origin := flag.String("cors-origin", "*", "allowed browser origin")
+	flag.Parse()
+	if *token == "" {
+		*token = os.Getenv("BRIDRA_BACKEND_TOKEN")
+	}
+	if *token == "" {
+		fmt.Fprintln(os.Stderr, "server: token or BRIDRA_BACKEND_TOKEN is required")
+		os.Exit(2)
+	}
+	handler := &framework.HTTPHandler{
+		Router: app.NewRouter(*token, os.Stderr, "Go HTTP server"),
+		AllowedOrigin: *origin,
+		Errors: os.Stderr,
+	}
+	fmt.Fprintf(os.Stderr, "server: listening on http://%s/rpc\n", *listen)
+	if err := http.ListenAndServe(*listen, handler); err != nil {
+		fmt.Fprintf(os.Stderr, "server: %v\n", err)
+		os.Exit(1)
+	}
+}

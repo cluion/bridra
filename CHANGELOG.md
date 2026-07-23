@@ -1,0 +1,132 @@
+# Changelog
+
+All notable Bridra changes will be documented in this file. Bridra follows
+Semantic Versioning; the RPC wire protocol is versioned independently.
+
+## [0.1.0] - 2026-07-24
+
+### Added
+
+- Six-platform Flutter starter and native runners.
+- Desktop Go sidecar transport and mobile/Web HTTP RPC transport.
+- Shared Router, Middleware, Controller, and Service pipeline.
+- Typed Flutter backend gateway and protocol health handshake.
+- Public Go `framework` package and reusable `bridra_flutter` transport package.
+- FVM-based `make setup` and `make doctor` onboarding for the monorepo.
+- Typed Config, Container, eager service factories, and Service Provider lifecycle.
+- Named Request DTOs and `BindAndValidate` validation.
+- Structured field violations, domain Models, and Response DTOs.
+- Framework version in the health response.
+- Real stdio and HTTP executable integration tests.
+- Public-package lifecycle contract tests, including terminal provider failures.
+- Versioned JSON contract schema and `bridra generate` CLI.
+- Extensible Bridra CLI command dispatcher with global and command-specific help.
+- `bridra doctor` checks Go, FVM, pinned Flutter, host architecture, and optional
+  desktop build prerequisites, with a strict mode for release validation.
+- `bridra create` validates project identity, generates six Flutter runners in a
+  staging directory, renders a versioned project manifest, verifies dependencies,
+  and atomically publishes the completed project.
+- Project Template v2 with Go Sidecar/HTTP entrypoints, Laravel-style application
+  layers, schema-generated contracts, FVM, tests, and Make targets.
+- Versioned `.bridra/project.json` metadata for monorepo and generated-project
+  discovery without a fixed publisher checkout path.
+- Framework, Project Template, and RPC protocol identities in project metadata,
+  with schema 1 compatibility for previously generated projects.
+- Read-only `bridra upgrade` planner with default/explicit plan modes,
+  target-version selection, ordered cross-patch/minor migration paths,
+  missing-hop refusal, JSON diagnostics, and `--check` compatibility alias.
+- Opt-in `bridra upgrade --apply` for fully automatic paths, with manifest drift
+  protection, synchronized Go/Flutter dependency updates, lockfile resolution,
+  full verification, application-code isolation, and managed-file rollback.
+- Public compatibility, deprecation, migration, and rollback policy in
+  `docs/UPGRADING.md`.
+- Direct public default-connector tests for desktop IO and Chrome/Web, plus
+  deterministic executable discovery coverage across Unix and Windows paths.
+- Versioned Go/Flutter coverage floors, Markdown reporting, CI enforcement, and
+  retained workflow coverage artifacts.
+- Security, support, contribution, conduct, and role-based governance policies
+  with explicit ownership and publication gates.
+- Registered `cluion.com` as the verified Dart publisher and prepared
+  `bridra_flutter` for hosted release validation.
+- MIT licensing for the repository, Go module, Flutter package, and generated
+  CLI archives, with cross-platform license-copy consistency checks.
+- Structured Bug and Feature Issue forms plus a Pull Request contract covering
+  verification, compatibility, security, migration, and rollback evidence.
+- A release authority, private vulnerability response, disclosure, artifact
+  evidence, failed-release, and post-release support process.
+- A canonical root `VERSION` plus `bridra release prepare/check` automation that
+  synchronizes and verifies Go, Flutter, metadata, changelog, and documentation
+  release surfaces without tagging or publishing.
+- Cross-platform `make release-prepare/release-check` and Windows PowerShell
+  maintainer entrypoints that accept the public framework version once.
+- A protected tag-triggered public release workflow, disabled by default through
+  repository variables, that re-verifies the release, builds CLI assets,
+  optionally publishes Dart through pub.dev OIDC, and creates the GitHub Release.
+- `bridra make` scaffolds for Controller, Service, Middleware, Request, Model,
+  Response, Service Provider, and Test components.
+- Companion tests, Go formatting, default collision rejection, explicit
+  transactional `--force` replacement, and rollback-safe scaffold publication.
+- `bridra dev` supervision for desktop Sidecar and mobile/Web HTTP development.
+- Cross-platform process-tree signal forwarding, HTTP readiness checks, timeout
+  escalation, and cleanup of child processes after exit or startup failure.
+- `bridra build` target/mode orchestration for all six platforms, including host
+  restrictions, desktop Sidecar installation, and unsigned iOS output.
+- HTTPS/token release validation and token-free SHA-256 artifact manifests, with
+  universal ad-hoc-signed macOS Sidecars and shared Make/PowerShell build policy.
+- Configurable Go framework and Dart runtime imports in contract Codegen.
+- Generated Go protocol/route constants, Request/Response DTOs, and validation.
+- Generated Dart request/result models, response decoders, and typed RPC client.
+- Golden-output and stale-generation checks in the default verification flow.
+- Lazy singleton, transient, request-scoped, and typed alias Container bindings.
+- Circular dependency and singleton-to-scope lifetime validation.
+- Automatic per-dispatch Scope access through the request Context.
+- Named middleware groups with global or route-group composition.
+- Nested dot-prefixed Route Groups and group/method authorization policies.
+- Generated route group/action constants used by the application provider.
+- Typed validation rule registry with field, optional, nested, and cross-field rules.
+- Schema/codegen support for nullable fields, string enums, and nested objects.
+- Required/non-null generated Request payload contracts with nested field paths.
+- Generated Request normalization and minimum-length validation.
+- Dart request/response Codegen support for RFC 3339 date-time arrays.
+- Generated enum/max-length validation with dot-prefixed nested field violations.
+- Extensible Router exception renderer and typed domain exception mappings.
+- Ordered typed Config sources with defaults, environment, and runtime precedence.
+- Aggregated Config decoding/validation errors and redacted secret inspection.
+- Named Provider Manifests with deterministic ordering and lifecycle diagnostics.
+- Shared HTTP application bootstrap through the Config source pipeline.
+- Typed synchronous Event Dispatcher with named, ordered listeners.
+- Context cancellation, fail-fast listener errors, and explicit event propagation stops.
+- Application/Container event dispatcher integration and a Greeting domain event example.
+- Application shutdown lifecycle with terminable providers and reverse-order cleanup.
+- Idempotent concurrent shutdown, aggregated provider errors, and partial-startup cleanup.
+- Unified Application termination in the stdio sidecar and HTTP server entrypoints.
+- Typed Jobs with one named Handler per exact Go type.
+- Bounded in-memory Queue with configurable workers, Job timeouts, failure reporting,
+  and recovered Handler panics.
+- Queue Service Provider with Application Boot and graceful reverse-order shutdown integration.
+- Per-Handler retry attempts with fixed backoff and per-attempt timeouts.
+- Retry exhaustion metadata and errors that preserve framework and original causes.
+- Typed queued Event listeners with explicit Event-to-Job mapping.
+- Queued listener mapping and enqueue errors that preserve Event, Queue, and context causes.
+- Named fixed-delay Scheduler Tasks with same-Task non-overlap and concurrent task loops.
+- Scheduler timeouts, failure reporting, panic recovery, and Service Provider lifecycle.
+- Standard-library SQL Database wrapper with startup health checks and lifecycle cleanup.
+- Context-aware transaction boundaries and transaction-aware Repository execution.
+- Ordered, versioned Migration Runner with persistent SQL history and status inspection.
+- Per-Migration transactions, panic recovery, latest-batch rollback, and explicit
+  non-transactional migration support.
+
+### Changed
+
+- Adopted the Bridra product name and Cluion publisher identity.
+- Established `github.com/cluion/bridra` as the canonical repository and
+  `github.com/cluion/bridra/backend` as the public Go module identity.
+- Made `bridra create` emit versioned Go and Dart framework dependencies by
+  default, with explicit local `replace` and `dependency_overrides` support.
+- Added `bridra version` human/JSON release metadata and deterministic macOS,
+  Linux, and Windows CLI archives with checksums and a release manifest.
+- Documented exact Go submodule tagging, GitHub Release contents, verification,
+  and explicit CLI/framework upgrade policy.
+- Renamed package, binary, runtime configuration, and display-name surfaces.
+- Set the pre-stable framework version to `0.1.0`.
+- Made Register and Boot provider failures terminal for each Application instance.

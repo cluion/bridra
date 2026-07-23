@@ -1,0 +1,86 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'backend/v*.*.*'
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  public-release:
+    if: ${{ vars.BRIDRA_PUBLIC_RELEASE_ENABLED == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: public-release
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release version
+        id: release
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#backend/v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid Bridra release tag: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.mod
+
+      - name: Install Linux desktop dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libstdc++-12-dev
+
+      - name: Install FVM
+        run: |
+          curl -fsSL https://fvm.app/install.sh -o /tmp/fvm-install.sh
+          bash /tmp/fvm-install.sh 4.1.2
+          echo "$HOME/fvm/bin" >> "$GITHUB_PATH"
+
+      - name: Install project Flutter SDK
+        run: fvm install
+
+      - name: Verify aligned release version
+        run: make release-check VERSION='${{ steps.release.outputs.version }}' FINAL=1
+
+      - name: Verify framework
+        run: make verify
+
+      - name: Enforce coverage floors
+        run: make coverage
+
+      - name: Build deterministic CLI archives
+        run: make cli-release
+
+      - name: Validate Dart package
+        working-directory: packages/bridra_flutter
+        run: fvm dart pub publish --dry-run
+
+      - name: Publish Dart package
+        if: ${{ vars.BRIDRA_PUBDEV_AUTOMATION_ENABLED == 'true' }}
+        working-directory: packages/bridra_flutter
+        run: fvm dart pub publish --force
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "build/bridra/cli/$VERSION/"* \
+            --verify-tag \
+            --title "Bridra $VERSION" \
+            --generate-notes

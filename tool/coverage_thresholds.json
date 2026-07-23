@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "goProfile": "coverage/go.out",
+  "goPackages": [
+    {
+      "name": "Go Framework",
+      "package": "github.com/cluion/bridra/backend/framework",
+      "minimum": 84.0
+    },
+    {
+      "name": "Bridra CLI",
+      "package": "github.com/cluion/bridra/backend/cmd/bridra",
+      "minimum": 75.0
+    },
+    {
+      "name": "Contract Codegen",
+      "package": "github.com/cluion/bridra/backend/codegen",
+      "minimum": 84.0
+    },
+    {
+      "name": "Scaffold Generator",
+      "package": "github.com/cluion/bridra/backend/scaffold",
+      "minimum": 79.0
+    },
+    {
+      "name": "Project Template",
+      "package": "github.com/cluion/bridra/backend/projecttemplate",
+      "minimum": 72.0
+    },
+    {
+      "name": "CLI Release Packager",
+      "package": "github.com/cluion/bridra/backend/internal/clirelease",
+      "minimum": 77.0
+    }
+  ],
+  "lcovProfiles": [
+    {
+      "name": "Flutter Runtime",
+      "profile": "packages/bridra_flutter/coverage/lcov.info",
+      "minimum": 85.0
+    },
+    {
+      "name": "Flutter App and Runtime",
+      "profile": "coverage/lcov.info",
+      "minimum": 87.0
+    }
+  ]
+}

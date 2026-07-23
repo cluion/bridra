@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "files": [
+    {"source": "project.json.tmpl", "destination": ".bridra/project.json", "mode": "0644"},
+    {"source": "README.md.tmpl", "destination": "README.md", "mode": "0644"},
+    {"source": "fvmrc.tmpl", "destination": ".fvmrc", "mode": "0644"},
+    {"source": "gitignore.tmpl", "destination": ".gitignore", "mode": "0644"},
+    {"source": "analysis_options.yaml.tmpl", "destination": "analysis_options.yaml", "mode": "0644"},
+    {"source": "pubspec.yaml.tmpl", "destination": "pubspec.yaml", "mode": "0644"},
+    {"source": "Makefile.tmpl", "destination": "Makefile", "mode": "0644"},
+    {"source": "schema.json.tmpl", "destination": "schema/bridra.json", "mode": "0644"},
+    {"source": "main.dart.tmpl", "destination": "lib/main.dart", "mode": "0644"},
+    {"source": "backend_gateway.dart.tmpl", "destination": "lib/api/backend_gateway.dart", "mode": "0644"},
+    {"source": "widget_test.dart.tmpl", "destination": "test/widget_test.dart", "mode": "0644"},
+    {"source": "go.mod.tmpl", "destination": "backend/go.mod", "mode": "0644"},
+    {"source": "router.go.tmpl", "destination": "backend/app/router.go", "mode": "0644"},
+    {"source": "router_test.go.tmpl", "destination": "backend/app/router_test.go", "mode": "0644"},
+    {"source": "system_controller.go.tmpl", "destination": "backend/app/controllers/system_controller.go", "mode": "0644"},
+    {"source": "greeting_controller.go.tmpl", "destination": "backend/app/controllers/greeting_controller.go", "mode": "0644"},
+    {"source": "greeting.go.tmpl", "destination": "backend/app/models/greeting.go", "mode": "0644"},
+    {"source": "greeting_service.go.tmpl", "destination": "backend/app/services/greeting_service.go", "mode": "0644"},
+    {"source": "greeting_response.go.tmpl", "destination": "backend/app/responses/greeting_response.go", "mode": "0644"},
+    {"source": "sidecar.go.tmpl", "destination": "backend/cmd/sidecar/main.go", "mode": "0644"},
+    {"source": "server.go.tmpl", "destination": "backend/cmd/server/main.go", "mode": "0644"}
+  ]
+}

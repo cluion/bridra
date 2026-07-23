@@ -1,0 +1,10 @@
+package models
+
+import "testing"
+
+func Test{{.Name}}Model(t *testing.T) {
+	model := {{.Name}}{ID: "example"}
+	if model.ID != "example" {
+		t.Fatalf("ID = %q", model.ID)
+	}
+}

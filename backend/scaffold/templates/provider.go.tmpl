@@ -1,0 +1,13 @@
+package providers
+
+import "{{.FrameworkModule}}/framework"
+
+type {{.Name}}ServiceProvider struct{}
+
+func ({{.Name}}ServiceProvider) Register(*framework.Application) error {
+	return nil
+}
+
+func ({{.Name}}ServiceProvider) Boot(*framework.Application) error {
+	return nil
+}

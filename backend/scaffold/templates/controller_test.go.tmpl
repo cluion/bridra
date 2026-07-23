@@ -1,0 +1,16 @@
+package controllers
+
+import (
+	"testing"
+
+	"{{.FrameworkModule}}/framework"
+)
+
+func Test{{.Name}}ControllerHandle(t *testing.T) {
+	controller := New{{.Name}}Controller()
+	_, err := controller.Handle(&framework.Context{})
+	rpcError, ok := err.(*framework.RPCError)
+	if !ok || rpcError.Code != "not_implemented" {
+		t.Fatalf("error = %#v, want not_implemented", err)
+	}
+}

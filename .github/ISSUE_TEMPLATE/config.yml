@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/cluion/bridra/security/advisories/new
+    about: Report vulnerabilities privately; never disclose them in a public Issue.
+  - name: Support policy
+    url: https://github.com/cluion/bridra/blob/main/SUPPORT.md
+    about: Check supported scope and the information required for triage.

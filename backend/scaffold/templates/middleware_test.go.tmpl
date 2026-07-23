@@ -1,0 +1,23 @@
+package middleware
+
+import (
+	"context"
+	"testing"
+
+	"{{.FrameworkModule}}/framework"
+)
+
+func Test{{.Name}}MiddlewareCallsNext(t *testing.T) {
+	called := false
+	handler := {{.Name}}Middleware()(func(*framework.Context) (any, error) {
+		called = true
+		return "ok", nil
+	})
+	result, err := handler(framework.NewContext(context.Background(), framework.Request{}))
+	if err != nil {
+		t.Fatalf("middleware: %v", err)
+	}
+	if !called || result != "ok" {
+		t.Fatalf("called = %v, result = %#v", called, result)
+	}
+}

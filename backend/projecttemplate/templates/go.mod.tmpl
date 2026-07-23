@@ -1,0 +1,7 @@
+module {{.GoModule}}
+
+go 1.25
+
+require {{.BridraGoModule}} {{.BridraGoVersion}}{{if .LocalDependencies}}
+
+replace {{.BridraGoModule}} => {{quote .BridraGoPath}}{{end}}

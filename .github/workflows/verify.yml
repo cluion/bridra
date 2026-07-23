@@ -1,0 +1,125 @@
+name: Verify
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-android-web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.mod
+
+      - name: Install Linux desktop dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libstdc++-12-dev
+
+      - name: Install FVM
+        run: |
+          curl -fsSL https://fvm.app/install.sh -o /tmp/fvm-install.sh
+          bash /tmp/fvm-install.sh 4.1.2
+          echo "$HOME/fvm/bin" >> "$GITHUB_PATH"
+
+      - name: Install project Flutter SDK
+        run: fvm install
+
+      - name: Verify framework
+        run: make verify
+
+      - name: Enforce coverage non-regression floors
+        run: |
+          make coverage
+          cat coverage/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage reports
+        if: ${{ always() && hashFiles('coverage/go.out') != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: bridra-coverage
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            coverage/go.out
+            coverage/lcov.info
+            coverage/summary.md
+            packages/bridra_flutter/coverage/lcov.info
+
+      - name: Build installable CLI release artifacts
+        run: make cli-release
+
+      - name: Build and smoke-test Linux bundle
+        run: make linux-smoke
+
+      - name: Build Android release
+        run: make android-build BACKEND_URL=https://backend.example/rpc BACKEND_TOKEN=ci-token
+
+      - name: Build Web release
+        run: make web-build BACKEND_URL=https://backend.example/rpc BACKEND_TOKEN=ci-token
+
+  macos-ios:
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.mod
+
+      - name: Install FVM
+        run: |
+          curl -fsSL https://fvm.app/install.sh -o /tmp/fvm-install.sh
+          bash /tmp/fvm-install.sh 4.1.2
+          echo "$HOME/fvm/bin" >> "$GITHUB_PATH"
+
+      - name: Install project Flutter SDK
+        run: fvm install
+
+      - name: Build and smoke-test macOS bundle
+        run: make macos-smoke
+
+      - name: Build unsigned iOS release
+        run: make ios-build BACKEND_URL=https://backend.example/rpc BACKEND_TOKEN=ci-token
+
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.mod
+
+      - name: Install FVM
+        run: choco install fvm --version=4.1.2 --yes
+
+      - name: Install project Flutter SDK
+        run: fvm install
+
+      - name: Verify framework on Windows
+        run: .\tool\windows.ps1 -Task verify
+
+      - name: Build and smoke-test Windows bundle
+        run: .\tool\windows.ps1 -Task smoke

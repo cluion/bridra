@@ -1,0 +1,11 @@
+package middleware
+
+import "{{.FrameworkModule}}/framework"
+
+func {{.Name}}Middleware() framework.Middleware {
+	return func(next framework.Handler) framework.Handler {
+		return func(ctx *framework.Context) (any, error) {
+			return next(ctx)
+		}
+	}
+}

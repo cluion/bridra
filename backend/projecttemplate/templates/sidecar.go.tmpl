@@ -1,0 +1,28 @@
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"os"
+
+	"{{.GoModule}}/app"
+	"{{.BridraGoModule}}/framework"
+)
+
+func main() {
+	token := flag.String("token", "", "ephemeral token supplied by Flutter")
+	flag.Parse()
+	if *token == "" {
+		fmt.Fprintln(os.Stderr, "sidecar: --token is required")
+		os.Exit(2)
+	}
+	server := framework.Server{
+		Router: app.NewRouter(*token, os.Stderr, "Go sidecar"),
+		Input: os.Stdin, Output: os.Stdout, Errors: os.Stderr,
+	}
+	if err := server.Serve(context.Background()); err != nil {
+		fmt.Fprintf(os.Stderr, "sidecar: %v\n", err)
+		os.Exit(1)
+	}
+}

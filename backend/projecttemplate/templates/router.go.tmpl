@@ -1,0 +1,35 @@
+package app
+
+import (
+	"io"
+
+	"{{.GoModule}}/app/contracts"
+	"{{.GoModule}}/app/controllers"
+	"{{.GoModule}}/app/services"
+	"{{.BridraGoModule}}/framework"
+)
+
+func NewRouter(token string, logs io.Writer, runtime string) *framework.Router {
+	greetingService := services.NewGreetingService()
+	greetingController := controllers.NewGreetingController(greetingService)
+	systemController := controllers.NewSystemController(runtime)
+
+	router := framework.NewRouter()
+	middlewares := []framework.Middleware{
+		framework.Traced("recovery", framework.Recovery()),
+		framework.Traced("request-id", framework.RequireRequestID()),
+		framework.Traced("auth", framework.Authenticate(token)),
+	}
+	if logs != nil {
+		middlewares = append(
+			[]framework.Middleware{
+				framework.Traced("logging", framework.LogRequests(logs)),
+			},
+			middlewares...,
+		)
+	}
+	router.Use(middlewares...)
+	router.Handle(contracts.MethodSystemHealth, systemController.Health)
+	router.Handle(contracts.MethodGreetingHello, greetingController.Hello)
+	return router
+}

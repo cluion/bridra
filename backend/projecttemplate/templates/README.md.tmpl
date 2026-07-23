@@ -1,0 +1,118 @@
+# {{.DisplayName}}
+
+{{.Description}}
+
+This project was created with Bridra 0.1 Project Template v2. It keeps Flutter
+responsible for the cross-platform interface and Go responsible for middleware,
+request validation, controllers, services, models, and transports.
+
+## Development
+
+```bash
+fvm install
+fvm flutter pub get
+make doctor
+make verify
+make run
+```
+
+`make run` builds the Go sidecar, exposes its path to Flutter, and starts the
+current Flutter desktop target. Mobile and Web use the HTTP backend:
+
+```bash
+make backend-serve
+fvm flutter run -d chrome \
+  --dart-define=BRIDRA_BACKEND_URL=http://127.0.0.1:8080/rpc \
+  --dart-define=BRIDRA_BACKEND_TOKEN=dev-token
+```
+
+The Bridra CLI can supervise the same development session through the project's
+versioned framework dependency:
+
+```bash
+cd backend
+go run {{.BridraGoModule}}/cmd/bridra dev --root ..
+go run {{.BridraGoModule}}/cmd/bridra dev --root .. --device chrome
+```
+
+Mobile and custom devices require `--listen 0.0.0.0:<port>` plus an explicit
+`--backend-url` reachable from the device.
+
+## Builds
+
+Build desktop Sidecar bundles or mobile/Web HTTP artifacts through the same local
+Bridra CLI dependency:
+
+```bash
+make macos-build
+make linux-build
+make windows-build
+
+make web-build \
+  BACKEND_URL=https://api.example.com/rpc \
+  BACKEND_TOKEN=replace-me
+```
+
+Set `BUILD_MODE=debug`, `profile`, or `release`. Profile and release HTTP builds
+require an HTTPS `/rpc` endpoint and token. Each successful build writes a
+token-free SHA-256 manifest under `build/bridra/`. iOS output is unsigned;
+signing, notarization, installers, and store submission are separate release
+steps.
+
+## Contract generation
+
+`schema/bridra.json` is the RPC source of truth:
+
+```bash
+make generate
+make codegen-check
+```
+
+## Application scaffolds
+
+The committed `.bridra/project.json` lets the Bridra CLI discover this project.
+Run the CLI through the versioned framework dependency:
+
+```bash
+cd backend
+go run {{.BridraGoModule}}/cmd/bridra make controller User --root ..
+go run {{.BridraGoModule}}/cmd/bridra make service Billing --root ..
+```
+
+## Bridra dependency
+
+This project declares compatible, versioned Bridra dependencies:
+
+- Go module: `{{.BridraGoModule}}` `{{.BridraGoVersion}}`
+- Flutter package: `{{.BridraFlutterPackage}}` `{{.BridraFlutterVersion}}`
+{{if .LocalDependencies}}
+
+It also has explicit local development overrides:
+
+- Go replacement: `{{.BridraGoPath}}`
+- Flutter path: `{{.BridraFlutterPath}}`
+
+Remove the Go `replace` and Dart `dependency_overrides` entries to return to
+published packages.
+{{else}}
+
+Use normal Go and Flutter package upgrade commands to move within those
+constraints. Application code remains owned by this project.
+{{end}}
+
+Before changing framework dependencies, build the read-only upgrade plan:
+
+```bash
+cd backend
+go run {{.BridraGoModule}}/cmd/bridra upgrade --plan --root ..
+```
+
+When the report says `applyAvailable: true`, apply that exact target:
+
+```bash
+cd backend
+go run {{.BridraGoModule}}/cmd/bridra upgrade --apply --to <version> --root ..
+```
+
+Apply updates only managed dependency, lockfile, and Bridra metadata surfaces,
+runs the full verification target, and restores those files on failure.

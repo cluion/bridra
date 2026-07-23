@@ -1,0 +1,46 @@
+name: Feature proposal
+description: Propose a Bridra framework capability or contract change
+title: "[Proposal]: "
+body:
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing Issues and roadmap documents for this proposal.
+          required: true
+        - label: I described a user problem, not only a preferred implementation.
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and use case
+      description: Who is blocked, on which platforms/transports, and why existing extension points are insufficient?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed framework boundary
+      description: Explain what Bridra should own and what must remain application or deployment responsibility.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Include libraries, application-level solutions, or a smaller extension point.
+    validations:
+      required: true
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility and migration
+      description: Cover public Go/Dart APIs, RPC protocol, template/generated code, data, platforms, security, and rollback.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Add prototypes, benchmarks, failure examples, or links to primary documentation when available.
