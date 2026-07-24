@@ -124,6 +124,10 @@ void main() {
     final request = await process.nextRequest();
 
     await expectLater(call, throwsA(isA<TimeoutException>()));
+    final cancellation = await process.nextRequest();
+    expect(cancellation['id'], request['id']);
+    expect(cancellation['method'], 'rpc.cancel');
+    expect((cancellation['meta'] as Map)['token'], 'test-token');
     process.respond({
       'id': request['id'],
       'result': 'late',
@@ -137,6 +141,47 @@ void main() {
         'Ignored sidecar response for unknown request ${request['id']}.',
       ),
     );
+  });
+
+  test(
+    'caller cancellation sends a control request and keeps transport',
+    () async {
+      final process = FakeSidecarProcess();
+      final client = await _startClient(process);
+      addTearDown(client.close);
+      final cancellationToken = RpcCancellationToken();
+
+      final call = client.call('slow', cancellationToken: cancellationToken);
+      final request = await process.nextRequest();
+      cancellationToken.cancel();
+
+      await expectLater(call, throwsA(isA<RpcCancelledException>()));
+      final cancellation = await process.nextRequest();
+      expect(cancellation['id'], request['id']);
+      expect(cancellation['method'], 'rpc.cancel');
+
+      final next = client.call('next');
+      final nextRequest = await process.nextRequest();
+      process.respond({
+        'id': nextRequest['id'],
+        'result': 'ok',
+        'meta': <String, Object?>{},
+      });
+      expect((await next).result, 'ok');
+    },
+  );
+
+  test('already cancelled calls do not write to the sidecar', () async {
+    final process = FakeSidecarProcess();
+    final client = await _startClient(process);
+    addTearDown(client.close);
+    final cancellationToken = RpcCancellationToken()..cancel();
+
+    await expectLater(
+      client.call('cancelled', cancellationToken: cancellationToken),
+      throwsA(isA<RpcCancelledException>()),
+    );
+    expect(process.receivedRequestCount, 0);
   });
 
   test(
@@ -202,6 +247,8 @@ class FakeSidecarProcess implements SidecarProcess {
   late final IOSink stdin;
 
   var killCount = 0;
+
+  int get receivedRequestCount => _requests.length;
 
   @override
   Stream<List<int>> get stderr => _stderrController.stream;

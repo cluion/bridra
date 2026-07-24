@@ -35,34 +35,71 @@ class HttpRpcClient implements RpcClient {
     String method, {
     Map<String, Object?> params = const {},
     Duration timeout = const Duration(seconds: 5),
+    RpcCancellationToken? cancellationToken,
   }) async {
     if (_closed) throw const BackendClosedException();
+    if (cancellationToken?.isCancelled ?? false) {
+      throw RpcCancelledException(method);
+    }
 
     final id = '${++_nextID}';
+    final abort = Completer<void>();
+    Object? abortError;
+    void requestAbort(Object error) {
+      if (abort.isCompleted) return;
+      abortError = error;
+      abort.complete();
+    }
+
+    final timeoutTimer = Timer(
+      timeout,
+      () => requestAbort(
+        TimeoutException('HTTP method $method timed out.', timeout),
+      ),
+    );
+    final cancellationSubscription = cancellationToken?.onCancel.listen(
+      (_) => requestAbort(RpcCancelledException(method)),
+    );
+    final request =
+        http.AbortableRequest('POST', endpoint, abortTrigger: abort.future)
+          ..headers.addAll(const {
+            'accept': 'application/json',
+            'content-type': 'application/json',
+          })
+          ..body = encodeRpcRequest(
+            id: id,
+            method: method,
+            params: params,
+            token: _token,
+          );
+
     http.Response response;
     try {
-      response = await _client
-          .post(
-            endpoint,
-            headers: const {
-              'accept': 'application/json',
-              'content-type': 'application/json',
-            },
-            body: encodeRpcRequest(
-              id: id,
-              method: method,
-              params: params,
-              token: _token,
-            ),
-          )
-          .timeout(timeout);
+      final responseFuture = _client
+          .send(request)
+          .then(http.Response.fromStream);
+      final abortFuture = abort.future.then<http.Response>(
+        (_) => throw abortError!,
+      );
+      response = await Future.any([responseFuture, abortFuture]);
     } on TimeoutException {
       rethrow;
+    } on RpcCancelledException {
+      rethrow;
+    } on http.RequestAbortedException {
+      final error = abortError;
+      if (error != null) throw error;
+      throw RpcCancelledException(method);
     } on Object catch (error) {
       throw BackendTransportException(
         'Could not reach the Go HTTP backend at $endpoint.',
         cause: error,
       );
+    } finally {
+      timeoutTimer.cancel();
+      if (cancellationSubscription != null) {
+        unawaited(cancellationSubscription.cancel());
+      }
     }
 
     if (response.statusCode != 200) {

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0 - 2026-07-25
+
+- Added `RpcCancellationToken` and `RpcCancelledException`, with optional
+  cancellation on generated and transport-neutral RPC calls.
+- Added timeout and manual cancellation propagation for HTTP and desktop
+  Sidecar transports without changing RPC protocol version `1`.
+
 ## 0.1.1 - 2026-07-24
 
 - Kept the package version aligned with the Bridra 0.1.1 framework hotfix.

@@ -62,8 +62,11 @@ class GreetingResult {
 }
 
 abstract interface class BridraApi {
-  Future<HealthInfo> health();
-  Future<GreetingResult> greet(GreetingRequest request);
+  Future<HealthInfo> health({RpcCancellationToken? cancellationToken});
+  Future<GreetingResult> greet(
+    GreetingRequest request, {
+    RpcCancellationToken? cancellationToken,
+  });
 }
 
 class BridraRpcApi implements BridraApi {
@@ -72,8 +75,11 @@ class BridraRpcApi implements BridraApi {
   final RpcClient _client;
 
   @override
-  Future<HealthInfo> health() async {
-    final reply = await _client.call(BridraMethods.systemHealth);
+  Future<HealthInfo> health({RpcCancellationToken? cancellationToken}) async {
+    final reply = await _client.call(
+      BridraMethods.systemHealth,
+      cancellationToken: cancellationToken,
+    );
     try {
       final result = _requireMap(reply.result, 'system.health result');
       return HealthInfo(
@@ -94,10 +100,14 @@ class BridraRpcApi implements BridraApi {
   }
 
   @override
-  Future<GreetingResult> greet(GreetingRequest request) async {
+  Future<GreetingResult> greet(
+    GreetingRequest request, {
+    RpcCancellationToken? cancellationToken,
+  }) async {
     final reply = await _client.call(
       BridraMethods.greetingHello,
       params: request.toJson(),
+      cancellationToken: cancellationToken,
     );
     try {
       final result = _requireMap(reply.result, 'greeting.hello result');

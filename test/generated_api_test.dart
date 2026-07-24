@@ -8,15 +8,18 @@ class RecordingRpcClient implements RpcClient {
   RpcReply reply;
   String? method;
   Map<String, Object?>? params;
+  RpcCancellationToken? cancellationToken;
 
   @override
   Future<RpcReply> call(
     String method, {
     Map<String, Object?> params = const {},
     Duration timeout = const Duration(seconds: 5),
+    RpcCancellationToken? cancellationToken,
   }) async {
     this.method = method;
     this.params = params;
+    this.cancellationToken = cancellationToken;
     return reply;
   }
 
@@ -62,13 +65,16 @@ void main() {
           },
         ),
       );
+      final cancellationToken = RpcCancellationToken();
 
-      final greeting = await BridraRpcApi(
-        rpc,
-      ).greet(const GreetingRequest(name: 'Codex'));
+      final greeting = await BridraRpcApi(rpc).greet(
+        const GreetingRequest(name: 'Codex'),
+        cancellationToken: cancellationToken,
+      );
 
       expect(rpc.method, BridraMethods.greetingHello);
       expect(rpc.params, {'name': 'Codex'});
+      expect(rpc.cancellationToken, same(cancellationToken));
       expect(greeting.message, 'Hello, Codex!');
       expect(greeting.timestamp, DateTime.utc(2026, 7, 21, 12));
       expect(greeting.pipeline, ['auth:before', 'auth:after']);

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 class RpcReply {
@@ -16,6 +17,31 @@ class RpcException implements Exception {
 
   @override
   String toString() => 'RpcException($code): $message';
+}
+
+class RpcCancelledException implements Exception {
+  const RpcCancelledException(this.method);
+
+  final String method;
+
+  @override
+  String toString() => 'RPC method $method was cancelled.';
+}
+
+class RpcCancellationToken {
+  final _controller = StreamController<void>.broadcast(sync: true);
+  var _isCancelled = false;
+
+  bool get isCancelled => _isCancelled;
+
+  Stream<void> get onCancel => _controller.stream;
+
+  void cancel() {
+    if (_isCancelled) return;
+    _isCancelled = true;
+    _controller.add(null);
+    unawaited(_controller.close());
+  }
 }
 
 abstract class BackendConnectionException implements Exception {
@@ -48,6 +74,7 @@ abstract interface class RpcClient {
     String method, {
     Map<String, Object?> params = const {},
     Duration timeout = const Duration(seconds: 5),
+    RpcCancellationToken? cancellationToken,
   });
 
   Future<void> close();
@@ -65,6 +92,15 @@ String encodeRpcRequest({
     'params': params,
     'meta': {'token': token},
   });
+}
+
+String encodeRpcCancellation({required String id, required String token}) {
+  return encodeRpcRequest(
+    id: id,
+    method: 'rpc.cancel',
+    params: const {},
+    token: token,
+  );
 }
 
 RpcReply decodeRpcReply(Object? decoded, {required String expectedID}) {

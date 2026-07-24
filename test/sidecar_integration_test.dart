@@ -43,5 +43,15 @@ void main() {
       'recovery:after',
       'logging:after',
     ]);
+
+    final concurrentGreetings = await Future.wait(
+      List.generate(
+        16,
+        (index) => api.greet(GreetingRequest(name: 'Codex $index')),
+      ),
+    );
+    for (var index = 0; index < concurrentGreetings.length; index++) {
+      expect(concurrentGreetings[index].message, 'Hello, Codex $index!');
+    }
   });
 }

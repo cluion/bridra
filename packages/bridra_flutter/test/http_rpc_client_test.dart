@@ -122,19 +122,19 @@ void main() {
   });
 
   test('supports timeouts and idempotent close', () async {
+    final transport = AbortObservingClient();
     final client = HttpRpcClient(
       endpoint: Uri.parse('https://backend.example/rpc'),
       token: 'remote-token',
-      client: MockClient((_) async {
-        await Future<void>.delayed(const Duration(milliseconds: 30));
-        return http.Response('{}', 200);
-      }),
+      client: transport,
     );
 
     await expectLater(
       client.call('system.health', timeout: const Duration(milliseconds: 5)),
       throwsA(isA<TimeoutException>()),
     );
+    await Future<void>.delayed(Duration.zero);
+    expect(transport.aborted, isTrue);
     await client.close();
     await client.close();
     await expectLater(
@@ -142,4 +142,57 @@ void main() {
       throwsA(isA<BackendClosedException>()),
     );
   });
+
+  test('caller cancellation aborts only its HTTP request', () async {
+    final transport = AbortObservingClient();
+    final client = HttpRpcClient(
+      endpoint: Uri.parse('https://backend.example/rpc'),
+      token: 'remote-token',
+      client: transport,
+    );
+    addTearDown(client.close);
+    final cancellationToken = RpcCancellationToken();
+
+    final call = client.call(
+      'system.health',
+      cancellationToken: cancellationToken,
+    );
+    cancellationToken.cancel();
+
+    await expectLater(call, throwsA(isA<RpcCancelledException>()));
+    await Future<void>.delayed(Duration.zero);
+    expect(transport.aborted, isTrue);
+  });
+
+  test('already cancelled calls do not send an HTTP request', () async {
+    var sends = 0;
+    final client = HttpRpcClient(
+      endpoint: Uri.parse('https://backend.example/rpc'),
+      token: 'remote-token',
+      client: MockClient((_) async {
+        sends++;
+        return http.Response('{}', 200);
+      }),
+    );
+    addTearDown(client.close);
+    final cancellationToken = RpcCancellationToken()..cancel();
+
+    await expectLater(
+      client.call('system.health', cancellationToken: cancellationToken),
+      throwsA(isA<RpcCancelledException>()),
+    );
+    expect(sends, 0);
+  });
+}
+
+class AbortObservingClient extends http.BaseClient {
+  var aborted = false;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final abortable = request as http.Abortable;
+    await abortable.abortTrigger;
+    aborted = true;
+    throw http.RequestAbortedException(request.url);
+  }
 }

@@ -1,6 +1,6 @@
 # Upgrading Bridra
 
-Bridra upgrades are explicit and reviewable. Version 0.1 plans every migration
+Bridra upgrades are explicit and reviewable. Bridra plans every migration
 first and applies only plans made entirely of registered automatic steps. It
 never updates the CLI itself, generated application code, native runners, or
 application-owned files.
@@ -9,9 +9,9 @@ Run the read-only planner from a project root before changing dependencies:
 
 ```bash
 bridra upgrade
-bridra upgrade --plan --to 0.1.1
-bridra upgrade --plan --to 0.1.1 --json
-bridra upgrade --apply --to 0.1.1
+bridra upgrade --plan --to 0.2.0
+bridra upgrade --plan --to 0.2.0 --json
+bridra upgrade --apply --to 0.2.0
 ```
 
 When invoking the CLI through the backend dependency, use:
@@ -78,7 +78,7 @@ fails verification.
 | Identity | Current | Compatibility rule |
 | --- | ---: | --- |
 | Project metadata schema | 2 | Schema 1 remains readable by core project commands but requires a metadata migration. A newer schema requires a newer CLI. |
-| Framework SemVer | 0.1.1 | The project and selected target must match. An older version requires a complete registered migration path; downgrade plans are rejected. |
+| Framework SemVer | 0.2.0 | The project and selected target must match. An older version requires a complete registered migration path; downgrade plans are rejected. |
 | Project Template | 2 | Older templates require manual review. A newer template cannot be evaluated by an older CLI. |
 | RPC protocol | 1 | Go and Flutter runtimes must use the same protocol. Upgrade them together. |
 
@@ -104,7 +104,7 @@ the Go and Flutter dependencies together, add the version contract:
   "projectName": "your_app",
   "goModule": "example.com/your/app",
   "frameworkModule": "github.com/cluion/bridra/backend",
-  "frameworkVersion": "0.1.1",
+  "frameworkVersion": "0.2.0",
   "templateVersion": 2,
   "protocolVersion": 1
 }
@@ -129,11 +129,22 @@ Services, Models, configuration, UI, or native runner files.
 6. Run any platform builds required by the application before committing the
    upgrade.
 
-For the 0.1 line, dependency updates use:
+## Framework 0.1.1 to 0.2.0
+
+The `0.2.0` transition is automatic because existing projects only need their Go
+and Flutter framework dependencies updated together. Concurrent Sidecar dispatch
+is enabled by default. Cancellation is opt-in through
+`RpcCancellationToken`; existing RPC calls remain source-compatible.
+
+Project Template version `2`, project metadata schema `2`, and RPC protocol
+version `1` remain unchanged. Existing peers can therefore be upgraded together
+without regenerating the wire contract or rewriting application-owned files.
+
+For the current line, dependency updates use:
 
 ```bash
 cd backend
-go get github.com/cluion/bridra/backend@v0.1.1
+go get github.com/cluion/bridra/backend@v0.2.0
 cd ..
 fvm flutter pub upgrade bridra_flutter
 make generate

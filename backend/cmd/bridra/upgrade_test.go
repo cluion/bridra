@@ -683,6 +683,19 @@ func TestCurrentUpgradeCatalogIncludesAutomaticCreateHotfix(t *testing.T) {
 	}
 }
 
+func TestCurrentUpgradeCatalogIncludesAutomaticConcurrentRPCRelease(t *testing.T) {
+	path, available, err := currentUpgradeCatalog().migrationPath("0.1.1", "0.2.0")
+	if err != nil {
+		t.Fatalf("resolve concurrent RPC migration: %v", err)
+	}
+	if !available || len(path) != 1 {
+		t.Fatalf("concurrent RPC path = %#v, available = %t", path, available)
+	}
+	if path[0].ID != "framework-0.1.1-to-0.2.0" || !path[0].Automatic {
+		t.Fatalf("concurrent RPC migration = %#v", path[0])
+	}
+}
+
 func TestNMinusOneProjectMetadataUsesCurrentGoCore(t *testing.T) {
 	root := makeProjectRoot(t, validProjectMetadata)
 	backendRoot := filepath.Join(root, "backend")

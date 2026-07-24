@@ -31,6 +31,16 @@ Define those in the consuming application's typed gateway.
     final reply = await client.call('system.health');
     await client.close();
 
+Calls accept an optional cancellation token. Timeouts use the same transport
+cancellation path automatically.
+
+    final cancellationToken = RpcCancellationToken();
+    final reply = client.call(
+      'report.build',
+      cancellationToken: cancellationToken,
+    );
+    cancellationToken.cancel();
+
 ## Desktop sidecar
 
 Desktop-only code may import the explicit sidecar library:

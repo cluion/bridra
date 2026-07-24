@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:bridra/api/backend_gateway.dart';
+import 'package:bridra_flutter/bridra_flutter.dart';
 import 'package:bridra_flutter/bridra_flutter_sidecar.dart';
 import 'package:bridra/bridra_app.dart';
 
@@ -16,7 +17,10 @@ class FakeBackend implements BackendGateway {
   }
 
   @override
-  Future<GreetingResult> greet(GreetingRequest request) async {
+  Future<GreetingResult> greet(
+    GreetingRequest request, {
+    RpcCancellationToken? cancellationToken,
+  }) async {
     return GreetingResult(
       message: 'Hello, ${request.name}!',
       servedBy: 'Fake Go GreetingService',
@@ -26,7 +30,7 @@ class FakeBackend implements BackendGateway {
   }
 
   @override
-  Future<HealthInfo> health() async {
+  Future<HealthInfo> health({RpcCancellationToken? cancellationToken}) async {
     healthCalls++;
     return HealthInfo(
       status: 'ok',
@@ -40,7 +44,10 @@ class FakeBackend implements BackendGateway {
 
 class ExitingBackend extends FakeBackend {
   @override
-  Future<GreetingResult> greet(GreetingRequest request) async {
+  Future<GreetingResult> greet(
+    GreetingRequest request, {
+    RpcCancellationToken? cancellationToken,
+  }) async {
     throw const SidecarExitedException(9);
   }
 }

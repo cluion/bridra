@@ -50,7 +50,7 @@ class SidecarClient implements RpcClient {
   final SidecarProcess _process;
   final String _token;
   final void Function(String line)? _onLog;
-  final Map<String, Completer<RpcReply>> _pending = {};
+  final Map<String, _PendingSidecarCall> _pending = {};
   late final StreamSubscription<String> _stdoutSubscription;
   late final StreamSubscription<String> _stderrSubscription;
   late final Future<int> _exitCode;
@@ -77,20 +77,27 @@ class SidecarClient implements RpcClient {
     String method, {
     Map<String, Object?> params = const {},
     Duration timeout = const Duration(seconds: 5),
+    RpcCancellationToken? cancellationToken,
   }) {
     if (_state != _SidecarState.running) {
       return Future.error(_terminalError ?? const BackendClosedException());
     }
+    if (cancellationToken?.isCancelled ?? false) {
+      return Future.error(RpcCancelledException(method));
+    }
 
     final id = '${++_nextID}';
-    final completer = Completer<RpcReply>();
-    _pending[id] = completer;
-    final response = completer.future.timeout(
+    final pending = _PendingSidecarCall();
+    _pending[id] = pending;
+    pending.timeout = Timer(
       timeout,
-      onTimeout: () {
-        _pending.remove(id);
-        throw TimeoutException('Sidecar method $method timed out.', timeout);
-      },
+      () => _cancelPending(
+        id,
+        TimeoutException('Sidecar method $method timed out.', timeout),
+      ),
+    );
+    pending.cancellationSubscription = cancellationToken?.onCancel.listen(
+      (_) => _cancelPending(id, RpcCancelledException(method)),
     );
     unawaited(
       _sendRequest(
@@ -98,7 +105,7 @@ class SidecarClient implements RpcClient {
         encodeRpcRequest(id: id, method: method, params: params, token: _token),
       ),
     );
-    return response;
+    return pending.completer.future;
   }
 
   @override
@@ -156,14 +163,39 @@ class SidecarClient implements RpcClient {
               'Could not write to the Go sidecar.',
               cause: error,
             );
-      final completer = _pending.remove(id);
-      if (completer != null && !completer.isCompleted) {
-        completer.completeError(transportError, stackTrace);
+      final pending = _pending.remove(id);
+      if (pending != null) {
+        pending.completeError(transportError, stackTrace);
       }
       _markUnavailable(transportError, stackTrace);
       if (shouldKillProcess) {
         _process.kill();
       }
+    }
+  }
+
+  void _cancelPending(String id, Object error) {
+    final pending = _pending.remove(id);
+    if (pending == null) return;
+    pending.completeError(error, StackTrace.current);
+    if (_state == _SidecarState.running) {
+      unawaited(_sendCancellation(id));
+    }
+  }
+
+  Future<void> _sendCancellation(String id) async {
+    try {
+      await _writeRequest(encodeRpcCancellation(id: id, token: _token));
+    } on Object catch (error, stackTrace) {
+      if (_state != _SidecarState.running) return;
+      final transportError = error is BackendConnectionException
+          ? error
+          : BackendTransportException(
+              'Could not cancel a Go sidecar request.',
+              cause: error,
+            );
+      _markUnavailable(transportError, stackTrace);
+      _process.kill();
     }
   }
 
@@ -192,7 +224,7 @@ class SidecarClient implements RpcClient {
   }
 
   void _handleResponse(String line) {
-    Completer<RpcReply>? completer;
+    _PendingSidecarCall? pending;
     try {
       final decoded = jsonDecode(line);
       if (decoded is! Map) {
@@ -204,16 +236,16 @@ class SidecarClient implements RpcClient {
         throw const FormatException('Response id must be a non-empty string.');
       }
 
-      completer = _pending.remove(id);
-      if (completer == null) {
+      pending = _pending.remove(id);
+      if (pending == null) {
         _emitLog('Ignored sidecar response for unknown request $id.');
         return;
       }
 
       try {
-        completer.complete(decodeRpcReply(message, expectedID: id));
+        pending.complete(decodeRpcReply(message, expectedID: id));
       } on RpcException catch (error, stackTrace) {
-        completer.completeError(error, stackTrace);
+        pending.completeError(error, stackTrace);
       }
     } on Object catch (error, stackTrace) {
       final protocolError = error is BackendProtocolException
@@ -222,8 +254,8 @@ class SidecarClient implements RpcClient {
               'The Go sidecar returned an invalid response.',
               cause: error,
             );
-      if (completer != null && !completer.isCompleted) {
-        completer.completeError(protocolError, stackTrace);
+      if (pending != null && !pending.completer.isCompleted) {
+        pending.completeError(protocolError, stackTrace);
       }
       _markUnavailable(protocolError, stackTrace);
       _process.kill();
@@ -259,9 +291,9 @@ class SidecarClient implements RpcClient {
   }
 
   void _failPending(Object error, StackTrace stackTrace) {
-    for (final completer in _pending.values) {
-      if (!completer.isCompleted) {
-        completer.completeError(error, stackTrace);
+    for (final pending in _pending.values) {
+      if (!pending.completer.isCompleted) {
+        pending.completeError(error, stackTrace);
       }
     }
     _pending.clear();
@@ -292,6 +324,30 @@ class SidecarClient implements RpcClient {
       currentDirectory: Directory.current.path,
       fileExists: (path) => File(path).exists(),
     );
+  }
+}
+
+class _PendingSidecarCall {
+  final completer = Completer<RpcReply>();
+  Timer? timeout;
+  StreamSubscription<void>? cancellationSubscription;
+
+  void complete(RpcReply reply) {
+    _dispose();
+    completer.complete(reply);
+  }
+
+  void completeError(Object error, StackTrace stackTrace) {
+    _dispose();
+    completer.completeError(error, stackTrace);
+  }
+
+  void _dispose() {
+    timeout?.cancel();
+    final subscription = cancellationSubscription;
+    if (subscription != null) {
+      unawaited(subscription.cancel());
+    }
   }
 }
 

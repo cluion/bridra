@@ -72,6 +72,14 @@ func TestGenerateSupportsCustomRuntimeImports(t *testing.T) {
 	if !strings.Contains(dart, "import 'package:custom_bridra/custom_bridra.dart';") {
 		t.Fatalf("Dart client uses the wrong runtime import:\n%s", dart)
 	}
+	for _, fragment := range []string{
+		"RpcCancellationToken? cancellationToken",
+		"cancellationToken: cancellationToken",
+	} {
+		if !strings.Contains(dart, fragment) {
+			t.Fatalf("Dart client does not contain %q:\n%s", fragment, dart)
+		}
+	}
 }
 
 func TestCheckReportsMissingAndStaleOutputs(t *testing.T) {

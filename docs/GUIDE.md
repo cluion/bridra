@@ -8,7 +8,7 @@ Go module: `github.com/cluion/bridra/backend`
 
 License: [MIT](../LICENSE), Copyright (c) 2026 Cluion
 
-Bridra 0.1 "Foundation" is a six-platform framework starter with a typed
+Bridra 0.2 "Foundation" is a six-platform framework starter with a typed
 Flutter gateway and a Laravel-inspired Go application pipeline. Windows,
 macOS, and Linux bundle Go as a child-process sidecar; Android, iOS, and Web
 use the same backend through an HTTP RPC adapter.
@@ -27,7 +27,7 @@ Flutter UI -> typed gateway -> RPC client
 
 The application entrypoint is `lib/main.dart`. Both transports use the same
 versioned request, response, error, and health-handshake contract. Framework
-SemVer (`0.1.1`) and wire protocol version (`1`) evolve independently.
+SemVer (`0.2.0`) and wire protocol version (`1`) evolve independently.
 
 ## Platform support
 
@@ -75,8 +75,8 @@ or run separately.
 - direct IO/Web public connector tests, executable discovery tests, and enforced
   Go/Flutter coverage non-regression floors
 - interchangeable stdio and HTTP RPC clients
-- request correlation, timeouts, transport errors, protocol validation, and
-  idempotent shutdown
+- request correlation, bounded concurrent stdio dispatch, graceful drain,
+  timeouts, transport errors, protocol validation, and idempotent shutdown
 - Go router with global/named middleware, nested route groups, method policies,
   controllers, dependency-injected services, and stable RPC errors
 - named Request DTOs, `BindAndValidate`, structured field violations, domain
@@ -135,7 +135,7 @@ this starter currently uses Flutter's Swift Package Manager integration.
 Install the exact CLI version through Go:
 
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.1.1
+go install github.com/cluion/bridra/backend/cmd/bridra@v0.2.0
 bridra version
 bridra version --json
 ```
@@ -151,13 +151,13 @@ Upgrade by installing an explicit newer version, then inspect it before updating
 projects:
 
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.1.1
+go install github.com/cluion/bridra/backend/cmd/bridra@v0.2.0
 bridra version --json
-bridra upgrade --plan --to 0.1.1 --root /path/to/project
-bridra upgrade --apply --to 0.1.1 --root /path/to/project
+bridra upgrade --plan --to 0.2.0 --root /path/to/project
+bridra upgrade --apply --to 0.2.0 --root /path/to/project
 ```
 
-Bridra 0.1 does not silently auto-update the CLI. Project compatibility,
+Bridra does not silently auto-update the CLI. Project compatibility,
 migration, deprecation, and rollback rules are documented in
 [UPGRADING.md](UPGRADING.md). Maintainer release steps are documented in
 [RELEASING.md](RELEASING.md).
@@ -167,9 +167,9 @@ migration, deprecation, and rollback rules are documented in
 Framework maintainers enter the public SemVer once:
 
 ```bash
-make release-prepare VERSION=0.1.1
-make release-check VERSION=0.1.1
-make release-check VERSION=0.1.1 FINAL=1
+make release-prepare VERSION=0.2.0
+make release-check VERSION=0.2.0
+make release-check VERSION=0.2.0 FINAL=1
 ```
 
 `release-prepare` synchronizes the root `VERSION`, Go Framework and CLI metadata,
@@ -180,7 +180,7 @@ independent and change only when their compatibility contracts change.
 
 The command prepares a reviewable change only. It never creates or pushes a Git
 tag, publishes to pub.dev, or creates a GitHub Release. Windows maintainers use
-`.\tool\windows.ps1 -Task release-prepare -Version 0.1.1` and the corresponding
+`.\tool\windows.ps1 -Task release-prepare -Version 0.2.0` and the corresponding
 `release-check` task. The final check rejects a release while either changelog is
 still marked `Unreleased`; on Windows, add `-Final`.
 
@@ -202,7 +202,7 @@ The release packager builds with `CGO_ENABLED=0`, `-trimpath`, disabled VCS
 stamping, an empty Go build ID, and ldflag-injected version/commit/date metadata.
 Archive timestamps come from the source commit date, so identical inputs produce
 identical archives and checksums. Outputs are written under `build/bridra/cli/`.
-Each version has its own directory, such as `build/bridra/cli/0.1.1/`, so stale
+Each version has its own directory, such as `build/bridra/cli/0.2.0/`, so stale
 assets from an earlier release cannot be uploaded accidentally.
 
 ## Verify
@@ -1073,6 +1073,14 @@ payload is identical:
 ```json
 {"id":"1","method":"greeting.hello","params":{"name":"Codex"},"meta":{"token":"..."}}
 {"id":"1","result":{"message":"Hello, Codex!"},"meta":{"pipeline":["logging:before","recovery:before","request-id:before","auth:before","auth:after","request-id:after","recovery:after","logging:after"]}}
+```
+
+Generated Dart methods accept an optional `RpcCancellationToken`. Cancelling it
+aborts HTTP or sends the reserved stdio control message below; ordinary timeout
+handling uses the same transport cancellation path.
+
+```json
+{"id":"1","method":"rpc.cancel","params":{},"meta":{"token":"..."}}
 ```
 
 Errors have stable codes and may include structured data:

@@ -212,7 +212,7 @@ func TestLoadBridraSourceRejectsFlutterPackageVersionMismatch(t *testing.T) {
 	}
 	if err := os.WriteFile(
 		filepath.Join(flutterPath, "pubspec.yaml"),
-		[]byte("name: bridra_flutter\nversion: 0.2.0\n"),
+		[]byte("name: bridra_flutter\nversion: "+releaseinfo.Version+"-mismatch\n"),
 		0o644,
 	); err != nil {
 		t.Fatalf("write pubspec: %v", err)

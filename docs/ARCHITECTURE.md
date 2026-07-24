@@ -1,6 +1,6 @@
 # Bridra architecture decisions
 
-Bridra 0.1 supports Windows, macOS, Linux, Android, iOS, and Web while keeping
+Bridra 0.2 supports Windows, macOS, Linux, Android, iOS, and Web while keeping
 one Go application pipeline and one typed Flutter API.
 
 ## Layers
@@ -32,7 +32,7 @@ Models, Services, Responses, Controllers, and route registration remain under
 `backend/app`. `packages/bridra_flutter` owns transport-neutral RPC, HTTP, and
 desktop Sidecar clients. The generated `BridraRpcApi` owns the application RPC
 contract; `lib/api/backend_gateway.dart` adds connection lifecycle and health
-caching. Both packages remain in one Git repository and use Bridra 0.1.1.
+caching. Both packages remain in one Git repository and use Bridra 0.2.0.
 
 ## Contract generation
 
@@ -372,8 +372,12 @@ Windows path behavior can be tested without launching a process.
 - Framework SemVer and wire protocol version evolve independently.
 - `protocolVersion` changes only for incompatible wire-contract changes.
 - Request IDs correlate replies and let Flutter keep concurrent calls pending.
-  The current stdio Go server dispatches those calls sequentially; HTTP handlers
-  can execute concurrently.
+  The stdio Go server dispatches up to eight calls concurrently by default;
+  `Server.MaxConcurrentRequests` can set a different positive bound. Up to 64
+  additional calls wait in the default bounded queue; overflow receives a
+  `server_busy` error. HTTP handlers use the Go HTTP server's concurrency.
+- `rpc.cancel` is a reserved stdio control method. It cancels the matching
+  request context only when its request ID and launch token both match.
 - RPC error `code` values are stable API; `message` is human-readable.
 - Params reject unknown fields to catch client/backend schema drift.
 - Request bodies and stdio lines are limited to 4 MiB.
@@ -385,8 +389,11 @@ Windows path behavior can be tested without launching a process.
 - Every launch receives a random 256-bit token.
 - Closing stdin requests a graceful exit; signals are fallback cleanup.
 - Unexpected exits and malformed stdout fail all pending calls.
-- Writes are serialized, replies are correlated, and late timeout replies are
-  ignored.
+- Go drains accepted requests after stdin closes, serializes concurrent replies,
+  and may return them out of order. Flutter correlates replies by ID and ignores
+  late timeout replies.
+- Flutter timeouts and explicit `RpcCancellationToken` cancellation send the
+  reserved control method so cooperative Go handlers can stop work.
 
 The launch token prevents accidental messages outside the parent's launch
 context. It is not an isolation boundary against another process running as the
@@ -400,10 +407,12 @@ same OS user.
 - Browser origins are denied unless the server has a matching CORS origin or
   the explicit development wildcard.
 - The server has read, write, header, idle, and graceful-shutdown timeouts.
+- Flutter uses an abortable HTTP request for timeout and explicit cancellation,
+  which cancels the request context observed by the Go Router.
 - A real integration test starts the compiled Go server on an ephemeral port
   and exercises the full Flutter-to-Go pipeline.
 
-HTTP requests can be handled concurrently by Go. Services added to the starter
+Both transports can handle requests concurrently. Services added to the starter
 must therefore be concurrency-safe.
 
 ## Network security
