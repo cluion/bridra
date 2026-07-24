@@ -233,6 +233,148 @@ func TestServerRejectsNegativeConcurrentRequestLimit(t *testing.T) {
 	}
 }
 
+func TestServerCancellationReachesActiveAndPendingRequests(t *testing.T) {
+	router := NewRouter()
+	activeStarted := make(chan struct{})
+	activeCancelled := make(chan struct{})
+	pendingRan := make(chan struct{}, 1)
+	router.Handle("wait", func(ctx *Context) (any, error) {
+		switch ctx.Request.ID {
+		case "active":
+			close(activeStarted)
+			<-ctx.Done()
+			close(activeCancelled)
+			return nil, ctx.Err()
+		case "pending":
+			pendingRan <- struct{}{}
+		}
+		return "ok", nil
+	})
+
+	inputReader, inputWriter := io.Pipe()
+	var output bytes.Buffer
+	server := &Server{
+		Router:                router,
+		Input:                 inputReader,
+		Output:                &output,
+		MaxConcurrentRequests: 1,
+		MaxPendingRequests:    2,
+	}
+	result := make(chan error, 1)
+	go func() { result <- server.Serve(context.Background()) }()
+
+	writeServerRequest(t, inputWriter, `{"id":"active","method":"wait","meta":{"token":"secret"}}`)
+	select {
+	case <-activeStarted:
+	case <-time.After(time.Second):
+		t.Fatal("active request did not start")
+	}
+	writeServerRequest(t, inputWriter, `{"id":"pending","method":"wait","meta":{"token":"secret"}}`)
+	writeServerRequest(t, inputWriter, `{"id":"pending","method":"rpc.cancel","meta":{"token":"secret"}}`)
+	writeServerRequest(t, inputWriter, `{"id":"active","method":"rpc.cancel","meta":{"token":"wrong"}}`)
+	select {
+	case <-activeCancelled:
+		t.Fatal("mismatched token cancelled the active request")
+	case <-time.After(25 * time.Millisecond):
+	}
+	writeServerRequest(t, inputWriter, `{"id":"active","method":"rpc.cancel","meta":{"token":"secret"}}`)
+	select {
+	case <-activeCancelled:
+	case <-time.After(time.Second):
+		t.Fatal("active request context was not cancelled")
+	}
+	if err := inputWriter.Close(); err != nil {
+		t.Fatalf("close input: %v", err)
+	}
+	if err := <-result; err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	select {
+	case <-pendingRan:
+		t.Fatal("cancelled pending request reached the router")
+	default:
+	}
+}
+
+func TestServerRejectsRequestsBeyondPendingLimit(t *testing.T) {
+	router := NewRouter()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	router.Handle("wait", func(ctx *Context) (any, error) {
+		if ctx.Request.ID == "active" {
+			close(started)
+			<-release
+		}
+		return "ok", nil
+	})
+
+	inputReader, inputWriter := io.Pipe()
+	var output bytes.Buffer
+	server := &Server{
+		Router:                router,
+		Input:                 inputReader,
+		Output:                &output,
+		MaxConcurrentRequests: 1,
+		MaxPendingRequests:    1,
+	}
+	result := make(chan error, 1)
+	go func() { result <- server.Serve(context.Background()) }()
+
+	writeServerRequest(t, inputWriter, `{"id":"active","method":"wait"}`)
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("active request did not start")
+	}
+	writeServerRequest(t, inputWriter, `{"id":"pending","method":"wait"}`)
+	writeServerRequest(t, inputWriter, `{"id":"overflow","method":"wait"}`)
+	if err := inputWriter.Close(); err != nil {
+		t.Fatalf("close input: %v", err)
+	}
+	close(release)
+	if err := <-result; err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+
+	decoder := json.NewDecoder(&output)
+	var foundBusy bool
+	for decoder.More() {
+		var response Response
+		if err := decoder.Decode(&response); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if response.ID == "overflow" &&
+			response.Error != nil &&
+			response.Error.Code == "server_busy" {
+			foundBusy = true
+		}
+	}
+	if !foundBusy {
+		t.Fatalf("responses = %s, want overflow server_busy error", output.String())
+	}
+}
+
+func TestServerRejectsNegativePendingRequestLimit(t *testing.T) {
+	server := &Server{
+		Router:             NewRouter(),
+		Input:              strings.NewReader(""),
+		Output:             io.Discard,
+		MaxPendingRequests: -1,
+	}
+
+	err := server.Serve(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "cannot be negative") {
+		t.Fatalf("error = %v, want invalid pending request limit", err)
+	}
+}
+
+func writeServerRequest(t *testing.T, output io.Writer, request string) {
+	t.Helper()
+	if _, err := fmt.Fprintln(output, request); err != nil {
+		t.Fatalf("write request: %v", err)
+	}
+}
+
 var errWriteFailed = errors.New("write failed")
 
 type failingWriter struct{}

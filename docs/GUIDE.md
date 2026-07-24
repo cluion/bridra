@@ -1075,6 +1075,14 @@ payload is identical:
 {"id":"1","result":{"message":"Hello, Codex!"},"meta":{"pipeline":["logging:before","recovery:before","request-id:before","auth:before","auth:after","request-id:after","recovery:after","logging:after"]}}
 ```
 
+Generated Dart methods accept an optional `RpcCancellationToken`. Cancelling it
+aborts HTTP or sends the reserved stdio control message below; ordinary timeout
+handling uses the same transport cancellation path.
+
+```json
+{"id":"1","method":"rpc.cancel","params":{},"meta":{"token":"..."}}
+```
+
 Errors have stable codes and may include structured data:
 
 ```json

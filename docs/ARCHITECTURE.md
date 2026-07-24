@@ -373,8 +373,11 @@ Windows path behavior can be tested without launching a process.
 - `protocolVersion` changes only for incompatible wire-contract changes.
 - Request IDs correlate replies and let Flutter keep concurrent calls pending.
   The stdio Go server dispatches up to eight calls concurrently by default;
-  `Server.MaxConcurrentRequests` can set a different positive bound. HTTP
-  handlers use the Go HTTP server's concurrency.
+  `Server.MaxConcurrentRequests` can set a different positive bound. Up to 64
+  additional calls wait in the default bounded queue; overflow receives a
+  `server_busy` error. HTTP handlers use the Go HTTP server's concurrency.
+- `rpc.cancel` is a reserved stdio control method. It cancels the matching
+  request context only when its request ID and launch token both match.
 - RPC error `code` values are stable API; `message` is human-readable.
 - Params reject unknown fields to catch client/backend schema drift.
 - Request bodies and stdio lines are limited to 4 MiB.
@@ -389,6 +392,8 @@ Windows path behavior can be tested without launching a process.
 - Go drains accepted requests after stdin closes, serializes concurrent replies,
   and may return them out of order. Flutter correlates replies by ID and ignores
   late timeout replies.
+- Flutter timeouts and explicit `RpcCancellationToken` cancellation send the
+  reserved control method so cooperative Go handlers can stop work.
 
 The launch token prevents accidental messages outside the parent's launch
 context. It is not an isolation boundary against another process running as the
@@ -402,6 +407,8 @@ same OS user.
 - Browser origins are denied unless the server has a matching CORS origin or
   the explicit development wildcard.
 - The server has read, write, header, idle, and graceful-shutdown timeouts.
+- Flutter uses an abortable HTTP request for timeout and explicit cancellation,
+  which cancels the request context observed by the Go Router.
 - A real integration test starts the compiled Go server on an ephemeral port
   and exercises the full Flutter-to-Go pipeline.
 

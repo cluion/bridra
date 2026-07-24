@@ -527,14 +527,13 @@ func writeDartClientMethod(output *strings.Builder, method Method) {
 	output.WriteString("\n  @override\n")
 	fmt.Fprintf(output, "  %s async {\n", dartMethodSignature(method))
 	methodConstant := "BridraMethods." + dartMethodConstant(method.Name)
-	if method.Params == nil {
-		fmt.Fprintf(output, "    final reply = await _client.call(%s);\n", methodConstant)
-	} else {
-		output.WriteString("    final reply = await _client.call(\n")
-		fmt.Fprintf(output, "      %s,\n", methodConstant)
+	output.WriteString("    final reply = await _client.call(\n")
+	fmt.Fprintf(output, "      %s,\n", methodConstant)
+	if method.Params != nil {
 		output.WriteString("      params: request.toJson(),\n")
-		output.WriteString("    );\n")
 	}
+	output.WriteString("      cancellationToken: cancellationToken,\n")
+	output.WriteString("    );\n")
 	output.WriteString("    try {\n")
 	fmt.Fprintf(
 		output,
@@ -872,11 +871,33 @@ func dartString(value string) string {
 }
 
 func dartMethodSignature(method Method) string {
+	var inline string
 	if method.Params == nil {
-		return fmt.Sprintf("Future<%s> %s()", method.Result.DartType, method.ClientName)
+		inline = fmt.Sprintf(
+			"Future<%s> %s({RpcCancellationToken? cancellationToken})",
+			method.Result.DartType,
+			method.ClientName,
+		)
+		if len(inline)+2 <= 80 {
+			return inline
+		}
+		return fmt.Sprintf(
+			"Future<%s> %s({\n    RpcCancellationToken? cancellationToken,\n  })",
+			method.Result.DartType,
+			method.ClientName,
+		)
+	}
+	inline = fmt.Sprintf(
+		"Future<%s> %s(%s request, {RpcCancellationToken? cancellationToken})",
+		method.Result.DartType,
+		method.ClientName,
+		method.Params.DartType,
+	)
+	if len(inline)+2 <= 80 {
+		return inline
 	}
 	return fmt.Sprintf(
-		"Future<%s> %s(%s request)",
+		"Future<%s> %s(\n    %s request, {\n    RpcCancellationToken? cancellationToken,\n  })",
 		method.Result.DartType,
 		method.ClientName,
 		method.Params.DartType,

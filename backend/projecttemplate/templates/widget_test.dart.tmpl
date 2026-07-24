@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:{{.ProjectName}}/api/backend_gateway.dart';
 import 'package:{{.ProjectName}}/main.dart';
+import '{{.BridraDartImport}}';
 
 class FakeBackend implements BackendGateway {
   @override
   Future<void> close() async {}
 
   @override
-  Future<HealthInfo> health() async {
+  Future<HealthInfo> health({
+    RpcCancellationToken? cancellationToken,
+  }) async {
     return HealthInfo(
       status: 'ok',
       frameworkVersion: '{{.FrameworkVersion}}',
@@ -19,7 +22,10 @@ class FakeBackend implements BackendGateway {
   }
 
   @override
-  Future<GreetingResult> greet(GreetingRequest request) async {
+  Future<GreetingResult> greet(
+    GreetingRequest request, {
+    RpcCancellationToken? cancellationToken,
+  }) async {
     return GreetingResult(
       message: 'Hello, ${request.name}!',
       servedBy: 'Go GreetingService',

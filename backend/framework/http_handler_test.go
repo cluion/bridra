@@ -2,11 +2,13 @@ package framework
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestHTTPHandlerDispatchesRPCAndAllowsConfiguredOrigin(t *testing.T) {
@@ -122,5 +124,49 @@ func TestHTTPHandlerRequiresRouter(t *testing.T) {
 
 	if recorder.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d", recorder.Code)
+	}
+}
+
+func TestHTTPHandlerPropagatesRequestCancellation(t *testing.T) {
+	started := make(chan struct{})
+	cancelled := make(chan struct{})
+	router := NewRouter()
+	router.Handle("wait", func(ctx *Context) (any, error) {
+		close(started)
+		<-ctx.Done()
+		close(cancelled)
+		return nil, ctx.Err()
+	})
+	handler := &HTTPHandler{Router: router}
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/rpc",
+		strings.NewReader(`{"id":"1","method":"wait"}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	requestCtx, cancel := context.WithCancel(request.Context())
+	request = request.WithContext(requestCtx)
+	recorder := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		handler.ServeHTTP(recorder, request)
+		close(done)
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("request did not reach the router")
+	}
+	cancel()
+	select {
+	case <-cancelled:
+	case <-time.After(time.Second):
+		t.Fatal("request cancellation did not reach the router context")
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("HTTP handler did not finish after request cancellation")
 	}
 }

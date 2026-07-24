@@ -36,10 +36,20 @@ class RpcBackend implements BackendGateway {
   }
 
   @override
-  Future<HealthInfo> health() async => _health;
+  Future<HealthInfo> health({RpcCancellationToken? cancellationToken}) async {
+    if (cancellationToken?.isCancelled ?? false) {
+      throw const RpcCancelledException(BridraMethods.systemHealth);
+    }
+    return _health;
+  }
 
   @override
-  Future<GreetingResult> greet(GreetingRequest request) => _api.greet(request);
+  Future<GreetingResult> greet(
+    GreetingRequest request, {
+    RpcCancellationToken? cancellationToken,
+  }) {
+    return _api.greet(request, cancellationToken: cancellationToken);
+  }
 
   @override
   Future<void> close() => _client.close();
