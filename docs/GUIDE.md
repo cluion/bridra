@@ -75,8 +75,8 @@ or run separately.
 - direct IO/Web public connector tests, executable discovery tests, and enforced
   Go/Flutter coverage non-regression floors
 - interchangeable stdio and HTTP RPC clients
-- request correlation, timeouts, transport errors, protocol validation, and
-  idempotent shutdown
+- request correlation, bounded concurrent stdio dispatch, graceful drain,
+  timeouts, transport errors, protocol validation, and idempotent shutdown
 - Go router with global/named middleware, nested route groups, method policies,
   controllers, dependency-injected services, and stable RPC errors
 - named Request DTOs, `BindAndValidate`, structured field violations, domain

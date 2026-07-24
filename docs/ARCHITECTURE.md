@@ -372,8 +372,9 @@ Windows path behavior can be tested without launching a process.
 - Framework SemVer and wire protocol version evolve independently.
 - `protocolVersion` changes only for incompatible wire-contract changes.
 - Request IDs correlate replies and let Flutter keep concurrent calls pending.
-  The current stdio Go server dispatches those calls sequentially; HTTP handlers
-  can execute concurrently.
+  The stdio Go server dispatches up to eight calls concurrently by default;
+  `Server.MaxConcurrentRequests` can set a different positive bound. HTTP
+  handlers use the Go HTTP server's concurrency.
 - RPC error `code` values are stable API; `message` is human-readable.
 - Params reject unknown fields to catch client/backend schema drift.
 - Request bodies and stdio lines are limited to 4 MiB.
@@ -385,8 +386,9 @@ Windows path behavior can be tested without launching a process.
 - Every launch receives a random 256-bit token.
 - Closing stdin requests a graceful exit; signals are fallback cleanup.
 - Unexpected exits and malformed stdout fail all pending calls.
-- Writes are serialized, replies are correlated, and late timeout replies are
-  ignored.
+- Go drains accepted requests after stdin closes, serializes concurrent replies,
+  and may return them out of order. Flutter correlates replies by ID and ignores
+  late timeout replies.
 
 The launch token prevents accidental messages outside the parent's launch
 context. It is not an isolation boundary against another process running as the
@@ -403,7 +405,7 @@ same OS user.
 - A real integration test starts the compiled Go server on an ephemeral port
   and exercises the full Flutter-to-Go pipeline.
 
-HTTP requests can be handled concurrently by Go. Services added to the starter
+Both transports can handle requests concurrently. Services added to the starter
 must therefore be concurrency-safe.
 
 ## Network security
