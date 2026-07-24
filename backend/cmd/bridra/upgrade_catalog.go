@@ -47,6 +47,12 @@ var registeredUpgradeReleases = []upgradeRelease{
 		TemplateVersion:        2,
 		ProtocolVersion:        1,
 	},
+	{
+		FrameworkVersion:       "0.2.0",
+		ProjectMetadataVersion: 2,
+		TemplateVersion:        2,
+		ProtocolVersion:        1,
+	},
 }
 
 var registeredFrameworkMigrations = []frameworkMigration{
@@ -55,6 +61,13 @@ var registeredFrameworkMigrations = []frameworkMigration{
 		From:        "0.1.0",
 		To:          "0.1.1",
 		Description: "Update the Go and Flutter framework dependencies to the create hotfix.",
+		Automatic:   true,
+	},
+	{
+		ID:          "framework-0.1.1-to-0.2.0",
+		From:        "0.1.1",
+		To:          "0.2.0",
+		Description: "Update the Go and Flutter framework dependencies for concurrent and cancellable RPC.",
 		Automatic:   true,
 	},
 }

@@ -3,6 +3,25 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
+## [0.2.0] - 2026-07-25
+
+### Added
+
+- Added bounded concurrent desktop Sidecar dispatch with configurable active and
+  pending limits, ordered response writes, graceful draining, and stable
+  `server_busy` overload errors.
+- Added end-to-end RPC cancellation for desktop Sidecar and mobile/Web HTTP
+  transports through `RpcCancellationToken`, including timeout propagation to
+  Go request contexts.
+- Registered an automatic `0.1.1` to `0.2.0` dependency upgrade while retaining
+  Project Template version `2` and RPC protocol version `1`.
+
+### Support
+
+- The latest `0.2.x` release receives best-effort security fixes until the next
+  minor line is published. The `0.1.x` line is no longer supported after this
+  release.
+
 ## [0.1.1] - 2026-07-24
 
 ### Fixed
