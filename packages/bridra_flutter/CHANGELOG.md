@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0 - 2026-07-25
+
+- Kept the package version aligned with the Bridra 0.3.0 Go Framework, CLI, and
+  project metadata.
+- No public Dart API or RPC protocol changes.
+
 ## 0.2.0 - 2026-07-25
 
 - Added `RpcCancellationToken` and `RpcCancelledException`, with optional

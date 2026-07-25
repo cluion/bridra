@@ -3,6 +3,34 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
+## [0.3.0] - 2026-07-25
+
+### Added
+
+- Added automatic Go backend reload to `bridra dev` with debounced source
+  watching, rebuild failure recovery, readiness checks, and graceful process
+  replacement without restarting Flutter.
+- Added `DispatchJobAfter` and `DispatchJobAt` for bounded delayed Job delivery.
+  Accepted delayed Jobs preserve due-time order and are promoted immediately
+  during graceful Queue shutdown.
+- Added `ScheduleCronTask` with five-field cron expressions, lists, ranges,
+  steps, English month and weekday names, configurable Scheduler time zones,
+  same-Task non-overlap, and missed-run skipping.
+- Registered an automatic `0.2.0` to `0.3.0` dependency upgrade while retaining
+  Project Template version `2` and RPC protocol version `1`.
+
+### Changed
+
+- Streamlined tag-triggered publication by reusing the exact successful `main`
+  Verify run, publishing `bridra_flutter` through pub.dev OIDC when needed, and
+  keeping GitHub Release creation in the protected release environment.
+
+### Support
+
+- The latest `0.3.x` release receives best-effort security fixes until the next
+  minor line is published. The `0.2.x` line is no longer supported after this
+  release.
+
 ## [0.2.0] - 2026-07-25
 
 ### Added

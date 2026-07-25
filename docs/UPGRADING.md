@@ -9,9 +9,9 @@ Run the read-only planner from a project root before changing dependencies:
 
 ```bash
 bridra upgrade
-bridra upgrade --plan --to 0.2.0
-bridra upgrade --plan --to 0.2.0 --json
-bridra upgrade --apply --to 0.2.0
+bridra upgrade --plan --to 0.3.0
+bridra upgrade --plan --to 0.3.0 --json
+bridra upgrade --apply --to 0.3.0
 ```
 
 When invoking the CLI through the backend dependency, use:
@@ -78,7 +78,7 @@ fails verification.
 | Identity | Current | Compatibility rule |
 | --- | ---: | --- |
 | Project metadata schema | 2 | Schema 1 remains readable by core project commands but requires a metadata migration. A newer schema requires a newer CLI. |
-| Framework SemVer | 0.2.0 | The project and selected target must match. An older version requires a complete registered migration path; downgrade plans are rejected. |
+| Framework SemVer | 0.3.0 | The project and selected target must match. An older version requires a complete registered migration path; downgrade plans are rejected. |
 | Project Template | 2 | Older templates require manual review. A newer template cannot be evaluated by an older CLI. |
 | RPC protocol | 1 | Go and Flutter runtimes must use the same protocol. Upgrade them together. |
 
@@ -104,7 +104,7 @@ the Go and Flutter dependencies together, add the version contract:
   "projectName": "your_app",
   "goModule": "example.com/your/app",
   "frameworkModule": "github.com/cluion/bridra/backend",
-  "frameworkVersion": "0.2.0",
+  "frameworkVersion": "0.3.0",
   "templateVersion": 2,
   "protocolVersion": 1
 }
@@ -129,12 +129,16 @@ Services, Models, configuration, UI, or native runner files.
 6. Run any platform builds required by the application before committing the
    upgrade.
 
-## Framework 0.1.1 to 0.2.0
+## Framework 0.2.0 to 0.3.0
 
-The `0.2.0` transition is automatic because existing projects only need their Go
-and Flutter framework dependencies updated together. Concurrent Sidecar dispatch
-is enabled by default. Cancellation is opt-in through
-`RpcCancellationToken`; existing RPC calls remain source-compatible.
+The `0.3.0` transition is automatic because existing projects only need their Go
+and Flutter framework dependencies updated together. Automatic backend reload,
+delayed Job dispatch, and cron Tasks are additive. Existing fixed-delay Tasks,
+immediate Jobs, and development commands keep their behavior.
+
+`SchedulerOptions` adds an optional `Location`; zero-value and keyed literals
+remain valid and default to `time.Local`. Projects using positional
+`SchedulerOptions` literals must add the location value or switch to keyed fields.
 
 Project Template version `2`, project metadata schema `2`, and RPC protocol
 version `1` remain unchanged. Existing peers can therefore be upgraded together
@@ -144,7 +148,7 @@ For the current line, dependency updates use:
 
 ```bash
 cd backend
-go get github.com/cluion/bridra/backend@v0.2.0
+go get github.com/cluion/bridra/backend@v0.3.0
 cd ..
 fvm flutter pub upgrade bridra_flutter
 make generate
