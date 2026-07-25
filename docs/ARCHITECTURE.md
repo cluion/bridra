@@ -470,6 +470,11 @@ The GitHub Actions workflow is configured to build:
 - macOS and iOS Simulator on macOS
 - Windows on Windows
 
+Verify runs on Pull Requests and the merged `main` commit. The protected tag
+workflow accepts only the current `main` commit after its Verify run succeeds,
+then performs release-specific version, package, and artifact checks without
+repeating the full cross-platform suite.
+
 Native store submission and physical-device end-to-end tests require product
 credentials and deployment environments, so they are deliberately outside the
 starter's repository checks.

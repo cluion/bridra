@@ -32,8 +32,8 @@ approval. CI success alone is not publication authorization.
 ## Preconditions
 
 - Release from a clean, reviewed commit on the public repository.
-- Confirm the `public` remote and the reviewed commit belong to
-  `https://github.com/cluion/bridra`.
+- Confirm the canonical Git remote, normally `origin`, and the reviewed commit
+  belong to `https://github.com/cluion/bridra`.
 - Use root `VERSION` as the release intent and keep
   `framework.FrameworkVersion`, `bridra_flutter`'s version, generated dependency
   defaults, changelogs, documentation, and the intended tag aligned.
@@ -77,9 +77,12 @@ approval. CI success alone is not publication authorization.
    repeats this final check and refuses an unfinished changelog.
 5. Run the full local verification and attach `coverage/summary.md` plus the CLI
    release manifest/checksums to the Pull Request.
-6. Run a repository-external generated consumer with no local Go `replace` or
-   Dart `dependency_overrides`.
-7. Obtain maintainer review and repository-owner release authorization.
+6. Obtain maintainer review and repository-owner release authorization.
+
+The Verify workflow runs for Pull Requests and pushes to `main`, not every
+branch push. New commits cancel superseded runs for the same Pull Request or
+branch. After merge, wait for the exact `main` commit's Verify workflow before
+tagging it.
 
 Windows maintainers use:
 
@@ -130,24 +133,29 @@ Pull Request is merged and the repository owner gives final authorization:
 
 ```bash
 git tag -a backend/v0.2.0 -m "Bridra 0.2.0"
-git push public backend/v0.2.0
+git push origin backend/v0.2.0
 ```
 
-The protected GitHub workflow re-runs version alignment, verification, coverage,
-Dart package validation, and deterministic CLI packaging. It creates the matching
-GitHub Release and uploads exactly the six archives, `SHA256SUMS`, and
-`manifest.json`. Every archive must contain the executable and the MIT `LICENSE`;
-the schema-versioned manifest must identify the license as `MIT`. Do not move or
-replace a published tag. Fix a bad release with a new patch version.
+The protected GitHub workflow requires the tag to point at the current `main`
+commit and reuses that exact commit's successful Verify workflow instead of
+running the full cross-platform suite again. It still repeats final version
+alignment, Dart package validation, and deterministic CLI packaging before
+creating the matching GitHub Release. The Release contains exactly the six
+archives, `SHA256SUMS`, and `manifest.json`. Every archive must contain the
+executable and the MIT `LICENSE`; the schema-versioned manifest must identify the
+license as `MIT`. Do not move or replace a published tag. Fix a bad release with
+a new patch version.
 
-The Dart package is published separately after ownership and package validation
-are complete. The release candidate intentionally omits `publish_to: 'none'`, so
-run the hosted package validation before publication and restore the safety lock
-if publication is paused:
+The release candidate intentionally omits `publish_to: 'none'`. When
+`BRIDRA_PUBDEV_AUTOMATION_ENABLED=true`, the protected workflow publishes a
+missing Dart version through pub.dev OIDC and safely skips an already-published
+version on a rerun. When automation is disabled, publish the package manually
+before approving the protected workflow:
 
 ```bash
 cd packages/bridra_flutter
 fvm flutter pub publish --dry-run
+fvm flutter pub publish
 ```
 
 The Dart package version, Go tag, CLI metadata, Flutter constraint, changelog,
@@ -155,9 +163,9 @@ and GitHub Release must describe the same framework release. Never publish the
 generated application package. A Dart package's first version is published
 manually by an authorized uploader and then transferred to the `cluion.com`
 verified publisher. Later versions may use pub.dev's GitHub Actions publishing
-through the protected release environment. During an initial manual publication,
-keep `BRIDRA_PUBDEV_AUTOMATION_ENABLED` unset and complete the package
-publication before approving the tag workflow.
+through the protected release environment. Keep
+`BRIDRA_PUBDEV_AUTOMATION_ENABLED` unset until pub.dev's tag pattern is
+configured as `backend/v{{version}}`.
 
 ## Post-release verification
 
