@@ -69,6 +69,9 @@ jobs:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.mod
 
+      - name: Configure pub.dev OIDC
+        uses: dart-lang/setup-dart@v1
+
       - name: Install FVM
         run: |
           curl -fsSL https://fvm.app/install.sh -o /tmp/fvm-install.sh
