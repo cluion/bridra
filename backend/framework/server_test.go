@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -309,11 +310,11 @@ func TestServerRejectsRequestsBeyondPendingLimit(t *testing.T) {
 	})
 
 	inputReader, inputWriter := io.Pipe()
-	var output bytes.Buffer
+	output := newNotifyingBuffer()
 	server := &Server{
 		Router:                router,
 		Input:                 inputReader,
-		Output:                &output,
+		Output:                output,
 		MaxConcurrentRequests: 1,
 		MaxPendingRequests:    1,
 	}
@@ -328,6 +329,11 @@ func TestServerRejectsRequestsBeyondPendingLimit(t *testing.T) {
 	}
 	writeServerRequest(t, inputWriter, `{"id":"pending","method":"wait"}`)
 	writeServerRequest(t, inputWriter, `{"id":"overflow","method":"wait"}`)
+	select {
+	case <-output.written:
+	case <-time.After(time.Second):
+		t.Fatal("server did not report the overflow request")
+	}
 	if err := inputWriter.Close(); err != nil {
 		t.Fatalf("close input: %v", err)
 	}
@@ -336,7 +342,8 @@ func TestServerRejectsRequestsBeyondPendingLimit(t *testing.T) {
 		t.Fatalf("serve: %v", err)
 	}
 
-	decoder := json.NewDecoder(&output)
+	responses := output.String()
+	decoder := json.NewDecoder(strings.NewReader(responses))
 	var foundBusy bool
 	for decoder.More() {
 		var response Response
@@ -350,8 +357,35 @@ func TestServerRejectsRequestsBeyondPendingLimit(t *testing.T) {
 		}
 	}
 	if !foundBusy {
-		t.Fatalf("responses = %s, want overflow server_busy error", output.String())
+		t.Fatalf("responses = %s, want overflow server_busy error", responses)
 	}
+}
+
+type notifyingBuffer struct {
+	buffer  bytes.Buffer
+	written chan struct{}
+	mu      sync.Mutex
+}
+
+func newNotifyingBuffer() *notifyingBuffer {
+	return &notifyingBuffer{written: make(chan struct{}, 1)}
+}
+
+func (buffer *notifyingBuffer) Write(value []byte) (int, error) {
+	buffer.mu.Lock()
+	written, err := buffer.buffer.Write(value)
+	buffer.mu.Unlock()
+	select {
+	case buffer.written <- struct{}{}:
+	default:
+	}
+	return written, err
+}
+
+func (buffer *notifyingBuffer) String() string {
+	buffer.mu.Lock()
+	defer buffer.mu.Unlock()
+	return buffer.buffer.String()
 }
 
 func TestServerRejectsNegativePendingRequestLimit(t *testing.T) {
