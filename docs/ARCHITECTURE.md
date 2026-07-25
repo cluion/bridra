@@ -123,8 +123,14 @@ Every external command starts in its own process group. Unix shutdown signals th
 whole group; Windows first sends CTRL_BREAK to the new process group and falls back to
 tree-aware `taskkill`. The supervisor waits for every child, escalates to force cleanup
 after a deadline, and reports joined startup, runtime, and cleanup failures. Flutter
-keeps interactive stdin for Hot Reload. Dev v0.1 builds Go once per session and does
-not yet implement backend file watching or automatic rebuild.
+keeps interactive stdin for Hot Reload.
+
+The supervisor polls Go build inputs and debounces related filesystem changes. It
+compiles a candidate executable before stopping a working process, then replaces the
+binary only after the build succeeds. HTTP mode restarts the backend while Flutter
+continues running. Sidecar mode restarts the Flutter process so its owned Sidecar uses
+the new executable. Failed builds retain the active process and remain recoverable on
+the next source change.
 
 `build` is the release-artifact orchestration boundary. It accepts the six Flutter
 targets and the Flutter-supported debug, profile, and release modes. Native desktop

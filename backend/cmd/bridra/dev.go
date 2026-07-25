@@ -57,9 +57,12 @@ type devSystem struct {
 	abs          func(string) (string, error)
 	stat         func(string) (os.FileInfo, error)
 	mkdirAll     func(string, os.FileMode) error
+	remove       func(string) error
+	install      func(string, string) error
 	run          func(devProcessSpec) error
 	start        func(devProcessSpec) (devProcess, error)
 	waitReady    func(string, time.Duration) error
+	watch        func(string) (devWatcher, error)
 	signals      func() (<-chan os.Signal, func())
 }
 
@@ -78,6 +81,7 @@ type devOptions struct {
 	corsOrigin   string
 	sidecarPath  string
 	serverPath   string
+	watch        bool
 }
 
 type execDevProcess struct {
@@ -104,6 +108,8 @@ func defaultDevSystem() devSystem {
 		abs:          filepath.Abs,
 		stat:         os.Stat,
 		mkdirAll:     os.MkdirAll,
+		remove:       os.Remove,
+		install:      installDevBackend,
 		run: func(specification devProcessSpec) error {
 			return newDevExecCommand(specification).Run()
 		},
@@ -115,6 +121,9 @@ func defaultDevSystem() devSystem {
 			return &execDevProcess{command: command}, nil
 		},
 		waitReady: waitForTCP,
+		watch: func(root string) (devWatcher, error) {
+			return newPollingDevWatcher(root, 200*time.Millisecond, 300*time.Millisecond)
+		},
 		signals: func() (<-chan os.Signal, func()) {
 			notifications := make(chan os.Signal, 1)
 			signal.Notify(notifications, os.Interrupt, syscall.SIGTERM)
@@ -168,6 +177,7 @@ Options:
   --backend-url URL     URL compiled into Flutter for HTTP mode
   --token value         Development backend token (default dev-token)
   --cors-origin origin  Browser origin allowed by HTTP mode (default *)
+  --watch=false         Disable automatic Go rebuilds (enabled by default)
 
 Auto mode uses Sidecar for linux, macos, and windows devices. Other devices use
 the local HTTP backend. Supplying --backend-url also selects HTTP in auto mode.
@@ -191,6 +201,7 @@ func (item devCommand) run(arguments []string, stdout, stderr io.Writer) error {
 	backendURL := flags.String("backend-url", "", "URL compiled into Flutter for HTTP mode")
 	token := flags.String("token", "dev-token", "development backend token")
 	corsOrigin := flags.String("cors-origin", "*", "allowed browser origin")
+	watch := flags.Bool("watch", true, "automatically rebuild the Go backend")
 	if err := flags.Parse(arguments); err != nil {
 		return fmt.Errorf("%w: dev: %v", errUsage, err)
 	}
@@ -206,6 +217,7 @@ func (item devCommand) run(arguments []string, stdout, stderr io.Writer) error {
 		backendURL: *backendURL,
 		token:      *token,
 		corsOrigin: *corsOrigin,
+		watch:      *watch,
 	})
 	if err != nil {
 		return err
@@ -434,6 +446,19 @@ func (item devCommand) develop(options devOptions, stdout, stderr io.Writer) err
 	fmt.Fprintf(stdout, "Device: %s\n", options.device)
 	fmt.Fprintf(stdout, "Transport: %s\n\n", options.transport)
 
+	var watcher devWatcher
+	if options.watch {
+		var err error
+		watcher, err = item.system.watch(options.root)
+		if err != nil {
+			return fmt.Errorf("dev: start Go source watcher: %w", err)
+		}
+		defer func() {
+			_ = watcher.Close()
+		}()
+		fmt.Fprintln(stdout, "Watching Go sources for changes.")
+	}
+
 	switch options.transport {
 	case devTransportSidecar:
 		if err := item.buildBackend(
@@ -446,7 +471,7 @@ func (item devCommand) develop(options devOptions, stdout, stderr io.Writer) err
 		); err != nil {
 			return err
 		}
-		return item.runDesktop(options, stdout, stderr)
+		return item.runDesktop(options, watcher, stdout, stderr)
 	case devTransportHTTP:
 		if err := item.buildBackend(
 			options,
@@ -458,10 +483,38 @@ func (item devCommand) develop(options devOptions, stdout, stderr io.Writer) err
 		); err != nil {
 			return err
 		}
-		return item.runHTTP(options, stdout, stderr)
+		return item.runHTTP(options, watcher, stdout, stderr)
 	default:
 		return fmt.Errorf("%w: unresolved transport", errDevInvalid)
 	}
+}
+
+func (item devCommand) rebuildBackend(
+	options devOptions,
+	label string,
+	output string,
+	entrypoint string,
+	stdout io.Writer,
+	stderr io.Writer,
+) (string, error) {
+	candidate := output + ".next"
+	if err := item.system.remove(candidate); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("dev: remove stale %s candidate: %w", label, err)
+	}
+	fmt.Fprintf(stdout, "Rebuilding Go %s...\n", label)
+	err := item.system.run(devProcessSpec{
+		Name:        "go",
+		Arguments:   []string{"build", "-trimpath", "-o", candidate, entrypoint},
+		Directory:   filepath.Join(options.root, "backend"),
+		Environment: []string{"CGO_ENABLED=0"},
+		Stdout:      stdout,
+		Stderr:      stderr,
+	})
+	if err != nil {
+		_ = item.system.remove(candidate)
+		return "", fmt.Errorf("dev: rebuild %s: %w", label, err)
+	}
+	return candidate, nil
 }
 
 func (item devCommand) buildBackend(
@@ -492,10 +545,36 @@ func (item devCommand) buildBackend(
 
 func (item devCommand) runDesktop(
 	options devOptions,
+	watcher devWatcher,
 	stdout io.Writer,
 	stderr io.Writer,
 ) error {
 	fmt.Fprintf(stdout, "Starting Flutter on %s...\n", options.device)
+	flutter, err := item.startDesktopFlutter(options, stdout, stderr)
+	if err != nil {
+		return err
+	}
+	flutterProcess := &runningDevProcess{name: "Flutter", process: flutter}
+	processes, events := watchDevProcesses(flutterProcess)
+	if watcher == nil {
+		return item.supervise(processes, events, stdout)
+	}
+	return item.superviseDesktop(
+		options,
+		flutterProcess,
+		processes,
+		events,
+		watcher,
+		stdout,
+		stderr,
+	)
+}
+
+func (item devCommand) startDesktopFlutter(
+	options devOptions,
+	stdout io.Writer,
+	stderr io.Writer,
+) (devProcess, error) {
 	flutter, err := item.system.start(devProcessSpec{
 		Name:        "fvm",
 		Arguments:   []string{"flutter", "run", "-d", options.device},
@@ -506,30 +585,21 @@ func (item devCommand) runDesktop(
 		Stderr:      stderr,
 	})
 	if err != nil {
-		return fmt.Errorf("dev: start Flutter: %w", err)
+		return nil, fmt.Errorf("dev: start Flutter: %w", err)
 	}
-	processes, events := watchDevProcesses(
-		&runningDevProcess{name: "Flutter", process: flutter},
-	)
-	return item.supervise(processes, events, stdout)
+	return flutter, nil
 }
 
 func (item devCommand) runHTTP(
 	options devOptions,
+	watcher devWatcher,
 	stdout io.Writer,
 	stderr io.Writer,
 ) error {
 	fmt.Fprintf(stdout, "Starting Go HTTP backend at %s...\n", options.listen)
-	backend, err := item.system.start(devProcessSpec{
-		Name:        options.serverPath,
-		Arguments:   []string{"--listen", options.listen, "--cors-origin", options.corsOrigin},
-		Directory:   options.root,
-		Environment: []string{"BRIDRA_BACKEND_TOKEN=" + options.token},
-		Stdout:      stdout,
-		Stderr:      stderr,
-	})
+	backend, err := item.startHTTPBackend(options, stdout, stderr)
 	if err != nil {
-		return fmt.Errorf("dev: start HTTP backend: %w", err)
+		return err
 	}
 	backendProcess := &runningDevProcess{name: "Go HTTP backend", process: backend}
 	processes, events := watchDevProcesses(backendProcess)
@@ -549,6 +619,52 @@ func (item devCommand) runHTTP(
 	}
 
 	fmt.Fprintf(stdout, "Starting Flutter on %s with %s...\n", options.device, options.backendURL)
+	flutter, err := item.startHTTPFlutter(options, stdout, stderr)
+	if err != nil {
+		cleanupError := item.stopProcesses(processes, events, os.Interrupt)
+		return errors.Join(err, cleanupError)
+	}
+	flutterProcess := &runningDevProcess{name: "Flutter", process: flutter}
+	processes = append(processes, flutterProcess)
+	go waitForDevProcess(flutterProcess, events)
+	if watcher == nil {
+		return item.supervise(processes, events, stdout)
+	}
+	return item.superviseHTTP(
+		options,
+		backendProcess,
+		processes,
+		events,
+		watcher,
+		stdout,
+		stderr,
+	)
+}
+
+func (item devCommand) startHTTPBackend(
+	options devOptions,
+	stdout io.Writer,
+	stderr io.Writer,
+) (devProcess, error) {
+	backend, err := item.system.start(devProcessSpec{
+		Name:        options.serverPath,
+		Arguments:   []string{"--listen", options.listen, "--cors-origin", options.corsOrigin},
+		Directory:   options.root,
+		Environment: []string{"BRIDRA_BACKEND_TOKEN=" + options.token},
+		Stdout:      stdout,
+		Stderr:      stderr,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("dev: start HTTP backend: %w", err)
+	}
+	return backend, nil
+}
+
+func (item devCommand) startHTTPFlutter(
+	options devOptions,
+	stdout io.Writer,
+	stderr io.Writer,
+) (devProcess, error) {
 	flutter, err := item.system.start(devProcessSpec{
 		Name: "fvm",
 		Arguments: []string{
@@ -562,13 +678,212 @@ func (item devCommand) runHTTP(
 		Stderr:    stderr,
 	})
 	if err != nil {
-		cleanupError := item.stopProcesses(processes, events, os.Interrupt)
-		return errors.Join(fmt.Errorf("dev: start Flutter: %w", err), cleanupError)
+		return nil, fmt.Errorf("dev: start Flutter: %w", err)
 	}
-	flutterProcess := &runningDevProcess{name: "Flutter", process: flutter}
-	processes = append(processes, flutterProcess)
-	go waitForDevProcess(flutterProcess, events)
-	return item.supervise(processes, events, stdout)
+	return flutter, nil
+}
+
+func (item devCommand) superviseDesktop(
+	options devOptions,
+	flutterProcess *runningDevProcess,
+	processes []*runningDevProcess,
+	events chan devProcessExit,
+	watcher devWatcher,
+	stdout io.Writer,
+	stderr io.Writer,
+) error {
+	signals, stopSignals := item.system.signals()
+	defer stopSignals()
+
+	for {
+		select {
+		case received := <-signals:
+			fmt.Fprintln(stdout, "\nStopping Bridra development session...")
+			return item.stopProcesses(processes, events, received)
+		case event := <-events:
+			return item.finishDevProcessExit(event, processes, events)
+		case err := <-watcher.Errors():
+			fmt.Fprintf(stderr, "Go source watcher warning: %v\n", err)
+		case change := <-watcher.Events():
+			fmt.Fprintf(stdout, "\nGo change detected: %s\n", describeDevWatchEvent(change))
+			candidate, err := item.rebuildBackend(
+				options,
+				"Sidecar",
+				options.sidecarPath,
+				"./cmd/sidecar",
+				stdout,
+				stderr,
+			)
+			if err != nil {
+				fmt.Fprintf(stderr, "Go rebuild failed; current Sidecar remains active: %v\n", err)
+				continue
+			}
+
+			select {
+			case received := <-signals:
+				_ = item.system.remove(candidate)
+				fmt.Fprintln(stdout, "\nStopping Bridra development session...")
+				return item.stopProcesses(processes, events, received)
+			case event := <-events:
+				_ = item.system.remove(candidate)
+				return item.finishDevProcessExit(event, processes, events)
+			default:
+			}
+
+			fmt.Fprintln(stdout, "Restarting Flutter to load the rebuilt Sidecar...")
+			otherEvents, stopErr := item.stopDevProcess(
+				flutterProcess,
+				events,
+				os.Interrupt,
+			)
+			if len(otherEvents) != 0 {
+				_ = item.system.remove(candidate)
+				return errors.Join(
+					stopErr,
+					item.finishDevProcessExit(otherEvents[0], processes, events),
+				)
+			}
+			if stopErr != nil {
+				_ = item.system.remove(candidate)
+				return stopErr
+			}
+			if err := item.system.install(options.sidecarPath, candidate); err != nil {
+				return err
+			}
+			flutter, err := item.startDesktopFlutter(options, stdout, stderr)
+			if err != nil {
+				return err
+			}
+			flutterProcess = &runningDevProcess{name: "Flutter", process: flutter}
+			processes[0] = flutterProcess
+			go waitForDevProcess(flutterProcess, events)
+			fmt.Fprintln(stdout, "Rebuilt Sidecar is running.")
+		}
+	}
+}
+
+func (item devCommand) superviseHTTP(
+	options devOptions,
+	backendProcess *runningDevProcess,
+	processes []*runningDevProcess,
+	events chan devProcessExit,
+	watcher devWatcher,
+	stdout io.Writer,
+	stderr io.Writer,
+) error {
+	signals, stopSignals := item.system.signals()
+	defer stopSignals()
+
+session:
+	for {
+		select {
+		case received := <-signals:
+			fmt.Fprintln(stdout, "\nStopping Bridra development session...")
+			return item.stopProcesses(processes, events, received)
+		case event := <-events:
+			return item.finishDevProcessExit(event, processes, events)
+		case err := <-watcher.Errors():
+			fmt.Fprintf(stderr, "Go source watcher warning: %v\n", err)
+		case change := <-watcher.Events():
+			fmt.Fprintf(stdout, "\nGo change detected: %s\n", describeDevWatchEvent(change))
+			candidate, err := item.rebuildBackend(
+				options,
+				"HTTP backend",
+				options.serverPath,
+				"./cmd/server",
+				stdout,
+				stderr,
+			)
+			if err != nil {
+				fmt.Fprintf(stderr, "Go rebuild failed; current HTTP backend remains active: %v\n", err)
+				continue
+			}
+
+			select {
+			case received := <-signals:
+				_ = item.system.remove(candidate)
+				fmt.Fprintln(stdout, "\nStopping Bridra development session...")
+				return item.stopProcesses(processes, events, received)
+			case event := <-events:
+				_ = item.system.remove(candidate)
+				return item.finishDevProcessExit(event, processes, events)
+			default:
+			}
+
+			fmt.Fprintln(stdout, "Restarting Go HTTP backend...")
+			otherEvents, stopErr := item.stopDevProcess(
+				backendProcess,
+				events,
+				os.Interrupt,
+			)
+			if len(otherEvents) != 0 {
+				_ = item.system.remove(candidate)
+				return errors.Join(
+					stopErr,
+					item.finishDevProcessExit(otherEvents[0], processes, events),
+				)
+			}
+			if stopErr != nil {
+				_ = item.system.remove(candidate)
+				cleanupError := item.stopProcesses(processes, events, os.Interrupt)
+				return errors.Join(stopErr, cleanupError)
+			}
+			if err := item.system.install(options.serverPath, candidate); err != nil {
+				cleanupError := item.stopProcesses(processes, events, os.Interrupt)
+				return errors.Join(err, cleanupError)
+			}
+
+			backend, err := item.startHTTPBackend(options, stdout, stderr)
+			if err != nil {
+				cleanupError := item.stopProcesses(processes, events, os.Interrupt)
+				return errors.Join(err, cleanupError)
+			}
+			backendProcess = &runningDevProcess{name: "Go HTTP backend", process: backend}
+			processes[0] = backendProcess
+			go waitForDevProcess(backendProcess, events)
+
+			ready := make(chan error, 1)
+			go func() {
+				ready <- item.system.waitReady(options.readyAddress, item.system.readyTimeout)
+			}()
+			for {
+				select {
+				case received := <-signals:
+					fmt.Fprintln(stdout, "\nStopping Bridra development session...")
+					return item.stopProcesses(processes, events, received)
+				case event := <-events:
+					return item.finishDevProcessExit(event, processes, events)
+				case err := <-watcher.Errors():
+					fmt.Fprintf(stderr, "Go source watcher warning: %v\n", err)
+				case err := <-ready:
+					if err != nil {
+						cleanupError := item.stopProcesses(processes, events, os.Interrupt)
+						return errors.Join(
+							fmt.Errorf("dev: wait for rebuilt HTTP backend: %w", err),
+							cleanupError,
+						)
+					}
+					fmt.Fprintln(stdout, "Rebuilt Go HTTP backend is ready.")
+					continue session
+				}
+			}
+		}
+	}
+}
+
+func describeDevWatchEvent(event devWatchEvent) string {
+	if len(event.paths) == 0 {
+		return "Go sources"
+	}
+	const visible = 3
+	if len(event.paths) <= visible {
+		return strings.Join(event.paths, ", ")
+	}
+	return fmt.Sprintf(
+		"%s and %d more",
+		strings.Join(event.paths[:visible], ", "),
+		len(event.paths)-visible,
+	)
 }
 
 func watchDevProcesses(
@@ -598,19 +913,27 @@ func (item devCommand) supervise(
 			fmt.Fprintln(stdout, "\nStopping Bridra development session...")
 			return item.stopProcesses(processes, events, received)
 		case event := <-events:
-			event.process.done = true
-			switch event.process.name {
-			case "Flutter":
-				cleanupError := item.stopProcesses(processes, events, os.Interrupt)
-				if event.err != nil {
-					return errors.Join(fmt.Errorf("dev: Flutter: %w", event.err), cleanupError)
-				}
-				return cleanupError
-			default:
-				cleanupError := item.stopProcesses(processes, events, os.Interrupt)
-				return errors.Join(backendExitError(event.err), cleanupError)
-			}
+			return item.finishDevProcessExit(event, processes, events)
 		}
+	}
+}
+
+func (item devCommand) finishDevProcessExit(
+	event devProcessExit,
+	processes []*runningDevProcess,
+	events <-chan devProcessExit,
+) error {
+	event.process.done = true
+	switch event.process.name {
+	case "Flutter":
+		cleanupError := item.stopProcesses(processes, events, os.Interrupt)
+		if event.err != nil {
+			return errors.Join(fmt.Errorf("dev: Flutter: %w", event.err), cleanupError)
+		}
+		return cleanupError
+	default:
+		cleanupError := item.stopProcesses(processes, events, os.Interrupt)
+		return errors.Join(backendExitError(event.err), cleanupError)
 	}
 }
 
@@ -619,6 +942,58 @@ func backendExitError(err error) error {
 		return errDevBackendExited
 	}
 	return fmt.Errorf("%w: %w", errDevBackendExited, err)
+}
+
+func (item devCommand) stopDevProcess(
+	process *runningDevProcess,
+	events <-chan devProcessExit,
+	shutdownSignal os.Signal,
+) ([]devProcessExit, error) {
+	if process.done {
+		return nil, nil
+	}
+
+	var operationErrors []error
+	if err := process.process.Signal(shutdownSignal); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		operationErrors = append(
+			operationErrors,
+			fmt.Errorf("dev: signal %s: %w", process.name, err),
+		)
+	}
+
+	timer := time.NewTimer(item.system.stopTimeout)
+	defer timer.Stop()
+	killed := false
+	var otherEvents []devProcessExit
+	for {
+		select {
+		case event := <-events:
+			if event.process == process {
+				process.done = true
+				return otherEvents, errors.Join(operationErrors...)
+			}
+			if !event.process.done {
+				event.process.done = true
+				otherEvents = append(otherEvents, event)
+			}
+		case <-timer.C:
+			if killed {
+				operationErrors = append(
+					operationErrors,
+					fmt.Errorf("dev: %s did not exit after kill", process.name),
+				)
+				return otherEvents, errors.Join(operationErrors...)
+			}
+			if err := process.process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+				operationErrors = append(
+					operationErrors,
+					fmt.Errorf("dev: kill %s: %w", process.name, err),
+				)
+			}
+			killed = true
+			timer.Reset(item.system.stopTimeout)
+		}
+	}
 }
 
 func (item devCommand) stopProcesses(

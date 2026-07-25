@@ -170,6 +170,168 @@ func TestDevReportsBackendExitAndStopsFlutter(t *testing.T) {
 	}
 }
 
+func TestDevRebuildsSidecarAndRestartsFlutter(t *testing.T) {
+	root := devProjectRoot(t)
+	firstFlutter := newFakeDevProcess(true)
+	secondFlutter := newFakeDevProcess(false)
+	harness := newDevHarness(firstFlutter, secondFlutter)
+	harness.afterStart = func(index int) {
+		switch index {
+		case 0:
+			harness.watcher.events <- devWatchEvent{paths: []string{"backend/app/router.go"}}
+		case 1:
+			secondFlutter.finish(nil)
+		}
+	}
+	var stdout bytes.Buffer
+
+	err := (devCommand{system: harness.system()}).run(
+		[]string{"--root", root},
+		&stdout,
+		&bytes.Buffer{},
+	)
+	if err != nil {
+		t.Fatalf("dev rebuild Sidecar: %v", err)
+	}
+	runs, starts := harness.specifications()
+	if len(runs) != 2 || len(starts) != 2 {
+		t.Fatalf("runs = %#v, starts = %#v", runs, starts)
+	}
+	if !strings.HasSuffix(runs[1].Arguments[3], ".next") {
+		t.Fatalf("rebuilt output = %#v", runs[1].Arguments)
+	}
+	if signals := firstFlutter.receivedSignals(); len(signals) != 1 ||
+		signals[0] != os.Interrupt {
+		t.Fatalf("first Flutter signals = %#v", signals)
+	}
+	installations := harness.installations()
+	if len(installations) != 1 ||
+		installations[0][0] != filepath.Join(root, "build", "sidecar", "bridra_backend") ||
+		installations[0][1] != filepath.Join(root, "build", "sidecar", "bridra_backend.next") {
+		t.Fatalf("installations = %#v", installations)
+	}
+	for _, expected := range []string{
+		"Go change detected: backend/app/router.go",
+		"Restarting Flutter to load the rebuilt Sidecar",
+		"Rebuilt Sidecar is running",
+	} {
+		if !strings.Contains(stdout.String(), expected) {
+			t.Fatalf("stdout = %q, want %q", stdout.String(), expected)
+		}
+	}
+}
+
+func TestDevRebuildsHTTPBackendWithoutRestartingFlutter(t *testing.T) {
+	root := devProjectRoot(t)
+	firstBackend := newFakeDevProcess(true)
+	flutter := newFakeDevProcess(false)
+	secondBackend := newFakeDevProcess(true)
+	harness := newDevHarness(firstBackend, flutter, secondBackend)
+	harness.afterStart = func(index int) {
+		if index == 1 {
+			harness.watcher.events <- devWatchEvent{paths: []string{"backend/app/router.go"}}
+		}
+	}
+	harness.afterReady = func(index int) {
+		if index == 1 {
+			flutter.finish(nil)
+		}
+	}
+	var stdout bytes.Buffer
+
+	err := (devCommand{system: harness.system()}).run(
+		[]string{"--root", root, "--device", "chrome"},
+		&stdout,
+		&bytes.Buffer{},
+	)
+	if err != nil {
+		t.Fatalf("dev rebuild HTTP backend: %v", err)
+	}
+	runs, starts := harness.specifications()
+	if len(runs) != 2 || len(starts) != 3 {
+		t.Fatalf("runs = %#v, starts = %#v", runs, starts)
+	}
+	if starts[0].Name != starts[2].Name || starts[1].Name != "fvm" {
+		t.Fatalf("starts = %#v", starts)
+	}
+	if signals := firstBackend.receivedSignals(); len(signals) != 1 ||
+		signals[0] != os.Interrupt {
+		t.Fatalf("first backend signals = %#v", signals)
+	}
+	if signals := flutter.receivedSignals(); len(signals) != 0 {
+		t.Fatalf("Flutter signals = %#v", signals)
+	}
+	if installations := harness.installations(); len(installations) != 1 {
+		t.Fatalf("installations = %#v", installations)
+	}
+	for _, expected := range []string{
+		"Restarting Go HTTP backend",
+		"Rebuilt Go HTTP backend is ready",
+	} {
+		if !strings.Contains(stdout.String(), expected) {
+			t.Fatalf("stdout = %q, want %q", stdout.String(), expected)
+		}
+	}
+}
+
+func TestDevKeepsCurrentBackendWhenRebuildFails(t *testing.T) {
+	root := devProjectRoot(t)
+	flutter := newFakeDevProcess(true)
+	harness := newDevHarness(flutter)
+	rebuildFailure := errors.New("compile failed")
+	harness.runErrors[1] = rebuildFailure
+	harness.afterStart = func(index int) {
+		if index == 0 {
+			harness.watcher.events <- devWatchEvent{paths: []string{"backend/app/router.go"}}
+		}
+	}
+	harness.afterRun = func(index int) {
+		if index == 1 {
+			harness.notifications <- os.Interrupt
+		}
+	}
+	var stderr bytes.Buffer
+
+	err := (devCommand{system: harness.system()}).run(
+		[]string{"--root", root},
+		&bytes.Buffer{},
+		&stderr,
+	)
+	if err != nil {
+		t.Fatalf("dev failed rebuild: %v", err)
+	}
+	runs, starts := harness.specifications()
+	if len(runs) != 2 || len(starts) != 1 {
+		t.Fatalf("runs = %#v, starts = %#v", runs, starts)
+	}
+	if installations := harness.installations(); len(installations) != 0 {
+		t.Fatalf("installations = %#v", installations)
+	}
+	if !strings.Contains(stderr.String(), "current Sidecar remains active") ||
+		!strings.Contains(stderr.String(), rebuildFailure.Error()) {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
+func TestDevCanDisableGoSourceWatcher(t *testing.T) {
+	root := devProjectRoot(t)
+	flutter := newFakeDevProcess(false)
+	flutter.finish(nil)
+	system := newDevHarness(flutter).system()
+	system.watch = func(string) (devWatcher, error) {
+		return nil, errors.New("watcher should be disabled")
+	}
+
+	err := (devCommand{system: system}).run(
+		[]string{"--root", root, "--watch=false"},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+	)
+	if err != nil {
+		t.Fatalf("dev without watcher: %v", err)
+	}
+}
+
 func TestDevKillsChildThatIgnoresGracefulSignal(t *testing.T) {
 	process := newFakeDevProcess(false)
 	running := &runningDevProcess{name: "stuck", process: process}
@@ -352,19 +514,27 @@ type devHarness struct {
 	mutex         sync.Mutex
 	processes     []*fakeDevProcess
 	runs          []devProcessSpec
+	runErrors     map[int]error
 	starts        []devProcessSpec
 	startErrors   map[int]error
+	removes       []string
+	installs      [][2]string
 	ready         []string
 	readyError    error
 	notifications chan os.Signal
+	watcher       *fakeDevWatcher
+	afterRun      func(int)
 	afterStart    func(int)
+	afterReady    func(int)
 }
 
 func newDevHarness(processes ...*fakeDevProcess) *devHarness {
 	return &devHarness{
 		processes:     processes,
+		runErrors:     map[int]error{},
 		startErrors:   map[int]error{},
 		notifications: make(chan os.Signal, 1),
+		watcher:       newFakeDevWatcher(),
 	}
 }
 
@@ -377,11 +547,29 @@ func (harness *devHarness) system() devSystem {
 		abs:          filepath.Abs,
 		stat:         os.Stat,
 		mkdirAll:     os.MkdirAll,
-		run: func(specification devProcessSpec) error {
+		remove: func(path string) error {
 			harness.mutex.Lock()
 			defer harness.mutex.Unlock()
-			harness.runs = append(harness.runs, specification)
+			harness.removes = append(harness.removes, path)
 			return nil
+		},
+		install: func(current string, candidate string) error {
+			harness.mutex.Lock()
+			defer harness.mutex.Unlock()
+			harness.installs = append(harness.installs, [2]string{current, candidate})
+			return nil
+		},
+		run: func(specification devProcessSpec) error {
+			harness.mutex.Lock()
+			index := len(harness.runs)
+			harness.runs = append(harness.runs, specification)
+			runError := harness.runErrors[index]
+			afterRun := harness.afterRun
+			harness.mutex.Unlock()
+			if afterRun != nil {
+				afterRun(index)
+			}
+			return runError
 		},
 		start: func(specification devProcessSpec) (devProcess, error) {
 			harness.mutex.Lock()
@@ -407,9 +595,18 @@ func (harness *devHarness) system() devSystem {
 		},
 		waitReady: func(address string, _ time.Duration) error {
 			harness.mutex.Lock()
-			defer harness.mutex.Unlock()
+			index := len(harness.ready)
 			harness.ready = append(harness.ready, address)
-			return harness.readyError
+			readyError := harness.readyError
+			afterReady := harness.afterReady
+			harness.mutex.Unlock()
+			if afterReady != nil {
+				afterReady(index)
+			}
+			return readyError
+		},
+		watch: func(string) (devWatcher, error) {
+			return harness.watcher, nil
 		},
 		signals: func() (<-chan os.Signal, func()) {
 			return harness.notifications, func() {}
@@ -428,6 +625,36 @@ func (harness *devHarness) readyAddresses() []string {
 	harness.mutex.Lock()
 	defer harness.mutex.Unlock()
 	return append([]string(nil), harness.ready...)
+}
+
+func (harness *devHarness) installations() [][2]string {
+	harness.mutex.Lock()
+	defer harness.mutex.Unlock()
+	return append([][2]string(nil), harness.installs...)
+}
+
+type fakeDevWatcher struct {
+	events chan devWatchEvent
+	errors chan error
+}
+
+func newFakeDevWatcher() *fakeDevWatcher {
+	return &fakeDevWatcher{
+		events: make(chan devWatchEvent, 8),
+		errors: make(chan error, 1),
+	}
+}
+
+func (watcher *fakeDevWatcher) Events() <-chan devWatchEvent {
+	return watcher.events
+}
+
+func (watcher *fakeDevWatcher) Errors() <-chan error {
+	return watcher.errors
+}
+
+func (*fakeDevWatcher) Close() error {
+	return nil
 }
 
 func devProjectRoot(t *testing.T) string {

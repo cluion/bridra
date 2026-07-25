@@ -377,8 +377,15 @@ then force-cleans descendants. Unix uses isolated process groups; Windows uses a
 process group with CTRL_BREAK and `taskkill /T` fallback. An unexpected HTTP backend
 exit stops Flutter and returns a typed CLI failure.
 
-Go backend hot reload is not part of Dev v0.1; restart `bridra dev` after changing Go
-code. The default `dev-token`, wildcard CORS option, and `http://` URL policy are local
+Go source watching is enabled by default. Changes to non-test `.go` files, Go module
+files under `backend/`, or root Go workspace files trigger a debounced rebuild. The
+new executable is built separately, so a compilation failure leaves the current
+backend running and another save retries the build. HTTP mode restarts only the Go
+server and keeps Flutter running. Sidecar mode restarts Flutter after a successful
+build because Flutter owns the Sidecar process; this resets transient UI state. Pass
+`--watch=false` to disable Go rebuilds.
+
+The default `dev-token`, wildcard CORS option, and `http://` URL policy are local
 development defaults, not production authentication or transport security.
 
 ## Build application artifacts
