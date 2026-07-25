@@ -302,9 +302,10 @@ when background work was not accepted.
 
 `JobQueue` maps each exact Go Job type to one named Handler. Registration happens
 during the Service Provider Register phase and freezes when workers Start during
-Boot. `DispatchJob` uses a bounded channel for backpressure, while configurable
-workers execute accepted Jobs with a Queue-owned context and optional per-attempt
-timeout.
+Boot. `DispatchJob` uses a bounded channel for backpressure. `DispatchJobAfter` and
+`DispatchJobAt` place accepted delayed Jobs in a due-time heap with a separate
+capacity-sized admission bound. Configurable workers execute ready Jobs with a
+Queue-owned context and optional per-attempt timeout.
 
 Each Handler may declare a maximum attempt count and fixed retry backoff. Errors,
 timeouts, and recovered panics share one retry path. A successful later attempt
@@ -314,15 +315,15 @@ Retrying Handlers own idempotency because the Queue cannot infer which side effe
 completed before an error.
 
 `QueueServiceProvider` owns the Queue lifecycle. Its Terminate hook atomically
-stops new dispatches, closes the work stream after in-flight enqueue operations
-finish, and waits for workers to drain accepted Jobs. A caller timeout only stops
-that wait; the Queue continues draining and exposes the same completion to later
-callers.
+stops new dispatches, waits for in-flight enqueue operations, promotes pending
+delayed Jobs without waiting for their due times, closes the work stream, and waits
+for workers to drain every accepted Job. A caller timeout only stops that wait; the
+Queue continues draining and exposes the same completion to later callers.
 
-Queue v0.2 is intentionally in-memory and single-process. Retry state is not durable
-after a crash, and the Queue has no delay or distributed worker policy. Those
-capabilities require explicit storage and delivery semantics rather than extending
-the in-memory channel implicitly.
+The Queue is intentionally in-memory and single-process. Scheduled times and retry
+state are not durable after a crash, and distributed workers require explicit
+storage and delivery semantics rather than extending the in-memory channel
+implicitly.
 
 ## Task scheduling
 

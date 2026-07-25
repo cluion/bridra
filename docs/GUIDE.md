@@ -1000,6 +1000,28 @@ After Application Boot starts the workers, dispatch is typed:
 err := framework.DispatchJob(ctx, queue, SendOrderConfirmation{OrderID: order.ID})
 ```
 
+Delay execution by a duration or until a specific time:
+
+```go
+err := framework.DispatchJobAfter(
+    ctx,
+    queue,
+    5*time.Minute,
+    SendOrderConfirmation{OrderID: order.ID},
+)
+
+err = framework.DispatchJobAt(
+    ctx,
+    queue,
+    scheduledAt,
+    SendOrderConfirmation{OrderID: order.ID},
+)
+```
+
+Zero delays and times in the past dispatch immediately. A negative delay returns
+`ErrInvalidJobDelay`. Delayed Jobs remain in memory and use the Queue capacity as a
+bounded admission limit, so the dispatch context may end while waiting for space.
+
 The dispatch context bounds only the enqueue operation; queued work receives a
 new background context for each attempt with the configured `JobTimeout`, so ending
 an RPC request does not cancel accepted work. A full bounded queue applies
@@ -1014,12 +1036,14 @@ their side effects idempotent.
 
 `QueueServiceProvider` implements `TerminableServiceProvider`. Shutdown rejects
 new Jobs and drains every accepted Job, including retry backoff and remaining
-attempts, before returning. If the shutdown context expires, draining continues in
-the background and another `Shutdown` call can wait for completion. Handlers must
-honor their context and must not call Queue Shutdown from inside their own execution.
+attempts, before returning. Pending delayed Jobs are promoted immediately during
+shutdown so a long delay cannot block process termination or discard accepted work.
+If the shutdown context expires, draining continues in the background and another
+`Shutdown` call can wait for completion. Handlers must honor their context and must
+not call Queue Shutdown from inside their own execution.
 
-Queue v0.2 remains process-local. It does not persist Jobs or retry state across
-crashes and does not yet provide delayed Jobs or distributed workers.
+The Queue remains process-local. It does not persist Jobs, scheduled delivery times,
+or retry state across crashes and does not provide distributed workers.
 
 ## Task scheduler
 

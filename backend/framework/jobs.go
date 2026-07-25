@@ -21,6 +21,7 @@ var (
 	ErrJobHandlerNotFound           = errors.New("framework: job handler is not registered")
 	ErrJobQueueNotRunning           = errors.New("framework: job queue is not running")
 	ErrJobQueueStopped              = errors.New("framework: job queue has stopped")
+	ErrInvalidJobDelay              = errors.New("framework: job delay is invalid")
 	ErrJobDispatchFailed            = errors.New("framework: job dispatch failed")
 	ErrJobExecutionFailed           = errors.New("framework: job execution failed")
 	ErrJobRetriesExhausted          = errors.New("framework: job retries exhausted")
@@ -76,6 +77,10 @@ type JobQueue struct {
 	options      JobQueueOptions
 	handlers     map[reflect.Type]jobHandlerEntry
 	jobs         chan queuedJob
+	scheduled    chan scheduledJob
+	delayedSlots chan struct{}
+	scheduleStop chan struct{}
+	scheduleDone chan struct{}
 	stopping     chan struct{}
 	shutdownDone chan struct{}
 	state        jobQueueState
@@ -105,6 +110,10 @@ func NewJobQueue(options JobQueueOptions) (*JobQueue, error) {
 		options:      normalized,
 		handlers:     make(map[reflect.Type]jobHandlerEntry),
 		jobs:         make(chan queuedJob, normalized.Capacity),
+		scheduled:    make(chan scheduledJob, normalized.Capacity),
+		delayedSlots: make(chan struct{}, normalized.Capacity),
+		scheduleStop: make(chan struct{}),
+		scheduleDone: make(chan struct{}),
 		stopping:     make(chan struct{}),
 		shutdownDone: make(chan struct{}),
 	}, nil
@@ -185,47 +194,72 @@ func normalizeJobHandlerOptions(options JobHandlerOptions) (JobHandlerOptions, e
 }
 
 func DispatchJob[T any](ctx context.Context, queue *JobQueue, job T) error {
-	if queue == nil {
-		return ErrJobQueueUnavailable
+	queued, stopping, err := prepareJobDispatch(ctx, queue, job)
+	if err != nil {
+		return err
 	}
-	if ctx == nil {
-		return ErrJobContextUnavailable
-	}
-	jobType := reflect.TypeFor[T]()
-
-	queue.mu.Lock()
-	if err := ctx.Err(); err != nil {
-		queue.mu.Unlock()
-		return fmt.Errorf("%w: job %s enqueue context: %w", ErrJobDispatchFailed, jobType, err)
-	}
-	switch queue.state {
-	case jobQueueCollecting:
-		queue.mu.Unlock()
-		return fmt.Errorf("%w: job %s: %w", ErrJobDispatchFailed, jobType, ErrJobQueueNotRunning)
-	case jobQueueStopping, jobQueueStopped:
-		queue.mu.Unlock()
-		return fmt.Errorf("%w: job %s: %w", ErrJobDispatchFailed, jobType, ErrJobQueueStopped)
-	}
-	handler, exists := queue.handlers[jobType]
-	if !exists {
-		queue.mu.Unlock()
-		return fmt.Errorf("%w: job %s: %w", ErrJobDispatchFailed, jobType, ErrJobHandlerNotFound)
-	}
-	queued := queuedJob{jobType: jobType, value: job, handler: handler}
-	jobs := queue.jobs
-	stopping := queue.stopping
-	queue.dispatches.Add(1)
-	queue.mu.Unlock()
 	defer queue.dispatches.Done()
 
 	select {
 	case <-stopping:
-		return fmt.Errorf("%w: job %s: %w", ErrJobDispatchFailed, jobType, ErrJobQueueStopped)
+		return stoppedJobDispatchError(queued.jobType)
 	case <-ctx.Done():
-		return fmt.Errorf("%w: job %s enqueue context: %w", ErrJobDispatchFailed, jobType, ctx.Err())
-	case jobs <- queued:
+		return contextJobDispatchError(queued.jobType, ctx.Err())
+	case queue.jobs <- queued:
 		return nil
 	}
+}
+
+func prepareJobDispatch[T any](
+	ctx context.Context,
+	queue *JobQueue,
+	job T,
+) (queuedJob, <-chan struct{}, error) {
+	if queue == nil {
+		return queuedJob{}, nil, ErrJobQueueUnavailable
+	}
+	if ctx == nil {
+		return queuedJob{}, nil, ErrJobContextUnavailable
+	}
+	jobType := reflect.TypeFor[T]()
+
+	queue.mu.Lock()
+	defer queue.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return queuedJob{}, nil, fmt.Errorf(
+			"%w: job %s enqueue context: %w",
+			ErrJobDispatchFailed,
+			jobType,
+			err,
+		)
+	}
+	switch queue.state {
+	case jobQueueCollecting:
+		return queuedJob{}, nil, fmt.Errorf(
+			"%w: job %s: %w",
+			ErrJobDispatchFailed,
+			jobType,
+			ErrJobQueueNotRunning,
+		)
+	case jobQueueStopping, jobQueueStopped:
+		return queuedJob{}, nil, fmt.Errorf(
+			"%w: job %s: %w",
+			ErrJobDispatchFailed,
+			jobType,
+			ErrJobQueueStopped,
+		)
+	}
+	handler, exists := queue.handlers[jobType]
+	if !exists {
+		return queuedJob{}, nil, fmt.Errorf(
+			"%w: job %s: %w",
+			ErrJobDispatchFailed,
+			jobType,
+			ErrJobHandlerNotFound,
+		)
+	}
+	queue.dispatches.Add(1)
+	return queuedJob{jobType: jobType, value: job, handler: handler}, queue.stopping, nil
 }
 
 func (queue *JobQueue) Start() error {
@@ -246,6 +280,7 @@ func (queue *JobQueue) Start() error {
 	queue.workers.Add(workers)
 	queue.mu.Unlock()
 
+	go queue.schedule()
 	for range workers {
 		go queue.work()
 	}
@@ -357,6 +392,8 @@ func (queue *JobQueue) Shutdown(ctx context.Context) error {
 	if queue.state == jobQueueCollecting {
 		queue.state = jobQueueStopped
 		close(queue.stopping)
+		close(queue.scheduleStop)
+		close(queue.scheduleDone)
 		close(queue.jobs)
 		close(queue.shutdownDone)
 		queue.mu.Unlock()
@@ -369,12 +406,14 @@ func (queue *JobQueue) Shutdown(ctx context.Context) error {
 	queue.mu.Unlock()
 
 	queue.dispatches.Wait()
-	close(queue.jobs)
+	close(queue.scheduleStop)
 	go queue.finishShutdown()
 	return waitForJobQueueShutdown(ctx, done)
 }
 
 func (queue *JobQueue) finishShutdown() {
+	<-queue.scheduleDone
+	close(queue.jobs)
 	queue.workers.Wait()
 	queue.mu.Lock()
 	queue.state = jobQueueStopped

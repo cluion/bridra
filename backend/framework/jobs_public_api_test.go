@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/cluion/bridra/backend/framework"
 )
@@ -67,10 +68,26 @@ func TestPublicJobQueueProviderAPI(t *testing.T) {
 	if err := framework.DispatchJob(context.Background(), queue, publicJob{Value: "second"}); err != nil {
 		t.Fatalf("dispatch second: %v", err)
 	}
+	if err := framework.DispatchJobAfter(
+		context.Background(),
+		queue,
+		0,
+		publicJob{Value: "third"},
+	); err != nil {
+		t.Fatalf("dispatch third: %v", err)
+	}
+	if err := framework.DispatchJobAt(
+		context.Background(),
+		queue,
+		time.Now().Add(-time.Second),
+		publicJob{Value: "fourth"},
+	); err != nil {
+		t.Fatalf("dispatch fourth: %v", err)
+	}
 	if err := application.Shutdown(context.Background()); err != nil {
 		t.Fatalf("application shutdown: %v", err)
 	}
-	if !reflect.DeepEqual(handled, []string{"first", "second"}) {
+	if !reflect.DeepEqual(handled, []string{"first", "second", "third", "fourth"}) {
 		t.Fatalf("handled = %#v", handled)
 	}
 	if !queue.Stopped() {
