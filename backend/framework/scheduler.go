@@ -14,6 +14,7 @@ var (
 	ErrSchedulerContextUnavailable     = errors.New("framework: scheduler context is unavailable")
 	ErrInvalidSchedulerOptions         = errors.New("framework: scheduler options are invalid")
 	ErrInvalidScheduledTask            = errors.New("framework: scheduled task is invalid")
+	ErrInvalidCronExpression           = errors.New("framework: cron expression is invalid")
 	ErrScheduledTaskAlreadyDefined     = errors.New("framework: scheduled task is already defined")
 	ErrScheduledTaskRegistrationClosed = errors.New("framework: scheduled task registration is closed")
 	ErrSchedulerStopped                = errors.New("framework: scheduler has stopped")
@@ -32,10 +33,14 @@ type ScheduledTaskFailureReporter func(ScheduledTaskFailure)
 type SchedulerOptions struct {
 	TaskTimeout   time.Duration
 	ReportFailure ScheduledTaskFailureReporter
+	Location      *time.Location
 }
 
 func DefaultSchedulerOptions() SchedulerOptions {
-	return SchedulerOptions{TaskTimeout: 30 * time.Second}
+	return SchedulerOptions{
+		TaskTimeout: 30 * time.Second,
+		Location:    time.Local,
+	}
 }
 
 type schedulerState uint8
@@ -61,11 +66,24 @@ type Scheduler struct {
 
 type scheduledTaskEntry struct {
 	name     string
-	interval time.Duration
+	schedule scheduledTaskSchedule
 	run      ScheduledTask
 }
 
+type scheduledTaskSchedule interface {
+	nextDelay(time.Time) (time.Duration, bool)
+}
+
+type fixedDelaySchedule struct {
+	interval time.Duration
+}
+
+func (schedule fixedDelaySchedule) nextDelay(time.Time) (time.Duration, bool) {
+	return schedule.interval, true
+}
+
 type schedulerClock interface {
+	Now() time.Time
 	NewTimer(time.Duration) schedulerTimer
 }
 
@@ -75,6 +93,10 @@ type schedulerTimer interface {
 }
 
 type systemSchedulerClock struct{}
+
+func (systemSchedulerClock) Now() time.Time {
+	return time.Now()
+}
 
 func (systemSchedulerClock) NewTimer(delay time.Duration) schedulerTimer {
 	return systemSchedulerTimer{timer: time.NewTimer(delay)}
@@ -103,6 +125,9 @@ func newScheduler(options SchedulerOptions, clock schedulerClock) (*Scheduler, e
 	if clock == nil {
 		return nil, ErrSchedulerUnavailable
 	}
+	if options.Location == nil {
+		options.Location = time.Local
+	}
 	return &Scheduler{
 		options:      options,
 		clock:        clock,
@@ -125,7 +150,18 @@ func ScheduleTask(
 	if name == "" || interval <= 0 || task == nil {
 		return ErrInvalidScheduledTask
 	}
+	return scheduler.registerTask(
+		name,
+		fixedDelaySchedule{interval: interval},
+		task,
+	)
+}
 
+func (scheduler *Scheduler) registerTask(
+	name string,
+	schedule scheduledTaskSchedule,
+	task ScheduledTask,
+) error {
 	scheduler.mu.Lock()
 	defer scheduler.mu.Unlock()
 	if scheduler.state != schedulerCollecting {
@@ -137,7 +173,7 @@ func ScheduleTask(
 	scheduler.taskNames[name] = struct{}{}
 	scheduler.tasks = append(scheduler.tasks, scheduledTaskEntry{
 		name:     name,
-		interval: interval,
+		schedule: schedule,
 		run:      task,
 	})
 	return nil
@@ -189,7 +225,11 @@ func (scheduler *Scheduler) runTaskLoop(task scheduledTaskEntry) {
 		default:
 		}
 
-		timer := scheduler.clock.NewTimer(task.interval)
+		delay, ok := task.schedule.nextDelay(scheduler.clock.Now())
+		if !ok {
+			return
+		}
+		timer := scheduler.clock.NewTimer(delay)
 		select {
 		case <-scheduler.stopping:
 			timer.Stop()

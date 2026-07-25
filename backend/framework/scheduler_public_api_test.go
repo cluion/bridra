@@ -56,6 +56,32 @@ func TestPublicSchedulerRunsNamedTaskAndShutsDown(t *testing.T) {
 	}
 }
 
+func TestPublicSchedulerRegistersCronTask(t *testing.T) {
+	scheduler, err := framework.NewScheduler(framework.SchedulerOptions{
+		Location: time.UTC,
+	})
+	if err != nil {
+		t.Fatalf("new scheduler: %v", err)
+	}
+	if err := framework.ScheduleCronTask(
+		scheduler,
+		"public.cron",
+		"*/15 9-17 * * MON-FRI",
+		func(context.Context) error { return nil },
+	); err != nil {
+		t.Fatalf("schedule cron task: %v", err)
+	}
+	if names := framework.ScheduledTasks(scheduler); !reflect.DeepEqual(
+		names,
+		[]string{"public.cron"},
+	) {
+		t.Fatalf("tasks = %#v", names)
+	}
+	if err := scheduler.Shutdown(context.Background()); err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+}
+
 type publicSchedulerTaskProvider struct{}
 
 func (publicSchedulerTaskProvider) Register(application *framework.Application) error {

@@ -55,8 +55,8 @@ or run separately.
 - typed background Jobs with named handlers, bounded in-memory queues,
   configurable workers, retries, timeouts, failure reporting, and graceful drain
 - typed queued Event listeners that map synchronous domain Events into background Jobs
-- named fixed-delay scheduled Tasks with non-overlap, timeouts, failure reporting,
-  panic recovery, and Application lifecycle integration
+- named fixed-delay and cron scheduled Tasks with non-overlap, time zones,
+  timeouts, failure reporting, panic recovery, and Application lifecycle integration
 - typed Flutter gateway with framework- and protocol-version health handshake
 - versioned JSON RPC schema with generated Go DTOs/route constants and Dart
   typed client
@@ -1047,9 +1047,9 @@ or retry state across crashes and does not provide distributed workers.
 
 ## Task scheduler
 
-Scheduler v0.1 runs named Tasks on a process-local fixed delay. Register the Queue
-before the Scheduler when scheduled Tasks dispatch Jobs, then register application
-Tasks last:
+The Scheduler runs named Tasks using either a process-local fixed delay or a
+five-field cron expression. Register the Queue before the Scheduler when scheduled
+Tasks dispatch Jobs, then register application Tasks last:
 
 ```go
 if err := application.Register(
@@ -1070,10 +1070,10 @@ func (ScheduledTasksServiceProvider) Register(application *framework.Application
     if err != nil {
         return err
     }
-    return framework.ScheduleTask(
+    return framework.ScheduleCronTask(
         scheduler,
         "reports.queue-daily",
-        24*time.Hour,
+        "0 6 * * *",
         func(ctx context.Context) error {
             return framework.DispatchJob(ctx, queue, GenerateDailyReport{})
         },
@@ -1081,11 +1081,20 @@ func (ScheduledTasksServiceProvider) Register(application *framework.Application
 }
 ```
 
-The first run happens after one interval. The next interval starts only after the
-current invocation finishes, so one named Task never overlaps with itself; different
-Tasks have independent loops and may run concurrently. `TaskTimeout` supplies each
-invocation context. Errors and recovered panics are wrapped by
-`ErrScheduledTaskExecutionFailed` and sent to `ReportFailure`.
+`ScheduleTask` waits one fixed interval before its first run and between completed
+runs. `ScheduleCronTask` accepts the standard five fields `minute hour day-of-month
+month day-of-week`. It supports `*`, comma-separated lists, ranges, steps, case-
+insensitive English month and weekday names, and both `0` and `7` for Sunday. When
+day-of-month and day-of-week are both restricted, either field may match.
+
+Cron Tasks use `SchedulerOptions.Location`, which defaults to `time.Local`. The next
+occurrence is calculated from the wall clock after the current invocation finishes,
+so missed occurrences are skipped instead of replayed.
+
+One named Task never overlaps with itself; different Tasks have independent loops and
+may run concurrently. `TaskTimeout` supplies each invocation context. Errors and
+recovered panics are wrapped by `ErrScheduledTaskExecutionFailed` and sent to
+`ReportFailure`.
 
 `SchedulerServiceProvider` starts during Application Boot. Shutdown stops pending
 timers and waits for running Tasks before the Queue drains, following reverse Provider
@@ -1093,8 +1102,8 @@ order. If the shutdown context expires, running Tasks continue toward their own
 timeout and a later Shutdown call can wait again. Tasks must honor context and must
 not call Scheduler Shutdown from inside themselves.
 
-Scheduler v0.1 does not parse cron expressions, persist schedules, catch up runs
-missed while the process was offline, or coordinate multiple application instances.
+The Scheduler does not persist schedules, catch up missed runs, or coordinate
+multiple application instances.
 
 ## RPC contract
 

@@ -327,11 +327,13 @@ implicitly.
 
 ## Task scheduling
 
-`Scheduler` owns one independent fixed-delay loop per named Task. A loop waits one
-interval, runs the Task synchronously with an optional timeout, then begins its next
-wait. This makes same-Task overlap impossible without global serialization; different
-Tasks can still run concurrently. Errors and recovered panics are reported through a
-typed failure callback and do not stop later runs.
+`Scheduler` owns one independent loop per named Task. Fixed-delay loops wait one
+interval after each completed invocation. Cron loops calculate their next wall-clock
+occurrence from a five-field expression and the configured Scheduler time zone.
+Missed cron occurrences are skipped. Both modes run the Task synchronously with an
+optional timeout, making same-Task overlap impossible without global serialization;
+different Tasks can still run concurrently. Errors and recovered panics are reported
+through a typed failure callback and do not stop later runs.
 
 The Scheduler Service Provider starts loops during Boot and stops them during reverse
 shutdown. Provider order is deliberate when Tasks dispatch Jobs:
@@ -345,8 +347,8 @@ This prevents new scheduled Jobs before the Queue drains and keeps lower-level
 resources alive until queued work completes. A shutdown caller timeout stops only
 that wait; an invocation already running continues under its Task timeout.
 
-Scheduler v0.1 is process-local. It has no cron grammar, persistent schedule state,
-missed-run catch-up, distributed leader election, or cross-process overlap lock.
+The Scheduler is process-local. It has no persistent schedule state, missed-run
+catch-up, distributed leader election, or cross-process overlap lock.
 
 ## Transport selection
 

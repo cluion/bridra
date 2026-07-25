@@ -13,21 +13,45 @@ import (
 
 type controlledSchedulerClock struct {
 	timers chan *controlledSchedulerTimer
+	now    time.Time
+	mu     sync.Mutex
 }
 
 type controlledSchedulerTimer struct {
 	delay   time.Duration
+	due     time.Time
+	clock   *controlledSchedulerClock
 	ticks   chan time.Time
 	stopped atomic.Bool
 }
 
 func newControlledSchedulerClock() *controlledSchedulerClock {
-	return &controlledSchedulerClock{timers: make(chan *controlledSchedulerTimer, 32)}
+	return &controlledSchedulerClock{
+		timers: make(chan *controlledSchedulerTimer, 32),
+		now:    time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC),
+	}
+}
+
+func (clock *controlledSchedulerClock) Now() time.Time {
+	clock.mu.Lock()
+	defer clock.mu.Unlock()
+	return clock.now
+}
+
+func (clock *controlledSchedulerClock) SetNow(now time.Time) {
+	clock.mu.Lock()
+	clock.now = now
+	clock.mu.Unlock()
 }
 
 func (clock *controlledSchedulerClock) NewTimer(delay time.Duration) schedulerTimer {
+	clock.mu.Lock()
+	due := clock.now.Add(delay)
+	clock.mu.Unlock()
 	timer := &controlledSchedulerTimer{
 		delay: delay,
+		due:   due,
+		clock: clock,
 		ticks: make(chan time.Time, 1),
 	}
 	clock.timers <- timer
@@ -46,8 +70,14 @@ func (timer *controlledSchedulerTimer) Fire() bool {
 	if timer.stopped.Load() {
 		return false
 	}
+	timer.clock.mu.Lock()
+	if timer.due.After(timer.clock.now) {
+		timer.clock.now = timer.due
+	}
+	now := timer.clock.now
+	timer.clock.mu.Unlock()
 	select {
-	case timer.ticks <- time.Now():
+	case timer.ticks <- now:
 		return true
 	default:
 		return false
