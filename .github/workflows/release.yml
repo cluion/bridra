@@ -78,6 +78,19 @@ jobs:
       - name: Install project Flutter SDK
         run: fvm install
 
+      - name: Configure Flutter SDK environment
+        shell: bash
+        run: |
+          flutter_version="$(fvm api project | jq -r '.project.pinnedVersion.name // empty')"
+          flutter_root="$(fvm api list | jq -r --arg version "$flutter_version" \
+            '[.versions[] | select(.name == $version) | .directory][0] // empty')"
+          if [[ -z "$flutter_root" || ! -x "$flutter_root/bin/cache/dart-sdk/bin/dart" ]]; then
+            echo "Unable to resolve installed Flutter SDK $flutter_version" >&2
+            exit 1
+          fi
+          echo "FLUTTER_ROOT=$flutter_root" >> "$GITHUB_ENV"
+          echo "$flutter_root/bin/cache/dart-sdk/bin" >> "$GITHUB_PATH"
+
       - name: Verify aligned release version
         run: make release-check VERSION='${{ steps.release.outputs.version }}' FINAL=1
 
@@ -86,7 +99,7 @@ jobs:
 
       - name: Validate Dart package
         working-directory: packages/bridra_flutter
-        run: fvm exec dart pub publish --dry-run
+        run: dart pub publish --dry-run
 
       - name: Check Dart package publication
         id: pubdev
@@ -110,7 +123,7 @@ jobs:
       - name: Publish Dart package
         if: ${{ vars.BRIDRA_PUBDEV_AUTOMATION_ENABLED == 'true' && steps.pubdev.outputs.published != 'true' }}
         working-directory: packages/bridra_flutter
-        run: fvm exec dart pub publish --force
+        run: dart pub publish --force
 
       - name: Require manual Dart publication
         if: ${{ vars.BRIDRA_PUBDEV_AUTOMATION_ENABLED != 'true' && steps.pubdev.outputs.published != 'true' }}
