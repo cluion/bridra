@@ -99,7 +99,7 @@ jobs:
 
       - name: Validate Dart package
         working-directory: packages/bridra_flutter
-        run: dart pub publish --dry-run
+        run: fvm flutter pub publish --dry-run
 
       - name: Check Dart package publication
         id: pubdev
@@ -122,6 +122,7 @@ jobs:
 
       - name: Publish Dart package
         if: ${{ vars.BRIDRA_PUBDEV_AUTOMATION_ENABLED == 'true' && steps.pubdev.outputs.published != 'true' }}
+        timeout-minutes: 5
         working-directory: packages/bridra_flutter
         run: dart pub publish --force
 
