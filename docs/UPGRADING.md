@@ -9,9 +9,8 @@ Run the read-only planner from a project root before changing dependencies:
 
 ```bash
 bridra upgrade
-bridra upgrade --plan --to 0.3.0
-bridra upgrade --plan --to 0.3.0 --json
-bridra upgrade --apply --to 0.3.0
+bridra upgrade --plan --to 0.4.0
+bridra upgrade --plan --to 0.4.0 --json
 ```
 
 When invoking the CLI through the backend dependency, use:
@@ -78,7 +77,7 @@ fails verification.
 | Identity | Current | Compatibility rule |
 | --- | ---: | --- |
 | Project metadata schema | 2 | Schema 1 remains readable by core project commands but requires a metadata migration. A newer schema requires a newer CLI. |
-| Framework SemVer | 0.3.0 | The project and selected target must match. An older version requires a complete registered migration path; downgrade plans are rejected. |
+| Framework SemVer | 0.4.0 | The project and selected target must match. An older version requires a complete registered migration path; downgrade plans are rejected. |
 | Project Template | 2 | Older templates require manual review. A newer template cannot be evaluated by an older CLI. |
 | RPC protocol | 1 | Go and Flutter runtimes must use the same protocol. Upgrade them together. |
 
@@ -104,7 +103,7 @@ the Go and Flutter dependencies together, add the version contract:
   "projectName": "your_app",
   "goModule": "example.com/your/app",
   "frameworkModule": "github.com/cluion/bridra/backend",
-  "frameworkVersion": "0.3.0",
+  "frameworkVersion": "0.4.0",
   "templateVersion": 2,
   "protocolVersion": 1
 }
@@ -129,6 +128,42 @@ Services, Models, configuration, UI, or native runner files.
 6. Run any platform builds required by the application before committing the
    upgrade.
 
+## Framework 0.3.0 to 0.4.0
+
+The `0.4.0` transition is manual. Automatic Sidecar restart is an additive Dart
+runtime feature, but parent-process observation requires a change to the
+application-owned `backend/cmd/sidecar/main.go`. Bridra therefore reports
+`applyAvailable: false` and never guesses how to rewrite that entrypoint.
+
+Update the Go and Flutter framework dependencies together, then update the
+Sidecar entrypoint to:
+
+- create its signal context with `signal.NotifyContext`;
+- pass that context to `framework.ParentProcessContext` before serving;
+- close stdin when the parent-aware context ends so a blocked stdio read wakes;
+- treat `framework.ErrParentProcessExited` as a normal shutdown cause.
+
+The current generated implementation is the reference:
+`backend/projecttemplate/templates/sidecar.go.tmpl`. Preserve application
+routing and lifecycle customizations when applying the same parent-process
+boundary to an existing project.
+
+For the dependency and metadata portion of the upgrade:
+
+```bash
+cd backend
+go get github.com/cluion/bridra/backend@v0.4.0
+cd ..
+fvm flutter pub upgrade bridra_flutter
+make generate
+make verify
+```
+
+After verification succeeds, update `.bridra/project.json` to framework version
+`0.4.0`. Project Template version `2`, project metadata schema `2`, and RPC
+protocol version `1` remain unchanged, so wire-contract regeneration is not
+required unless the application schema itself changed.
+
 ## Framework 0.2.0 to 0.3.0
 
 The `0.3.0` transition is automatic because existing projects only need their Go
@@ -138,22 +173,12 @@ immediate Jobs, and development commands keep their behavior.
 
 `SchedulerOptions` adds an optional `Location`; zero-value and keyed literals
 remain valid and default to `time.Local`. Projects using positional
-`SchedulerOptions` literals must add the location value or switch to keyed fields.
+`SchedulerOptions` literals must add the location value or switch to keyed
+fields.
 
 Project Template version `2`, project metadata schema `2`, and RPC protocol
 version `1` remain unchanged. Existing peers can therefore be upgraded together
 without regenerating the wire contract or rewriting application-owned files.
-
-For the current line, dependency updates use:
-
-```bash
-cd backend
-go get github.com/cluion/bridra/backend@v0.3.0
-cd ..
-fvm flutter pub upgrade bridra_flutter
-make generate
-make verify
-```
 
 Local framework development may retain Go `replace` and Dart
 `dependency_overrides`, but the declared dependency versions and project

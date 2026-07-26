@@ -5,6 +5,8 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-27
+
 ### Added
 
 - Added automatic desktop Sidecar recovery with bounded exponential backoff,
@@ -14,6 +16,19 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 - Added platform-specific parent-process observation so a desktop Sidecar
   performs graceful shutdown instead of becoming orphaned when Flutter is
   force-terminated.
+
+### Changed
+
+- Registered a manual `0.3.0` to `0.4.0` upgrade because existing projects must
+  update their application-owned Sidecar entrypoint to observe the Flutter
+  parent process. Project Template version `2` and RPC protocol version `1`
+  remain unchanged.
+
+### Support
+
+- The latest `0.4.x` release receives best-effort security fixes until the next
+  minor line is published. The `0.3.x` line is no longer supported after this
+  release.
 
 ## [0.3.0] - 2026-07-25
 
