@@ -32,7 +32,7 @@ Models, Services, Responses, Controllers, and route registration remain under
 `backend/app`. `packages/bridra_flutter` owns transport-neutral RPC, HTTP, and
 desktop Sidecar clients. The generated `BridraRpcApi` owns the application RPC
 contract; `lib/api/backend_gateway.dart` adds connection lifecycle and health
-caching. Both packages remain in one Git repository and use Bridra 0.3.0.
+caching. Both packages remain in one Git repository and use Bridra 0.4.0.
 
 ## Contract generation
 
