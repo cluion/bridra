@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Added automatic Go Sidecar restart with configurable bounded exponential
+  backoff and replacement `system.health` checks.
+- Calls already in flight fail without replay after a crash. New calls wait for
+  recovery while retaining their timeout and cancellation behavior.
+
 ## 0.3.0 - 2026-07-25
 
 - Kept the package version aligned with the Bridra 0.3.0 Go Framework, CLI, and

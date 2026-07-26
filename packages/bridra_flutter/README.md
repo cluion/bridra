@@ -1,6 +1,6 @@
 # bridra_flutter
 
-Reusable Flutter transport package for Bridra 0.1 applications.
+Reusable Flutter transport package for Bridra applications.
 
 This package is licensed under the MIT License, Copyright (c) 2026 Cluion. It
 is the Flutter-facing runtime package for the Bridra framework.
@@ -15,6 +15,11 @@ It provides:
 Desktop executable discovery checks `BRIDRA_SIDECAR_PATH`, the application
 `libexec` directory, `build/sidecar`, then `backend/bin`. Web builds select the
 HTTP connector through a conditional import and never import `dart:io`.
+
+The desktop client automatically restarts an unexpectedly terminated Sidecar.
+Calls that were in flight fail and are never replayed automatically. Calls made
+during recovery wait for a replacement process to pass `system.health`, while
+their own timeout and cancellation remain active.
 
 Application-specific methods and response models do not belong in this package.
 Define those in the consuming application's typed gateway.
@@ -50,4 +55,12 @@ Desktop-only code may import the explicit sidecar library:
     final client = await SidecarClient.start(
       executablePath: executablePath,
       token: SidecarClient.createToken(),
+      restartPolicy: const SidecarRestartPolicy(
+        maxAttempts: 3,
+        initialDelay: Duration(milliseconds: 250),
+        maxDelay: Duration(seconds: 2),
+      ),
     );
+
+The default policy uses three restart attempts. Set
+`SidecarRestartPolicy.disabled()` only when the application owns recovery.

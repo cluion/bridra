@@ -191,6 +191,7 @@ void main() {
       final client = await SidecarClient.start(
         executablePath: '/fake/sidecar',
         token: 'test-token',
+        restartPolicy: const SidecarRestartPolicy.disabled(),
         processStarter: (_, _) async => process,
       );
       addTearDown(client.close);
@@ -200,6 +201,348 @@ void main() {
         throwsA(isA<BackendTransportException>()),
       );
       expect(process.killCount, 1);
+    },
+  );
+
+  test('restart policy applies exponential backoff with a cap', () {
+    const policy = SidecarRestartPolicy(
+      maxAttempts: 5,
+      initialDelay: Duration(milliseconds: 100),
+      maxDelay: Duration(milliseconds: 450),
+      backoffFactor: 2,
+    );
+
+    expect(policy.delayForAttempt(1), const Duration(milliseconds: 100));
+    expect(policy.delayForAttempt(2), const Duration(milliseconds: 200));
+    expect(policy.delayForAttempt(3), const Duration(milliseconds: 400));
+    expect(policy.delayForAttempt(4), const Duration(milliseconds: 450));
+    expect(policy.delayForAttempt(5), const Duration(milliseconds: 450));
+    expect(() => policy.delayForAttempt(0), throwsRangeError);
+  });
+
+  test('rejects invalid restart policies before starting a process', () async {
+    const policies = [
+      SidecarRestartPolicy(maxAttempts: -1),
+      SidecarRestartPolicy(initialDelay: Duration(microseconds: -1)),
+      SidecarRestartPolicy(
+        initialDelay: Duration(milliseconds: 2),
+        maxDelay: Duration(milliseconds: 1),
+      ),
+      SidecarRestartPolicy(backoffFactor: 0.5),
+      SidecarRestartPolicy(healthCheckTimeout: Duration.zero),
+    ];
+    var startCount = 0;
+
+    for (final policy in policies) {
+      await expectLater(
+        SidecarClient.start(
+          executablePath: '/fake/sidecar',
+          token: 'test-token',
+          restartPolicy: policy,
+          processStarter: (_, _) async {
+            startCount++;
+            return FakeSidecarProcess();
+          },
+        ),
+        throwsArgumentError,
+      );
+    }
+
+    expect(startCount, 0);
+  });
+
+  test('restarts after a crash without replaying the in-flight call', () async {
+    final first = FakeSidecarProcess();
+    final replacement = FakeSidecarProcess();
+    final starter = FakeSidecarStarter([first, replacement]);
+    final logs = <String>[];
+    final client = await SidecarClient.start(
+      executablePath: '/fake/sidecar',
+      token: 'test-token',
+      onLog: logs.add,
+      restartPolicy: const SidecarRestartPolicy(
+        initialDelay: Duration.zero,
+        maxDelay: Duration.zero,
+      ),
+      processStarter: starter.start,
+    );
+    addTearDown(client.close);
+
+    final inFlight = client.call('unsafe-write');
+    await first.nextRequest();
+    final inFlightExpectation = expectLater(
+      inFlight,
+      throwsA(isA<SidecarExitedException>()),
+    );
+    await first.exit(17);
+    await inFlightExpectation;
+
+    final recovered = client.call('after-restart');
+    final health = await replacement.nextRequest();
+    expect(health['method'], 'system.health');
+    replacement.respond({
+      'id': health['id'],
+      'result': {'status': 'ok'},
+      'meta': <String, Object?>{},
+    });
+    final request = await replacement.nextRequest();
+    expect(request['method'], 'after-restart');
+    replacement.respond({
+      'id': request['id'],
+      'result': 'recovered',
+      'meta': <String, Object?>{},
+    });
+
+    expect((await recovered).result, 'recovered');
+    expect(starter.callCount, 2);
+    expect(replacement.receivedRequestCount, 2);
+    expect(
+      logs,
+      contains('The Go sidecar restarted successfully (attempt 1/3).'),
+    );
+    expect(logs.join('\n'), isNot(contains('test-token')));
+  });
+
+  test('retries when a replacement fails its health check', () async {
+    final first = FakeSidecarProcess();
+    final unhealthy = FakeSidecarProcess();
+    final healthy = FakeSidecarProcess();
+    final starter = FakeSidecarStarter([first, unhealthy, healthy]);
+    final logs = <String>[];
+    final client = await SidecarClient.start(
+      executablePath: '/fake/sidecar',
+      token: 'test-token',
+      onLog: logs.add,
+      restartPolicy: const SidecarRestartPolicy(
+        maxAttempts: 2,
+        initialDelay: Duration.zero,
+        maxDelay: Duration.zero,
+      ),
+      processStarter: starter.start,
+    );
+    addTearDown(client.close);
+
+    final inFlight = client.call('slow');
+    await first.nextRequest();
+    final inFlightExpectation = expectLater(
+      inFlight,
+      throwsA(isA<SidecarExitedException>()),
+    );
+    await first.exit(19);
+    await inFlightExpectation;
+
+    final recovered = client.call('after-health-retry');
+    final unhealthyCheck = await unhealthy.nextRequest();
+    unhealthy.respond({
+      'id': unhealthyCheck['id'],
+      'result': {'status': 'down'},
+      'meta': <String, Object?>{},
+    });
+    final healthyCheck = await healthy.nextRequest();
+    healthy.respond({
+      'id': healthyCheck['id'],
+      'result': {'status': 'ok'},
+      'meta': <String, Object?>{},
+    });
+    final request = await healthy.nextRequest();
+    healthy.respond({
+      'id': request['id'],
+      'result': 'ok',
+      'meta': <String, Object?>{},
+    });
+
+    expect((await recovered).result, 'ok');
+    expect(starter.callCount, 3);
+    expect(unhealthy.killCount, 1);
+    expect(
+      logs.any((line) => line.startsWith('Go sidecar restart attempt 1/2')),
+      isTrue,
+    );
+  });
+
+  test(
+    'exhausts replacements that error, corrupt, or exit during health',
+    () async {
+      final first = FakeSidecarProcess();
+      final rpcFailure = FakeSidecarProcess();
+      final corrupt = FakeSidecarProcess();
+      final exits = FakeSidecarProcess();
+      final starter = FakeSidecarStarter([first, rpcFailure, corrupt, exits]);
+      final client = await SidecarClient.start(
+        executablePath: '/fake/sidecar',
+        token: 'test-token',
+        restartPolicy: const SidecarRestartPolicy(
+          maxAttempts: 3,
+          initialDelay: Duration.zero,
+          maxDelay: Duration.zero,
+        ),
+        processStarter: starter.start,
+      );
+      addTearDown(client.close);
+
+      final inFlight = client.call('slow');
+      await first.nextRequest();
+      final inFlightExpectation = expectLater(
+        inFlight,
+        throwsA(isA<SidecarExitedException>()),
+      );
+      await first.exit(37);
+      await inFlightExpectation;
+
+      final waiting = client.call('waits-for-health');
+      final waitingExpectation = expectLater(
+        waiting,
+        throwsA(isA<SidecarRestartExhaustedException>()),
+      );
+      final rpcHealth = await rpcFailure.nextRequest();
+      rpcFailure.respond({
+        'id': rpcHealth['id'],
+        'error': {'code': 'unhealthy', 'message': 'Health failed.'},
+      });
+      await corrupt.nextRequest();
+      corrupt.sendRaw('not-json');
+      await exits.nextRequest();
+      await exits.exit(41);
+
+      await waitingExpectation;
+      expect(starter.callCount, 4);
+      expect(corrupt.killCount, 1);
+    },
+  );
+
+  test('returns a stable error when restart attempts are exhausted', () async {
+    final first = FakeSidecarProcess();
+    final starter = FakeSidecarStarter([
+      first,
+      StateError('start failed once with test-token'),
+      StateError('start failed twice with test-token'),
+    ]);
+    final logs = <String>[];
+    final client = await SidecarClient.start(
+      executablePath: '/fake/sidecar',
+      token: 'test-token',
+      onLog: logs.add,
+      restartPolicy: const SidecarRestartPolicy(
+        maxAttempts: 2,
+        initialDelay: Duration.zero,
+        maxDelay: Duration.zero,
+      ),
+      processStarter: starter.start,
+    );
+    addTearDown(client.close);
+
+    final inFlight = client.call('slow');
+    await first.nextRequest();
+    final inFlightExpectation = expectLater(
+      inFlight,
+      throwsA(isA<SidecarExitedException>()),
+    );
+    await first.exit(23);
+    await inFlightExpectation;
+
+    final matcher = isA<SidecarRestartExhaustedException>()
+        .having((error) => error.attempts, 'attempts', 2)
+        .having(
+          (error) => error.cause,
+          'cause',
+          isA<BackendTransportException>(),
+        );
+    await expectLater(client.call('after-exhaustion'), throwsA(matcher));
+    await expectLater(client.call('still-exhausted'), throwsA(matcher));
+    expect(starter.callCount, 3);
+    expect(logs.join('\n'), isNot(contains('test-token')));
+    expect(logs.join('\n'), contains('[REDACTED]'));
+  });
+
+  test('timeouts and cancellation remain active during recovery', () async {
+    final first = FakeSidecarProcess();
+    final replacement = FakeSidecarProcess();
+    final starter = FakeSidecarStarter([first, replacement]);
+    final client = await SidecarClient.start(
+      executablePath: '/fake/sidecar',
+      token: 'test-token',
+      restartPolicy: const SidecarRestartPolicy(
+        initialDelay: Duration(milliseconds: 30),
+        maxDelay: Duration(milliseconds: 30),
+      ),
+      processStarter: starter.start,
+    );
+    addTearDown(client.close);
+
+    final inFlight = client.call('slow');
+    await first.nextRequest();
+    final inFlightExpectation = expectLater(
+      inFlight,
+      throwsA(isA<SidecarExitedException>()),
+    );
+    await first.exit(29);
+    await inFlightExpectation;
+
+    final timedOut = client.call(
+      'times-out-while-waiting',
+      timeout: const Duration(milliseconds: 5),
+    );
+    final cancellationToken = RpcCancellationToken();
+    final cancelled = client.call(
+      'cancelled-while-waiting',
+      cancellationToken: cancellationToken,
+    );
+    final timedOutExpectation = expectLater(
+      timedOut,
+      throwsA(isA<TimeoutException>()),
+    );
+    final cancelledExpectation = expectLater(
+      cancelled,
+      throwsA(isA<RpcCancelledException>()),
+    );
+    cancellationToken.cancel();
+
+    await timedOutExpectation;
+    await cancelledExpectation;
+    final health = await replacement.nextRequest();
+    replacement.respond({
+      'id': health['id'],
+      'result': {'status': 'ok'},
+      'meta': <String, Object?>{},
+    });
+    await Future<void>.delayed(Duration.zero);
+
+    expect(replacement.receivedRequestCount, 1);
+  });
+
+  test(
+    'close cancels a pending restart before another process starts',
+    () async {
+      final first = FakeSidecarProcess();
+      final replacement = FakeSidecarProcess();
+      final starter = FakeSidecarStarter([first, replacement]);
+      final client = await SidecarClient.start(
+        executablePath: '/fake/sidecar',
+        token: 'test-token',
+        restartPolicy: const SidecarRestartPolicy(
+          maxAttempts: 1,
+          initialDelay: Duration(seconds: 1),
+          maxDelay: Duration(seconds: 1),
+        ),
+        processStarter: starter.start,
+      );
+
+      final inFlight = client.call('slow');
+      await first.nextRequest();
+      final inFlightExpectation = expectLater(
+        inFlight,
+        throwsA(isA<SidecarExitedException>()),
+      );
+      await first.exit(31);
+      await inFlightExpectation;
+
+      await client.close();
+
+      expect(starter.callCount, 1);
+      await expectLater(
+        client.call('after-close'),
+        throwsA(isA<BackendClosedException>()),
+      );
     },
   );
 
@@ -219,6 +562,7 @@ Future<SidecarClient> _startClient(
     executablePath: '/fake/sidecar',
     token: 'test-token',
     onLog: onLog,
+    restartPolicy: const SidecarRestartPolicy.disabled(),
     processStarter: (executablePath, arguments) async {
       expect(executablePath, '/fake/sidecar');
       expect(arguments, ['--token', 'test-token']);
@@ -247,8 +591,9 @@ class FakeSidecarProcess implements SidecarProcess {
   late final IOSink stdin;
 
   var killCount = 0;
+  var _receivedRequestCount = 0;
 
-  int get receivedRequestCount => _requests.length;
+  int get receivedRequestCount => _receivedRequestCount;
 
   @override
   Stream<List<int>> get stderr => _stderrController.stream;
@@ -293,12 +638,35 @@ class FakeSidecarProcess implements SidecarProcess {
   }
 
   void _receiveRequest(String line) {
+    _receivedRequestCount++;
     final request = Map<String, dynamic>.from(jsonDecode(line) as Map);
     if (_requestWaiters.isNotEmpty) {
       _requestWaiters.removeAt(0).complete(request);
     } else {
       _requests.add(request);
     }
+  }
+}
+
+class FakeSidecarStarter {
+  FakeSidecarStarter(this._outcomes);
+
+  final List<Object> _outcomes;
+  var callCount = 0;
+
+  Future<SidecarProcess> start(
+    String executablePath,
+    List<String> arguments,
+  ) async {
+    expect(executablePath, '/fake/sidecar');
+    expect(arguments, ['--token', 'test-token']);
+    final index = callCount++;
+    if (index >= _outcomes.length) {
+      throw StateError('Unexpected sidecar start $callCount.');
+    }
+    final outcome = _outcomes[index];
+    if (outcome is SidecarProcess) return outcome;
+    throw outcome;
   }
 }
 

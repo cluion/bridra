@@ -461,6 +461,13 @@ Each desktop launch creates a random 256-bit token, starts one Go child process,
 performs the protocol handshake, and closes the process with the Flutter
 gateway. Go reserves stdout for RPC and writes logs to stderr.
 
+If the Sidecar exits unexpectedly, the desktop client fails every in-flight
+request without replaying it, then starts a replacement with bounded exponential
+backoff. New calls wait for the replacement to pass `system.health`; their own
+timeout and cancellation remain active. Three failed restart attempts leave the
+client in a stable unavailable state. `close()` cancels pending recovery and
+prevents another child from starting.
+
 Windows also has a native entrypoint for machines without GNU Make:
 
 ```powershell

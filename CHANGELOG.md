@@ -3,6 +3,15 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
+## [Unreleased]
+
+### Added
+
+- Added automatic desktop Sidecar recovery with bounded exponential backoff,
+  replacement health checks, stable retry-exhaustion errors, and recovery-aware
+  request timeout and cancellation behavior. In-flight calls fail without
+  automatic replay when a process crashes.
+
 ## [0.3.0] - 2026-07-25
 
 ### Added

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:bridra/api/backend_gateway.dart';
@@ -19,9 +20,26 @@ void main() {
       reason: 'Run `make backend-build` first.',
     );
 
+    final processes = <Process>[];
+    final recoveryStarted = Completer<void>();
     final client = await SidecarClient.start(
       executablePath: executable,
       token: 'integration-test-token',
+      onLog: (line) {
+        if (line.startsWith('Restarting the Go sidecar') &&
+            !recoveryStarted.isCompleted) {
+          recoveryStarted.complete();
+        }
+      },
+      restartPolicy: const SidecarRestartPolicy(
+        initialDelay: Duration.zero,
+        maxDelay: Duration.zero,
+      ),
+      processStarter: (path, arguments) async {
+        final process = await Process.start(path, arguments);
+        processes.add(process);
+        return TestSidecarProcess(process);
+      },
     );
     addTearDown(client.close);
     final api = BridraRpcApi(client);
@@ -53,5 +71,37 @@ void main() {
     for (var index = 0; index < concurrentGreetings.length; index++) {
       expect(concurrentGreetings[index].message, 'Hello, Codex $index!');
     }
+
+    expect(processes, hasLength(1));
+    expect(processes.single.kill(), isTrue);
+    await recoveryStarted.future;
+
+    final recoveredHealth = await api.health();
+    expect(recoveredHealth.status, 'ok');
+    expect(recoveredHealth.protocolVersion, supportedBackendProtocolVersion);
+    expect(processes, hasLength(2));
   });
+}
+
+class TestSidecarProcess implements SidecarProcess {
+  const TestSidecarProcess(this.process);
+
+  final Process process;
+
+  @override
+  Future<int> get exitCode => process.exitCode;
+
+  @override
+  Stream<List<int>> get stderr => process.stderr;
+
+  @override
+  IOSink get stdin => process.stdin;
+
+  @override
+  Stream<List<int>> get stdout => process.stdout;
+
+  @override
+  bool kill([ProcessSignal signal = ProcessSignal.sigterm]) {
+    return process.kill(signal);
+  }
 }

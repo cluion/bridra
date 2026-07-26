@@ -374,6 +374,15 @@ Desktop IO tests discover and start a real Go Sidecar through
 pure ordered resolver so environment, bundle, build, backend fallback, and
 Windows path behavior can be tested without launching a process.
 
+`SidecarClient` owns deployed desktop process recovery. An unexpected exit or
+terminal transport failure fails the active request set without replay, because
+the Go process may already have committed side effects. Replacement processes
+start under a configurable, bounded exponential-backoff policy and must answer
+`system.health` before queued new calls are written. Call timeout and
+cancellation continue while recovery is pending. Exhaustion produces one stable
+typed connection error, and closing the client cancels both the backoff wait and
+any replacement health check.
+
 ## Shared protocol
 
 - `system.health` is the startup handshake and reports `frameworkVersion` plus
