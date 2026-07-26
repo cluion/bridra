@@ -114,6 +114,23 @@ void main() {
     );
   });
 
+  test('malformed responses fail their known call before recovery', () async {
+    final process = FakeSidecarProcess();
+    final client = await _startClient(process);
+    addTearDown(client.close);
+
+    final call = client.call('malformed');
+    final request = await process.nextRequest();
+    final callExpectation = expectLater(
+      call,
+      throwsA(isA<BackendProtocolException>()),
+    );
+    process.respond({'id': request['id'], 'meta': <String, Object?>{}});
+
+    await callExpectation;
+    expect(process.killCount, 1);
+  });
+
   test('late responses after timeout are ignored and logged', () async {
     final process = FakeSidecarProcess();
     final logs = <String>[];
@@ -218,6 +235,10 @@ void main() {
     expect(policy.delayForAttempt(4), const Duration(milliseconds: 450));
     expect(policy.delayForAttempt(5), const Duration(milliseconds: 450));
     expect(() => policy.delayForAttempt(0), throwsRangeError);
+
+    final disabled = SidecarRestartPolicy.disabled();
+    expect(disabled.isEnabled, isFalse);
+    expect(disabled.maxAttempts, 0);
   });
 
   test('rejects invalid restart policies before starting a process', () async {
@@ -281,6 +302,11 @@ void main() {
     final health = await replacement.nextRequest();
     expect(health['method'], 'system.health');
     replacement.respond({
+      'id': 'unexpected-during-recovery',
+      'result': 'ignored',
+      'meta': <String, Object?>{},
+    });
+    replacement.respond({
       'id': health['id'],
       'result': {'status': 'ok'},
       'meta': <String, Object?>{},
@@ -299,6 +325,10 @@ void main() {
     expect(
       logs,
       contains('The Go sidecar restarted successfully (attempt 1/3).'),
+    );
+    expect(
+      logs,
+      contains('Ignored sidecar response while the process was recovering.'),
     );
     expect(logs.join('\n'), isNot(contains('test-token')));
   });
