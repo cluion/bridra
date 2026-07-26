@@ -383,6 +383,15 @@ cancellation continue while recovery is pending. Exhaustion produces one stable
 typed connection error, and closing the client cancels both the backoff wait and
 any replacement health check.
 
+The Go Sidecar owns the complementary orphan-protection boundary through
+`framework.ParentProcessContext`. It captures the launching process identity
+before serving RPC and cancels the server plus Application lifecycle when that
+process exits. Linux combines the current parent relationship with the
+`/proc/<pid>/stat` start identity, macOS registers an `EVFILT_PROC` `NOTE_EXIT`
+event, and Windows waits on a `SYNCHRONIZE` process handle. Stdin EOF remains the
+normal shutdown path; parent observation is an independent guard for forced
+termination or inherited pipe handles.
+
 ## Shared protocol
 
 - `system.health` is the startup handshake and reports `frameworkVersion` plus
@@ -406,6 +415,8 @@ any replacement health check.
 - Flutter owns exactly one Go child process per gateway.
 - Every launch receives a random 256-bit token.
 - Closing stdin requests a graceful exit; signals are fallback cleanup.
+- Parent-process death cancels the stdio server and then runs reverse-order
+  Application shutdown before the Sidecar exits.
 - Unexpected exits and malformed stdout fail all pending calls.
 - Go drains accepted requests after stdin closes, serializes concurrent replies,
   and may return them out of order. Flutter correlates replies by ID and ignores

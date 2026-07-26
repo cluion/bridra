@@ -11,6 +11,9 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
   replacement health checks, stable retry-exhaustion errors, and recovery-aware
   request timeout and cancellation behavior. In-flight calls fail without
   automatic replay when a process crashes.
+- Added platform-specific parent-process observation so a desktop Sidecar
+  performs graceful shutdown instead of becoming orphaned when Flutter is
+  force-terminated.
 
 ## [0.3.0] - 2026-07-25
 

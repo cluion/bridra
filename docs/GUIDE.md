@@ -461,6 +461,13 @@ Each desktop launch creates a random 256-bit token, starts one Go child process,
 performs the protocol handshake, and closes the process with the Flutter
 gateway. Go reserves stdout for RPC and writes logs to stderr.
 
+The Sidecar also watches the identity of its operating-system parent. If the
+Flutter process is force-terminated, the Sidecar cancels active work, runs the
+normal application shutdown lifecycle, and exits even when an inherited stdio
+handle would otherwise keep it alive. Linux checks the parent process identity
+through `/proc`, macOS uses a process `kqueue` event, and Windows waits on the
+parent process handle.
+
 If the Sidecar exits unexpectedly, the desktop client fails every in-flight
 request without replaying it, then starts a replacement with bounded exponential
 backoff. New calls wait for the replacement to pass `system.health`; their own

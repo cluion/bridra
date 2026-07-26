@@ -34,8 +34,21 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := runSidecar(ctx, application, os.Stdin, os.Stdout, os.Stderr); err != nil {
-		fmt.Fprintf(os.Stderr, "sidecar: %v\n", err)
+	ctx, stopParent, err := framework.ParentProcessContext(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "sidecar: parent lifecycle: %v\n", err)
+		os.Exit(2)
+	}
+	defer stopParent()
+	runError := runSidecar(ctx, application, os.Stdin, os.Stdout, os.Stderr)
+	cause := context.Cause(ctx)
+	if cause != nil &&
+		!errors.Is(cause, context.Canceled) &&
+		!errors.Is(cause, framework.ErrParentProcessExited) {
+		runError = errors.Join(runError, cause)
+	}
+	if runError != nil {
+		fmt.Fprintf(os.Stderr, "sidecar: %v\n", runError)
 		os.Exit(1)
 	}
 }

@@ -35,6 +35,7 @@ Bridra is licensed under the [MIT License](LICENSE), Copyright (c) 2026 Cluion.
 - `database/sql` lifecycle, transaction boundaries, and migration runner
 - Project creation, scaffolding, development supervision, builds, diagnostics,
   release metadata, and transactional upgrades through one CLI
+- Parent-bound desktop Sidecars that shut down when their Flutter owner exits
 - Real process, HTTP, browser, widget, race, public API, and coverage tests
 
 ## Platform model
@@ -48,7 +49,8 @@ Bridra is licensed under the [MIT License](LICENSE), Copyright (c) 2026 Cluion.
 | iOS | Yes | HTTP RPC | Unsigned iOS app |
 | Web | Yes | HTTP RPC with CORS | Static Web bundle |
 
-Desktop applications launch and own an ephemeral-token Go child process.
+Desktop applications launch and own an ephemeral-token Go child process. The
+Sidecar independently watches its Flutter parent and exits if that owner dies.
 Mobile and Web applications connect to a separately deployed Go HTTP backend
 through the same typed contract.
 

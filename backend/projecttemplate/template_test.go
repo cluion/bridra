@@ -87,6 +87,22 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generated Go consumer: %v\n%s", err, output)
 	}
+	for _, target := range []string{"darwin", "linux", "windows"} {
+		t.Run("sidecar-"+target, func(t *testing.T) {
+			command := exec.Command("go", "test", "-exec=true", "./cmd/sidecar")
+			command.Dir = filepath.Join(root, "backend")
+			command.Env = append(
+				os.Environ(),
+				"CGO_ENABLED=0",
+				"GOOS="+target,
+				"GOARCH=amd64",
+			)
+			output, err := command.CombinedOutput()
+			if err != nil {
+				t.Fatalf("generated %s Sidecar: %v\n%s", target, err, output)
+			}
+		})
+	}
 	goMod, err := os.ReadFile(filepath.Join(root, "backend", "go.mod"))
 	if err != nil {
 		t.Fatalf("read generated go.mod: %v", err)
