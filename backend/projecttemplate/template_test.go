@@ -141,6 +141,20 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 		metadata.TemplateVersion != 2 || metadata.ProtocolVersion != 1 {
 		t.Fatalf("generated project metadata = %#v", metadata)
 	}
+	mainDart, err := os.ReadFile(filepath.Join(root, "lib", "main.dart"))
+	if err != nil {
+		t.Fatalf("read generated main.dart: %v", err)
+	}
+	for _, expected := range []string{
+		"Future<void> main([List<String> arguments = const []])",
+		"DesktopSingleInstance.acquire(",
+		"applicationId: 'com.example.starter_app'",
+		"instance.activations.listen(_handleActivation)",
+	} {
+		if !strings.Contains(string(mainDart), expected) {
+			t.Fatalf("generated main.dart does not contain %q:\n%s", expected, mainDart)
+		}
+	}
 }
 
 func TestRenderUsesVersionedPublishedDependenciesWithoutLocalOverrides(t *testing.T) {

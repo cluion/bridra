@@ -10,6 +10,7 @@ It provides:
 - the common RPC client contract and error types;
 - an HTTP RPC client for mobile, Web, and remote backends;
 - a managed Go sidecar client for Windows, macOS, and Linux;
+- desktop single-instance ownership and activation forwarding;
 - a conditional default connector that selects the platform transport.
 
 Desktop executable discovery checks `BRIDRA_SIDECAR_PATH`, the application
@@ -45,6 +46,32 @@ cancellation path automatically.
       cancellationToken: cancellationToken,
     );
     cancellationToken.cancel();
+
+## Desktop single instance
+
+Acquire ownership once in the root isolate before `runApp`. A later process
+forwards its command-line arguments, including file paths or deep-link URIs, to
+the primary process and returns `isPrimary == false`.
+
+    Future<void> main([List<String> arguments = const []]) async {
+      WidgetsFlutterBinding.ensureInitialized();
+      final instance = await DesktopSingleInstance.acquire(
+        applicationId: 'com.example.my_app',
+        arguments: arguments,
+      );
+      if (!instance.isPrimary) return;
+
+      instance.activations.listen((activation) {
+        openFilesAndLinks(activation.arguments);
+      });
+      runApp(const MyApp());
+    }
+
+The ownership lock is released by the operating system if the primary process
+crashes. Activation transport is bound to IPv4 loopback, uses an ephemeral port
+and a random token, limits frames to 1 MiB, and waits for an acknowledgement
+before the later process exits. Call `acquire` only once from the root isolate;
+desktop file locks are process-scoped on Linux and macOS.
 
 ## Desktop sidecar
 

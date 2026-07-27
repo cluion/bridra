@@ -7,7 +7,7 @@
 [Upgrading](docs/UPGRADING.md) ·
 [Contributing](CONTRIBUTING.md)
 
-Bridra 0.3 combines Flutter UI with a Laravel-inspired Go
+Bridra 0.4 combines Flutter UI with a Laravel-inspired Go
 application pipeline. It provides one project model for Windows, macOS, Linux,
 Android, iOS, and Web while keeping application code explicit and testable.
 
@@ -35,6 +35,7 @@ Bridra is licensed under the [MIT License](LICENSE), Copyright (c) 2026 Cluion.
 - `database/sql` lifecycle, transaction boundaries, and migration runner
 - Project creation, scaffolding, development supervision, builds, diagnostics,
   release metadata, and transactional upgrades through one CLI
+- Single-instance desktop ownership with later-launch activation forwarding
 - Parent-bound desktop Sidecars that shut down when their Flutter owner exits
 - Real process, HTTP, browser, widget, race, public API, and coverage tests
 

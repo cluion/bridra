@@ -4,6 +4,18 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test(
+    'desktop single-instance coordination is disabled on Web',
+    () async {
+      expect(DesktopSingleInstance.isSupported, isFalse);
+      await expectLater(
+        DesktopSingleInstance.acquire(applicationId: 'com.example.web'),
+        throwsUnsupportedError,
+      );
+    },
+    skip: kIsWeb ? false : 'Browser connector test.',
+  );
+
+  test(
     'public default connector selects the Web HTTP client',
     () async {
       final client = await connectDefaultRpcClient();

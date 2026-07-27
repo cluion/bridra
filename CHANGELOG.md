@@ -5,6 +5,14 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 
 ## [Unreleased]
 
+### Added
+
+- Added desktop single-instance coordination with per-application ownership,
+  crash-safe stale-lock recovery, and authenticated loopback forwarding for
+  command-line arguments such as file paths and deep-link URIs.
+- Updated generated applications to acquire desktop ownership before `runApp`
+  and expose later activations through a typed stream.
+
 ## [0.4.0] - 2026-07-27
 
 ### Added

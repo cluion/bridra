@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added `DesktopSingleInstance`, `DesktopSingleInstanceSession`, and
+  `DesktopActivation` for crash-safe desktop ownership and later-launch
+  activation forwarding.
+
 ## 0.4.0 - 2026-07-27
 
 - Added automatic Go Sidecar restart with configurable bounded exponential

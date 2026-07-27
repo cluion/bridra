@@ -374,6 +374,22 @@ Desktop IO tests discover and start a real Go Sidecar through
 pure ordered resolver so environment, bundle, build, backend fallback, and
 Windows path behavior can be tested without launching a process.
 
+`DesktopSingleInstance` coordinates the Flutter application process before it
+creates a gateway or Sidecar. A stable reverse-domain application identity maps
+to a per-user ownership file. The primary holds an exclusive operating-system
+file lock, binds an ephemeral IPv4 loopback socket, and writes authenticated
+connection metadata beside the lock. A later process cannot take the lock, so it
+reads that metadata, forwards a bounded typed activation, waits for
+acknowledgement, and exits. The random 256-bit token prevents an unrelated local
+process from accidentally speaking the activation protocol.
+
+File locks and listening sockets are released by the operating system on process
+death. Stale metadata is therefore safe: the next process takes the released
+lock, replaces the metadata, and becomes primary. Acquisition retries the
+lock/forward decision for a bounded startup window so concurrent launches do not
+both become primary. The API is root-isolate only because Dart documents POSIX
+file locks as process-scoped.
+
 `SidecarClient` owns deployed desktop process recovery. An unexpected exit or
 terminal transport failure fails the active request set without replay, because
 the Go process may already have committed side effects. Replacement processes

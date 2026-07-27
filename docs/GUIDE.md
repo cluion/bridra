@@ -457,6 +457,37 @@ make linux-run
 make windows-run
 ```
 
+Generated applications acquire a desktop single-instance lease before
+`runApp`. The first launch becomes primary. A later launch forwards its
+command-line arguments, including file paths and deep-link URIs, through
+`DesktopSingleInstanceSession.activations`, receives an acknowledgement, and
+exits before calling `runApp`.
+
+Use a stable reverse-domain application identity and attach product routing in
+the activation handler:
+
+```dart
+Future<void> main([List<String> arguments = const []]) async {
+  WidgetsFlutterBinding.ensureInitialized();
+  if (DesktopSingleInstance.isSupported) {
+    final instance = await DesktopSingleInstance.acquire(
+      applicationId: 'com.example.my_app',
+      arguments: arguments,
+    );
+    if (!instance.isPrimary) return;
+    instance.activations.listen((activation) {
+      openFilesAndLinks(activation.arguments);
+    });
+  }
+  runApp(const MyApp());
+}
+```
+
+Call `acquire` once from the root isolate. Linux and macOS file locks are
+process-scoped, so multiple-isolate acquisition is unsupported. The operating
+system releases ownership after a crash; the next launch overwrites stale
+connection metadata and becomes primary.
+
 Each desktop launch creates a random 256-bit token, starts one Go child process,
 performs the protocol handshake, and closes the process with the Flutter
 gateway. Go reserves stdout for RPC and writes logs to stderr.

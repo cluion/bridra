@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import {{quote .BridraDartImport}};
 import 'package:flutter/material.dart';
 
 import 'api/backend_gateway.dart';
@@ -18,8 +19,21 @@ const _subtle = Color(0xFF676D7E);
 const _danger = Color(0xFFFF7184);
 const _warning = Color(0xFFF4C66A);
 
-void main() {
+Future<void> main([List<String> arguments = const []]) async {
+  WidgetsFlutterBinding.ensureInitialized();
+  if (DesktopSingleInstance.isSupported) {
+    final instance = await DesktopSingleInstance.acquire(
+      applicationId: '{{.Organization}}.{{.ProjectName}}',
+      arguments: arguments,
+    );
+    if (!instance.isPrimary) return;
+    instance.activations.listen(_handleActivation);
+  }
   runApp(const StarterApp());
+}
+
+void _handleActivation(DesktopActivation activation) {
+  debugPrint('{{.DisplayName}} activation: ${activation.arguments}');
 }
 
 class StarterApp extends StatelessWidget {
