@@ -5,6 +5,8 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-27
+
 ### Added
 
 - Added desktop single-instance coordination with per-application ownership,
@@ -12,6 +14,19 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
   command-line arguments such as file paths and deep-link URIs.
 - Updated generated applications to acquire desktop ownership before `runApp`
   and expose later activations through a typed stream.
+
+### Changed
+
+- Registered a manual `0.4.0` to `0.5.0` upgrade because existing projects must
+  adopt single-instance coordination in their application-owned Flutter
+  entrypoint. Project Template version `2` and RPC protocol version `1` remain
+  unchanged.
+
+### Support
+
+- The latest `0.5.x` release receives best-effort security fixes until the next
+  minor line is published. The `0.4.x` line is no longer supported after this
+  release.
 
 ## [0.4.0] - 2026-07-27
 

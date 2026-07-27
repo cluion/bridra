@@ -65,6 +65,12 @@ var registeredUpgradeReleases = []upgradeRelease{
 		TemplateVersion:        2,
 		ProtocolVersion:        1,
 	},
+	{
+		FrameworkVersion:       "0.5.0",
+		ProjectMetadataVersion: 2,
+		TemplateVersion:        2,
+		ProtocolVersion:        1,
+	},
 }
 
 var registeredFrameworkMigrations = []frameworkMigration{
@@ -94,6 +100,13 @@ var registeredFrameworkMigrations = []frameworkMigration{
 		From:        "0.3.0",
 		To:          "0.4.0",
 		Description: "Update both framework dependencies and adopt parent-process observation in the application-owned Sidecar entrypoint.",
+		Automatic:   false,
+	},
+	{
+		ID:          "framework-0.4.0-to-0.5.0",
+		From:        "0.4.0",
+		To:          "0.5.0",
+		Description: "Update both framework dependencies and adopt desktop single-instance ownership in the application-owned Flutter entrypoint.",
 		Automatic:   false,
 	},
 }

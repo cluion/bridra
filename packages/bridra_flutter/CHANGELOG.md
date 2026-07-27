@@ -2,9 +2,13 @@
 
 ## Unreleased
 
+## 0.5.0 - 2026-07-27
+
 - Added `DesktopSingleInstance`, `DesktopSingleInstanceSession`, and
   `DesktopActivation` for crash-safe desktop ownership and later-launch
   activation forwarding.
+- Kept the package version aligned with the Bridra 0.5.0 Go Framework, CLI, and
+  project metadata without changing RPC protocol version `1`.
 
 ## 0.4.0 - 2026-07-27
 
