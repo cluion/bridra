@@ -5,6 +5,21 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-07-29
+
+### Fixed
+
+- Fixed generated Flutter widget tests to implement the complete resumable file
+  upload and download gateway contract introduced in `0.6.0`.
+- Added rendered Flutter consumer compilation to Project Template verification
+  so generated application tests cannot drift from generated gateway APIs.
+
+### Changed
+
+- Registered a manual `0.6.0` to `0.6.1` upgrade because projects created with
+  `0.6.0` must apply the documented `FakeBackend` test fix and upgrades never
+  overwrite application-owned test files.
+
 ## [0.6.0] - 2026-07-29
 
 ### Added

@@ -748,6 +748,19 @@ func TestCurrentUpgradeCatalogIncludesAutomaticStreamingAndFileRelease(t *testin
 	}
 }
 
+func TestCurrentUpgradeCatalogIncludesManualGeneratedConsumerPatch(t *testing.T) {
+	path, available, err := currentUpgradeCatalog().migrationPath("0.6.0", "0.6.1")
+	if err != nil {
+		t.Fatalf("resolve generated consumer patch migration: %v", err)
+	}
+	if !available || len(path) != 1 {
+		t.Fatalf("generated consumer patch path = %#v, available = %t", path, available)
+	}
+	if path[0].ID != "framework-0.6.0-to-0.6.1" || path[0].Automatic {
+		t.Fatalf("generated consumer patch migration = %#v", path[0])
+	}
+}
+
 func TestNMinusOneProjectMetadataUsesCurrentGoCore(t *testing.T) {
 	root := makeProjectRoot(t, validProjectMetadata)
 	backendRoot := filepath.Join(root, "backend")
