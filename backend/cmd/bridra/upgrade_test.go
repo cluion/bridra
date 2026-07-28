@@ -735,6 +735,19 @@ func TestCurrentUpgradeCatalogIncludesManualSingleInstanceRelease(t *testing.T) 
 	}
 }
 
+func TestCurrentUpgradeCatalogIncludesAutomaticStreamingAndFileRelease(t *testing.T) {
+	path, available, err := currentUpgradeCatalog().migrationPath("0.5.0", "0.6.0")
+	if err != nil {
+		t.Fatalf("resolve streaming and file migration: %v", err)
+	}
+	if !available || len(path) != 1 {
+		t.Fatalf("streaming and file path = %#v, available = %t", path, available)
+	}
+	if path[0].ID != "framework-0.5.0-to-0.6.0" || !path[0].Automatic {
+		t.Fatalf("streaming and file migration = %#v", path[0])
+	}
+}
+
 func TestNMinusOneProjectMetadataUsesCurrentGoCore(t *testing.T) {
 	root := makeProjectRoot(t, validProjectMetadata)
 	backendRoot := filepath.Join(root, "backend")

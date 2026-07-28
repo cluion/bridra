@@ -60,8 +60,8 @@ approval. CI success alone is not publication authorization.
    changelogs, and live documentation from one version:
 
    ```bash
-   make release-prepare VERSION=0.5.0
-   make release-check VERSION=0.5.0
+   make release-prepare VERSION=0.6.0
+   make release-check VERSION=0.6.0
    ```
 
    The prepare command never creates a tag, publishes a package, or creates a
@@ -73,7 +73,7 @@ approval. CI success alone is not publication authorization.
    verification rejects a new current version without a complete path from each
    older registered release.
 4. Replace `Unreleased` in both changelogs with the intended release date, then
-   run `make release-check VERSION=0.5.0 FINAL=1`. The protected release workflow
+   run `make release-check VERSION=0.6.0 FINAL=1`. The protected release workflow
    repeats this final check and refuses an unfinished changelog.
 5. Run the full local verification and attach `coverage/summary.md` plus the CLI
    release manifest/checksums to the Pull Request.
@@ -87,9 +87,9 @@ tagging it.
 Windows maintainers use:
 
 ```powershell
-.\tool\windows.ps1 -Task release-prepare -Version 0.5.0
-.\tool\windows.ps1 -Task release-check -Version 0.5.0
-.\tool\windows.ps1 -Task release-check -Version 0.5.0 -Final
+.\tool\windows.ps1 -Task release-prepare -Version 0.6.0
+.\tool\windows.ps1 -Task release-check -Version 0.6.0
+.\tool\windows.ps1 -Task release-check -Version 0.6.0 -Final
 ```
 
 Security fixes under embargo use a private advisory and private fork until the
@@ -102,7 +102,7 @@ Request before the agreed disclosure time.
 make cli-release
 ```
 
-This produces the following under `build/bridra/cli/0.5.0/`:
+This produces the following under `build/bridra/cli/0.6.0/`:
 
 - macOS amd64 and arm64 `tar.gz` archives
 - Linux amd64 and arm64 `tar.gz` archives
@@ -114,7 +114,7 @@ The source commit and commit timestamp are embedded into each binary. Confirm
 the native archive before publishing:
 
 ```bash
-shasum -a 256 -c build/bridra/cli/0.5.0/SHA256SUMS
+shasum -a 256 -c build/bridra/cli/0.6.0/SHA256SUMS
 bridra version --json
 ```
 
@@ -128,12 +128,12 @@ must not be implied by these unsigned CLI archives.
 
 ## Tag and publish
 
-For Bridra 0.5.0, create the annotated Go submodule tag only after the release
+For Bridra 0.6.0, create the annotated Go submodule tag only after the release
 Pull Request is merged and the repository owner gives final authorization:
 
 ```bash
-git tag -a backend/v0.5.0 -m "Bridra 0.5.0"
-git push origin backend/v0.5.0
+git tag -a backend/v0.6.0 -m "Bridra 0.6.0"
+git push origin backend/v0.6.0
 ```
 
 The protected GitHub workflow requires the tag to point at the current `main`
@@ -172,7 +172,7 @@ configured as `backend/v{{version}}`.
 Verify installation without a repository checkout:
 
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.5.0
+go install github.com/cluion/bridra/backend/cmd/bridra@v0.6.0
 bridra version --json
 bridra create release_smoke --module example.com/acme/release-smoke
 ```
@@ -200,8 +200,8 @@ published artifact disappear; release notes must point users to the replacement.
 Users choose upgrades explicitly:
 
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.5.0
-bridra upgrade --plan --to 0.5.0
+go install github.com/cluion/bridra/backend/cmd/bridra@v0.6.0
+bridra upgrade --plan --to 0.6.0
 ```
 
 Bridra has no silent CLI auto-update. Breaking changes require release notes,
@@ -210,8 +210,9 @@ Apply is permitted only for fully automatic catalog paths and rolls back managed
 manifests, lockfiles, and metadata when dependency resolution or verification
 fails. Application-owned Controllers, Services, Models, configuration, generated
 contracts, and native runners are never overwritten as part of a core package
-upgrade. The `0.5.0` path is manual because its Flutter entrypoint change is
-application-owned.
+upgrade. The `0.5.0` to `0.6.0` path is automatic because streaming and file
+transfer are opt-in and do not change application-owned source, Project
+Template version `2`, or RPC protocol version `1`.
 
 The project-facing compatibility matrix, deprecation window, manual migration
 workflow, and rollback contract are defined in [UPGRADING.md](UPGRADING.md).

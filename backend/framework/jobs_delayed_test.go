@@ -1,6 +1,7 @@
 package framework
 
 import (
+	"container/heap"
 	"context"
 	"errors"
 	"reflect"
@@ -160,6 +161,53 @@ func TestJobQueueShutdownPromotesAndDrainsDelayedJobs(t *testing.T) {
 	}
 	if handled.Load() != 1 {
 		t.Fatalf("handled = %d, want 1", handled.Load())
+	}
+}
+
+func TestJobQueueDrainsBufferedScheduledJobsInDueOrder(t *testing.T) {
+	queue, err := NewJobQueue(JobQueueOptions{Capacity: 3, Workers: 1})
+	if err != nil {
+		t.Fatalf("new queue: %v", err)
+	}
+	now := time.Now()
+	pending := &scheduledJobHeap{
+		{
+			job:      queuedJob{value: delayedJob{Value: 3}},
+			readyAt:  now.Add(3 * time.Hour),
+			sequence: 1,
+		},
+	}
+	heap.Init(pending)
+	for _, scheduled := range []scheduledJob{
+		{
+			job:     queuedJob{value: delayedJob{Value: 1}},
+			readyAt: now.Add(time.Hour),
+		},
+		{
+			job:     queuedJob{value: delayedJob{Value: 2}},
+			readyAt: now.Add(2 * time.Hour),
+		},
+	} {
+		queue.delayedSlots <- struct{}{}
+		queue.scheduled <- scheduled
+	}
+	queue.delayedSlots <- struct{}{}
+
+	sequence := uint64(1)
+	queue.drainScheduledJobs(pending, &sequence)
+
+	if sequence != 3 {
+		t.Fatalf("sequence = %d, want 3", sequence)
+	}
+	for want := 1; want <= 3; want++ {
+		job := <-queue.jobs
+		got := job.value.(delayedJob).Value
+		if got != want {
+			t.Fatalf("job value = %d, want %d", got, want)
+		}
+	}
+	if len(queue.delayedSlots) != 0 {
+		t.Fatalf("delayed slots = %d, want 0", len(queue.delayedSlots))
 	}
 }
 
