@@ -2,11 +2,13 @@ package framework
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"sync"
 )
@@ -16,6 +18,7 @@ const defaultMaxPendingRequests = 64
 const defaultStreamWindow = 16
 const maxStreamWindow = 256
 const rpcCancellationMethod = "rpc.cancel"
+const rpcFileUploadMethod = "rpc.file_upload"
 const rpcStreamAckMethod = "rpc.stream_ack"
 
 type Server struct {
@@ -23,6 +26,8 @@ type Server struct {
 	Input                 io.Reader
 	Output                io.Writer
 	Errors                io.Writer
+	FileTransfers         *FileTransferStore
+	Token                 string
 	MaxConcurrentRequests int
 	MaxPendingRequests    int
 }
@@ -61,7 +66,19 @@ func (s *Server) Serve(ctx context.Context) error {
 			for request := range jobs {
 				if request.Context.Err() == nil {
 					if request.flow == nil {
-						_ = encoder.Encode(s.Router.Dispatch(request.Context, request.Request))
+						response := Response{}
+						if request.Request.Method == rpcFileUploadMethod {
+							response = s.importSidecarUpload(
+								request.Context,
+								request.Request,
+							)
+						} else {
+							response = s.Router.Dispatch(
+								request.Context,
+								request.Request,
+							)
+						}
+						_ = encoder.Encode(response)
 					} else {
 						_ = s.Router.DispatchStream(
 							request.Context,
@@ -146,6 +163,104 @@ scan:
 	close(jobs)
 	workers.Wait()
 	return errors.Join(scanError, encoder.Err())
+}
+
+func (s *Server) importSidecarUpload(
+	ctx context.Context,
+	request Request,
+) Response {
+	response := Response{ID: request.ID}
+	if s.FileTransfers == nil {
+		response.Error = NewError(
+			"file_upload_unavailable",
+			"The Sidecar file transfer store is not configured.",
+		)
+		return response
+	}
+	if s.Token == "" || request.Meta["token"] != s.Token {
+		response.Error = NewError(
+			"unauthenticated",
+			"The request token is invalid.",
+		)
+		return response
+	}
+	var params struct {
+		Path      string `json:"path"`
+		Name      string `json:"name"`
+		MediaType string `json:"mediaType"`
+		Size      int64  `json:"size"`
+		SHA256    string `json:"sha256"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(request.Params))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&params); err != nil {
+		response.Error = NewError(
+			"invalid_params",
+			"The file upload parameters are invalid.",
+		)
+		return response
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF || params.Path == "" {
+		response.Error = NewError(
+			"invalid_params",
+			"The file upload parameters are invalid.",
+		)
+		return response
+	}
+	source, err := os.Open(params.Path)
+	if err != nil {
+		response.Error = NewError(
+			"file_upload_unavailable",
+			"The Sidecar could not open the upload source.",
+		)
+		return response
+	}
+	defer source.Close()
+	reference, err := s.FileTransfers.ImportUpload(
+		ctx,
+		params.Name,
+		params.MediaType,
+		params.Size,
+		params.SHA256,
+		source,
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrFileTransferTooLarge):
+			response.Error = NewError(
+				"file_upload_too_large",
+				"The file upload exceeds its declared or configured size.",
+			)
+		case errors.Is(err, ErrFileTransferChecksum):
+			response.Error = NewError(
+				"file_upload_checksum_mismatch",
+				"The file upload failed SHA-256 verification.",
+			)
+		case errors.Is(err, ErrFileTransferInvalid),
+			errors.Is(err, ErrFileTransferIncomplete):
+			response.Error = NewError(
+				"file_upload_invalid",
+				"The file upload is invalid.",
+			)
+		case errors.Is(err, context.Canceled):
+			response.Error = NewError(
+				"request_cancelled",
+				"The request was cancelled.",
+			)
+		default:
+			if s.Errors != nil {
+				fmt.Fprintf(s.Errors, "sidecar: file upload: %v\n", err)
+			}
+			response.Error = NewError(
+				"file_upload_failed",
+				"The Sidecar could not store the file upload.",
+			)
+		}
+		return response
+	}
+	response.Result = reference
+	return response
 }
 
 type serverRequest struct {

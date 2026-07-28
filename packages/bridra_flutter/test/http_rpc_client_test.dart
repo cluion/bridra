@@ -372,6 +372,217 @@ void main() {
     );
     expect(cancelledTransport.sendCount, 0);
   });
+
+  test('resumes an interrupted file download with a byte range', () async {
+    final content = utf8.encode('resumable report');
+    final transport = ResumableFileDownloadClient(content, firstBytes: 5);
+    final client = HttpRpcClient(
+      endpoint: Uri.parse('https://backend.example/rpc'),
+      token: 'remote-token',
+      client: transport,
+    );
+    addTearDown(client.close);
+
+    final downloaded = await client
+        .download(_httpFileReference(content))
+        .expand((chunk) => chunk)
+        .toList();
+
+    expect(downloaded, content);
+    expect(transport.ranges, [null, 'bytes=5-']);
+  });
+
+  test('resumes a verified file upload from the server offset', () async {
+    final content = utf8.encode('resumable upload');
+    final transport = ResumableFileUploadClient(content, firstBytes: 6);
+    final client = HttpRpcClient(
+      endpoint: Uri.parse('https://backend.example/rpc'),
+      token: 'remote-token',
+      client: transport,
+    );
+    addTearDown(client.close);
+    final upload = RpcFileUpload(
+      name: 'upload.bin',
+      mediaType: 'application/octet-stream',
+      size: content.length,
+      sha256: sha256.convert(content).toString(),
+      openRead: (offset) => Stream.value(content.sublist(offset)),
+    );
+
+    final reference = await client.upload(upload);
+
+    expect(reference.name, upload.name);
+    expect(reference.sha256, upload.sha256);
+    expect(transport.methods, ['POST', 'PATCH', 'HEAD', 'PATCH']);
+    expect(transport.patchOffsets, [0, 6]);
+    expect(transport.token, 'remote-token');
+  });
+
+  test('validates bounded file transfer attempts and expiry', () async {
+    final content = utf8.encode('file');
+    final transport = FileDownloadClient([content.sublist(0, 1)]);
+    final client = HttpRpcClient(
+      endpoint: Uri.parse('https://backend.example/rpc'),
+      token: 'remote-token',
+      client: transport,
+    );
+    final reference = _httpFileReference(content);
+    final upload = RpcFileUpload(
+      name: 'upload.bin',
+      mediaType: 'application/octet-stream',
+      size: content.length,
+      sha256: sha256.convert(content).toString(),
+      openRead: (offset) => Stream.value(content.sublist(offset)),
+    );
+
+    await expectLater(
+      client.download(reference, maxAttempts: 0).toList(),
+      throwsArgumentError,
+    );
+    await expectLater(
+      client.download(reference, maxAttempts: 1).toList(),
+      throwsA(isA<BackendTransportException>()),
+    );
+    await expectLater(
+      client
+          .download(
+            RpcFileReference.fromJson({
+              ...reference.toJson(),
+              'expiresAt': DateTime.now()
+                  .subtract(const Duration(seconds: 1))
+                  .toUtc()
+                  .toIso8601String(),
+            }),
+          )
+          .toList(),
+      throwsA(isA<RpcFileExpiredException>()),
+    );
+    await expectLater(
+      client.upload(upload, maxAttempts: 0),
+      throwsArgumentError,
+    );
+    await expectLater(
+      client.upload(
+        upload,
+        cancellationToken: RpcCancellationToken()..cancel(),
+      ),
+      throwsA(isA<RpcCancelledException>()),
+    );
+    await client.close();
+    await expectLater(
+      client.upload(upload),
+      throwsA(isA<BackendClosedException>()),
+    );
+  });
+
+  test('rejects an upload checksum failure from the backend', () async {
+    final content = utf8.encode('upload');
+    final transport = ResumableFileUploadClient(
+      content,
+      firstBytes: 0,
+      failFirst: false,
+      patchStatusCode: 422,
+    );
+    final client = HttpRpcClient(
+      endpoint: Uri.parse('https://backend.example/rpc'),
+      token: 'remote-token',
+      client: transport,
+    );
+    addTearDown(client.close);
+
+    await expectLater(
+      client.upload(
+        RpcFileUpload(
+          name: 'upload.bin',
+          mediaType: 'application/octet-stream',
+          size: content.length,
+          sha256: sha256.convert(content).toString(),
+          openRead: (offset) => Stream.value(content.sublist(offset)),
+        ),
+      ),
+      throwsA(isA<BackendProtocolException>()),
+    );
+  });
+
+  test(
+    'rejects malformed upload creation, progress, and resume state',
+    () async {
+      final content = utf8.encode('upload');
+      final upload = RpcFileUpload(
+        name: 'upload.bin',
+        mediaType: 'application/octet-stream',
+        size: content.length,
+        sha256: sha256.convert(content).toString(),
+        openRead: (offset) => Stream.value(content.sublist(offset)),
+      );
+      for (final mode in MalformedUploadMode.values) {
+        final client = HttpRpcClient(
+          endpoint: Uri.parse('https://backend.example/rpc'),
+          token: 'remote-token',
+          client: MalformedFileUploadClient(mode),
+        );
+        await expectLater(
+          client.upload(upload),
+          throwsA(isA<BackendProtocolException>()),
+          reason: '$mode',
+        );
+        await client.close();
+      }
+    },
+  );
+
+  test('aborts active file transfers on timeout and cancellation', () async {
+    final content = utf8.encode('file');
+    final reference = _httpFileReference(content);
+    final downloadCancellation = RpcCancellationToken();
+    final cancelledDownloadClient = HttpRpcClient(
+      endpoint: Uri.parse('https://backend.example/rpc'),
+      token: 'remote-token',
+      client: AbortObservingClient(),
+    );
+    final cancelledDownload = cancelledDownloadClient
+        .download(reference, cancellationToken: downloadCancellation)
+        .toList();
+    await Future<void>.delayed(Duration.zero);
+    downloadCancellation.cancel();
+    await expectLater(cancelledDownload, throwsA(isA<RpcCancelledException>()));
+    await cancelledDownloadClient.close();
+
+    final timedOutDownloadClient = HttpRpcClient(
+      endpoint: Uri.parse('https://backend.example/rpc'),
+      token: 'remote-token',
+      client: AbortObservingClient(),
+    );
+    await expectLater(
+      timedOutDownloadClient
+          .download(reference, timeout: const Duration(milliseconds: 5))
+          .toList(),
+      throwsA(isA<TimeoutException>()),
+    );
+    await timedOutDownloadClient.close();
+
+    final uploadCancellation = RpcCancellationToken();
+    final cancelledUploadClient = HttpRpcClient(
+      endpoint: Uri.parse('https://backend.example/rpc'),
+      token: 'remote-token',
+      client: AbortObservingClient(),
+    );
+    final upload = RpcFileUpload(
+      name: 'upload.bin',
+      mediaType: 'application/octet-stream',
+      size: content.length,
+      sha256: sha256.convert(content).toString(),
+      openRead: (offset) => Stream.value(content.sublist(offset)),
+    );
+    final cancelledUpload = cancelledUploadClient.upload(
+      upload,
+      cancellationToken: uploadCancellation,
+    );
+    await Future<void>.delayed(Duration.zero);
+    uploadCancellation.cancel();
+    await expectLater(cancelledUpload, throwsA(isA<RpcCancelledException>()));
+    await cancelledUploadClient.close();
+  });
 }
 
 class AbortObservingClient extends http.BaseClient {
@@ -458,6 +669,172 @@ class FileDownloadClient extends http.BaseClient {
         (total, chunk) => total + chunk.length,
       ),
     );
+  }
+}
+
+class ResumableFileDownloadClient extends http.BaseClient {
+  ResumableFileDownloadClient(this.content, {required this.firstBytes});
+
+  final List<int> content;
+  final int firstBytes;
+  final ranges = <String?>[];
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final range = request.headers['range'];
+    ranges.add(range);
+    if (range == null) {
+      return http.StreamedResponse(
+        Stream.value(content.sublist(0, firstBytes)),
+        200,
+      );
+    }
+    final offset = int.parse(range.substring(6, range.length - 1));
+    return http.StreamedResponse(
+      Stream.value(content.sublist(offset)),
+      206,
+      headers: {
+        'content-range':
+            'bytes $offset-${content.length - 1}/${content.length}',
+      },
+    );
+  }
+}
+
+class ResumableFileUploadClient extends http.BaseClient {
+  ResumableFileUploadClient(
+    this.content, {
+    required this.firstBytes,
+    this.failFirst = true,
+    this.patchStatusCode = 200,
+  });
+
+  final List<int> content;
+  final int firstBytes;
+  final bool failFirst;
+  final int patchStatusCode;
+  final methods = <String>[];
+  final patchOffsets = <int>[];
+  String? token;
+  late Map<String, dynamic> metadata;
+
+  String get id => 'd' * 64;
+
+  String get expiresAt =>
+      DateTime.now().add(const Duration(hours: 1)).toUtc().toIso8601String();
+
+  Map<String, Object?> state(int offset, bool complete) => {
+    'file': {'id': id, ...metadata, 'expiresAt': expiresAt},
+    'offset': offset,
+    'complete': complete,
+  };
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    methods.add(request.method);
+    switch (request.method) {
+      case 'POST':
+        token = request.headers['x-bridra-token'];
+        metadata = Map<String, dynamic>.from(
+          jsonDecode(await request.finalize().bytesToString()) as Map,
+        );
+        return http.StreamedResponse(
+          Stream.value(utf8.encode(jsonEncode(state(0, false)))),
+          201,
+        );
+      case 'HEAD':
+        return http.StreamedResponse(
+          const Stream.empty(),
+          204,
+          headers: {
+            'upload-offset': '$firstBytes',
+            'upload-length': '${content.length}',
+            'upload-complete': 'false',
+            'upload-expires-at': expiresAt,
+          },
+        );
+      case 'PATCH':
+        final offset = int.parse(request.headers['upload-offset']!);
+        patchOffsets.add(offset);
+        final body = await request.finalize().toBytes();
+        expect(body, content.sublist(offset));
+        if (patchOffsets.length == 1 && failFirst) {
+          throw http.ClientException('connection dropped', request.url);
+        }
+        if (patchStatusCode != 200) {
+          return http.StreamedResponse(const Stream.empty(), patchStatusCode);
+        }
+        return http.StreamedResponse(
+          Stream.value(utf8.encode(jsonEncode(state(content.length, true)))),
+          200,
+        );
+      default:
+        throw StateError('Unexpected ${request.method} request.');
+    }
+  }
+}
+
+enum MalformedUploadMode { creation, reference, progress, resume }
+
+class MalformedFileUploadClient extends http.BaseClient {
+  MalformedFileUploadClient(this.mode);
+
+  final MalformedUploadMode mode;
+  late Map<String, dynamic> metadata;
+
+  Map<String, Object?> state({
+    required int offset,
+    required bool complete,
+    bool mismatch = false,
+  }) => {
+    'file': {
+      'id': 'e' * 64,
+      ...metadata,
+      if (mismatch) 'name': 'wrong.bin',
+      'expiresAt': DateTime.now()
+          .add(const Duration(hours: 1))
+          .toUtc()
+          .toIso8601String(),
+    },
+    'offset': offset,
+    'complete': complete,
+  };
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    switch (request.method) {
+      case 'POST':
+        metadata = Map<String, dynamic>.from(
+          jsonDecode(await request.finalize().bytesToString()) as Map,
+        );
+        final body = mode == MalformedUploadMode.creation
+            ? '{}'
+            : jsonEncode(
+                state(
+                  offset: mode == MalformedUploadMode.reference
+                      ? metadata['size'] as int
+                      : 0,
+                  complete: mode == MalformedUploadMode.reference,
+                  mismatch: mode == MalformedUploadMode.reference,
+                ),
+              );
+        return http.StreamedResponse(Stream.value(utf8.encode(body)), 201);
+      case 'PATCH':
+        await request.finalize().drain<void>();
+        if (mode == MalformedUploadMode.resume) {
+          throw http.ClientException('connection dropped', request.url);
+        }
+        return http.StreamedResponse(
+          Stream.value(
+            utf8.encode(jsonEncode(state(offset: 0, complete: false))),
+          ),
+          200,
+        );
+      case 'HEAD':
+        return http.StreamedResponse(const Stream.empty(), 204);
+      default:
+        throw StateError('Unexpected ${request.method} request.');
+    }
   }
 }
 

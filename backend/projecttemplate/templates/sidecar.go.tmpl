@@ -35,7 +35,11 @@ func main() {
 			"Go sidecar",
 			fileTransfers,
 		),
-		Input: os.Stdin, Output: os.Stdout, Errors: os.Stderr,
+		Input:         os.Stdin,
+		Output:        os.Stdout,
+		Errors:        os.Stderr,
+		FileTransfers: fileTransfers,
+		Token:         *token,
 	}
 	signalContext, stopSignals := signal.NotifyContext(
 		context.Background(),

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cluion/bridra/backend/app"
+	"github.com/cluion/bridra/backend/app/settings"
 	"github.com/cluion/bridra/backend/framework"
 )
 
@@ -62,11 +63,20 @@ func runSidecar(
 	output io.Writer,
 	logs io.Writer,
 ) error {
+	fileTransfers, _ := framework.Resolve(
+		application.Container(),
+		framework.FileTransferStoreKey,
+	)
 	server := &framework.Server{
-		Router: application.Router(),
-		Input:  input,
-		Output: output,
-		Errors: logs,
+		Router:        application.Router(),
+		Input:         input,
+		Output:        output,
+		Errors:        logs,
+		FileTransfers: fileTransfers,
+		Token: framework.ConfigValue(
+			application.Config(),
+			settings.BackendToken,
+		),
 	}
 	serveErrors := make(chan error, 1)
 	go func() {

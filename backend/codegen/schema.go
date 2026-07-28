@@ -119,7 +119,7 @@ func (schema Schema) Validate() error {
 		clients[method.ClientName] = struct{}{}
 
 		if method.Params != nil {
-			if err := validateObject(path+".params", *method.Params, goTypes, dartTypes, false); err != nil {
+			if err := validateObject(path+".params", *method.Params, goTypes, dartTypes, true); err != nil {
 				return err
 			}
 		}
@@ -194,7 +194,7 @@ func validateFields(
 			}
 		case "file":
 			if !allowFile {
-				return fmt.Errorf("codegen: %s file fields are response-only", fieldPath)
+				return fmt.Errorf("codegen: %s file fields are not allowed here", fieldPath)
 			}
 			if field.Object != nil {
 				return fmt.Errorf("codegen: %s.object requires type object", fieldPath)

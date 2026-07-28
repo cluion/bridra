@@ -34,8 +34,19 @@ class FakeBackend implements BackendGateway {
     RpcFileReference file, {
     Duration timeout = const Duration(minutes: 15),
     RpcCancellationToken? cancellationToken,
+    int maxAttempts = 3,
   }) {
     return const Stream.empty();
+  }
+
+  @override
+  Future<RpcFileReference> upload(
+    RpcFileUpload file, {
+    Duration timeout = const Duration(minutes: 15),
+    RpcCancellationToken? cancellationToken,
+    int maxAttempts = 3,
+  }) {
+    throw UnimplementedError();
   }
 
   @override

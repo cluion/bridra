@@ -8,6 +8,8 @@
   unbounded response queues.
 - Added `RpcFileReference` and `RpcClient.download` with streamed size and
   SHA-256 verification for HTTP and managed Desktop files.
+- Added `RpcFileUpload` and `RpcClient.upload` for verified HTTP and Desktop
+  uploads, plus bounded byte-range retry for interrupted downloads and uploads.
 - Kept RPC protocol version `1` because unary calls remain wire-compatible and
   streaming and file references are opt-in.
 

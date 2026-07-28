@@ -10,7 +10,8 @@ It provides:
 - the common RPC client contract and error types;
 - an HTTP RPC client for mobile, Web, and remote backends;
 - a managed Go sidecar client for Windows, macOS, and Linux;
-- verified out-of-band file downloads for HTTP and Desktop Sidecars;
+- verified out-of-band file uploads and resumable downloads for HTTP and
+  Desktop Sidecars;
 - desktop single-instance ownership and activation forwarding;
 - a conditional default connector that selects the platform transport.
 
@@ -72,9 +73,29 @@ temporary file, then verifies the declared byte count and SHA-256 digest:
       output.add(chunk);
     }
 
-HTTP capabilities are one-time and expire by default after 15 minutes. Desktop
-files are deleted after consumption. If a download fails integrity validation,
-discard any partial output already written.
+HTTP downloads resume automatically from the verified byte offset, with three
+attempts by default, and capabilities are consumed only after a complete
+response. Desktop files are deleted after consumption. If integrity validation
+still fails, discard any partial output already written.
+
+Upload a large input before passing its generated `RpcFileReference` to a typed
+request:
+
+    final source = File(path);
+    final digest = await sha256.bind(source.openRead()).first;
+    final upload = RpcFileUpload(
+      name: 'archive.zip',
+      mediaType: 'application/zip',
+      size: await source.length(),
+      sha256: digest.toString(),
+      openRead: (offset) => source.openRead(offset),
+    );
+    final file = await client.upload(upload);
+    await api.importArchive(ImportArchiveRequest(file: file));
+
+HTTP uploads recover from the server-reported offset. Desktop uploads use a
+bounded, verified staging file and the reserved `rpc.file_upload` Sidecar
+method; file bytes never enter the JSON RPC envelope.
 
 ## Desktop single instance
 

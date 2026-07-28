@@ -980,6 +980,12 @@ func dartDecodeExpression(source string, field Field) string {
 
 func dartEncodeExpression(field Field) string {
 	value := field.Name
+	if field.Type == "file" {
+		if field.Nullable {
+			return value + "?.toJson()"
+		}
+		return value + ".toJson()"
+	}
 	if field.Object != nil {
 		if field.Nullable {
 			return value + "?.toJson()"

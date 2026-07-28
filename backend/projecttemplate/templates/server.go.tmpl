@@ -44,6 +44,7 @@ func main() {
 	mux.Handle("/rpc/files/", &framework.FileTransferHTTPHandler{
 		Store: fileTransfers,
 		AllowedOrigin: *origin,
+		Token: *token,
 		Errors: os.Stderr,
 	})
 	fmt.Fprintf(os.Stderr, "server: listening on http://%s/rpc\n", *listen)

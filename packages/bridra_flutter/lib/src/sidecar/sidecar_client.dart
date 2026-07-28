@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:crypto/crypto.dart';
+
 import '../rpc/rpc_client.dart';
 import 'sidecar_executable.dart';
 
@@ -272,7 +274,15 @@ class SidecarClient implements RpcClient {
     RpcFileReference file, {
     Duration timeout = const Duration(minutes: 15),
     RpcCancellationToken? cancellationToken,
+    int maxAttempts = 3,
   }) async* {
+    if (maxAttempts < 1) {
+      throw ArgumentError.value(
+        maxAttempts,
+        'maxAttempts',
+        'Use at least one attempt.',
+      );
+    }
     if (_state == _SidecarState.closing ||
         _state == _SidecarState.closed ||
         _state == _SidecarState.failed) {
@@ -303,7 +313,12 @@ class SidecarClient implements RpcClient {
       requestedError = const RpcCancelledException('file.download');
     });
     try {
-      final source = File(localPath).openRead();
+      final source = _readSidecarFileWithRetries(
+        localPath,
+        file.size,
+        maxAttempts,
+        () => requestedError,
+      );
       await for (final chunk in verifyRpcFileDownload(source, file)) {
         final error = requestedError;
         if (error != null) throw error;
@@ -328,6 +343,185 @@ class SidecarClient implements RpcClient {
         unawaited(cancellationSubscription.cancel());
       }
       await _deleteDownloadedFile(localPath);
+    }
+  }
+
+  Stream<List<int>> _readSidecarFileWithRetries(
+    String path,
+    int size,
+    int maxAttempts,
+    Object? Function() requestedError,
+  ) async* {
+    var offset = 0;
+    var attempt = 0;
+    while (offset < size || (size == 0 && attempt == 0)) {
+      attempt++;
+      try {
+        await for (final chunk in File(path).openRead(offset)) {
+          final error = requestedError();
+          if (error != null) throw error;
+          offset += chunk.length;
+          yield chunk;
+        }
+        if (offset < size && attempt >= maxAttempts) {
+          throw BackendTransportException(
+            'The Sidecar file ended before all bytes were read.',
+          );
+        }
+      } on TimeoutException {
+        rethrow;
+      } on RpcCancelledException {
+        rethrow;
+      } on BackendConnectionException {
+        rethrow;
+      } on FileSystemException catch (error) {
+        if (attempt >= maxAttempts) {
+          throw BackendTransportException(
+            'Could not read the Sidecar file.',
+            cause: error,
+          );
+        }
+      }
+    }
+  }
+
+  @override
+  Future<RpcFileReference> upload(
+    RpcFileUpload file, {
+    Duration timeout = const Duration(minutes: 15),
+    RpcCancellationToken? cancellationToken,
+    int maxAttempts = 3,
+  }) async {
+    if (maxAttempts < 1) {
+      throw ArgumentError.value(
+        maxAttempts,
+        'maxAttempts',
+        'Use at least one attempt.',
+      );
+    }
+    if (_state == _SidecarState.closing ||
+        _state == _SidecarState.closed ||
+        _state == _SidecarState.failed) {
+      throw _terminalError ?? const BackendClosedException();
+    }
+    if (cancellationToken?.isCancelled ?? false) {
+      throw const RpcCancelledException('file.upload');
+    }
+
+    final stopwatch = Stopwatch()..start();
+    final directory = await Directory.systemTemp.createTemp(
+      'bridra-sidecar-upload-',
+    );
+    final staged = File('${directory.path}${Platform.pathSeparator}upload.bin');
+    Object? requestedError;
+    final timeoutTimer = Timer(timeout, () {
+      requestedError = TimeoutException(
+        'Sidecar file upload timed out.',
+        timeout,
+      );
+    });
+    final cancellationSubscription = cancellationToken?.onCancel.listen((_) {
+      requestedError = const RpcCancelledException('file.upload');
+    });
+    try {
+      final digest = _SidecarDigestSink();
+      final hashInput = sha256.startChunkedConversion(digest);
+      final output = await staged.open(mode: FileMode.write);
+      var written = 0;
+      try {
+        await for (final chunk in file.openRead(0)) {
+          final error = requestedError;
+          if (error != null) throw error;
+          written += chunk.length;
+          if (written > file.size) {
+            throw BackendProtocolException(
+              'File ${file.name} exceeds its declared size.',
+            );
+          }
+          hashInput.add(chunk);
+          await output.writeFrom(chunk);
+        }
+      } finally {
+        hashInput.close();
+        await output.close();
+      }
+      if (written != file.size) {
+        throw BackendProtocolException(
+          'File ${file.name} has $written bytes; expected ${file.size}.',
+        );
+      }
+      if (digest.value?.toString() != file.sha256) {
+        throw BackendProtocolException(
+          'File ${file.name} failed SHA-256 verification.',
+        );
+      }
+
+      Object? lastError;
+      for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+        final error = requestedError;
+        if (error != null) throw error;
+        final remaining = timeout - stopwatch.elapsed;
+        if (remaining <= Duration.zero) {
+          throw TimeoutException('Sidecar file upload timed out.', timeout);
+        }
+        try {
+          final reply = await call(
+            'rpc.file_upload',
+            params: {
+              'path': staged.path,
+              'name': file.name,
+              'mediaType': file.mediaType,
+              'size': file.size,
+              'sha256': file.sha256,
+            },
+            timeout: remaining,
+            cancellationToken: cancellationToken,
+          );
+          if (reply.result is! Map) {
+            throw const BackendProtocolException(
+              'The Sidecar returned an invalid file upload reference.',
+            );
+          }
+          final reference = RpcFileReference.fromJson(
+            Map<String, dynamic>.from(reply.result as Map),
+          );
+          if (reference.name != file.name ||
+              reference.mediaType != file.mediaType ||
+              reference.size != file.size ||
+              reference.sha256 != file.sha256 ||
+              reference.localPath != null) {
+            throw const BackendProtocolException(
+              'The Sidecar file upload reference does not match its source.',
+            );
+          }
+          return reference;
+        } on RpcCancelledException {
+          rethrow;
+        } on TimeoutException {
+          rethrow;
+        } on BackendProtocolException {
+          rethrow;
+        } on RpcException {
+          rethrow;
+        } on BackendConnectionException catch (error) {
+          lastError = error;
+          if (attempt == maxAttempts) rethrow;
+        }
+      }
+      throw lastError ??
+          BackendTransportException(
+            'Could not upload ${file.name} to the Sidecar.',
+          );
+    } finally {
+      timeoutTimer.cancel();
+      if (cancellationSubscription != null) {
+        unawaited(cancellationSubscription.cancel());
+      }
+      try {
+        await directory.delete(recursive: true);
+      } on FileSystemException catch (error) {
+        _emitLog('sidecar: remove upload staging directory: $error');
+      }
     }
   }
 
@@ -1063,6 +1257,21 @@ class _PendingSidecarStream {
       unawaited(subscription.cancel());
     }
   }
+}
+
+class _SidecarDigestSink implements Sink<Digest> {
+  Digest? value;
+
+  @override
+  void add(Digest data) {
+    if (value != null) {
+      throw StateError('The SHA-256 digest was emitted more than once.');
+    }
+    value = data;
+  }
+
+  @override
+  void close() {}
 }
 
 Future<SidecarProcess> _startSystemProcess(

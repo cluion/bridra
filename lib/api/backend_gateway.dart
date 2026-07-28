@@ -9,6 +9,14 @@ abstract interface class BackendGateway implements BridraApi {
     RpcFileReference file, {
     Duration timeout = const Duration(minutes: 15),
     RpcCancellationToken? cancellationToken,
+    int maxAttempts = 3,
+  });
+
+  Future<RpcFileReference> upload(
+    RpcFileUpload file, {
+    Duration timeout = const Duration(minutes: 15),
+    RpcCancellationToken? cancellationToken,
+    int maxAttempts = 3,
   });
 
   Future<void> close();
@@ -62,11 +70,28 @@ class RpcBackend implements BackendGateway {
     RpcFileReference file, {
     Duration timeout = const Duration(minutes: 15),
     RpcCancellationToken? cancellationToken,
+    int maxAttempts = 3,
   }) {
     return _client.download(
       file,
       timeout: timeout,
       cancellationToken: cancellationToken,
+      maxAttempts: maxAttempts,
+    );
+  }
+
+  @override
+  Future<RpcFileReference> upload(
+    RpcFileUpload file, {
+    Duration timeout = const Duration(minutes: 15),
+    RpcCancellationToken? cancellationToken,
+    int maxAttempts = 3,
+  }) {
+    return _client.upload(
+      file,
+      timeout: timeout,
+      cancellationToken: cancellationToken,
+      maxAttempts: maxAttempts,
     );
   }
 

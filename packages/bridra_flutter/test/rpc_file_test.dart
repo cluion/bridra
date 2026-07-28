@@ -15,6 +15,7 @@ void main() {
     expect(reference.sha256, sha256.convert(content).toString());
     expect(reference.localPath, '/tmp/managed-report');
     expect(reference.isExpired, isFalse);
+    expect(reference.toJson(), isNot(contains('localPath')));
   });
 
   test('rejects malformed file references', () {
@@ -82,6 +83,57 @@ void main() {
     });
 
     expect(reference.isExpired, isTrue);
+  });
+
+  test('validates resumable file upload metadata', () {
+    final content = utf8.encode('upload');
+    final upload = RpcFileUpload(
+      name: 'upload.txt',
+      mediaType: 'text/plain',
+      size: content.length,
+      sha256: sha256.convert(content).toString(),
+      openRead: (offset) => Stream.value(content.sublist(offset)),
+    );
+
+    expect(
+      upload.openRead(2).expand((chunk) => chunk).toList(),
+      completion(content.sublist(2)),
+    );
+    expect(
+      () => RpcFileUpload(
+        name: '../upload.txt',
+        mediaType: 'text/plain',
+        size: content.length,
+        sha256: upload.sha256,
+        openRead: upload.openRead,
+      ),
+      throwsArgumentError,
+    );
+    for (final create in [
+      () => RpcFileUpload(
+        name: 'upload.txt',
+        mediaType: 'text/plain\nunsafe',
+        size: content.length,
+        sha256: upload.sha256,
+        openRead: upload.openRead,
+      ),
+      () => RpcFileUpload(
+        name: 'upload.txt',
+        mediaType: 'text/plain',
+        size: -1,
+        sha256: upload.sha256,
+        openRead: upload.openRead,
+      ),
+      () => RpcFileUpload(
+        name: 'upload.txt',
+        mediaType: 'text/plain',
+        size: content.length,
+        sha256: 'bad',
+        openRead: upload.openRead,
+      ),
+    ]) {
+      expect(create, throwsArgumentError);
+    }
   });
 }
 

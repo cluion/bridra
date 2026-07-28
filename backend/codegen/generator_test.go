@@ -122,13 +122,20 @@ func TestGenerateSupportsTypedStreamingMethods(t *testing.T) {
 	}
 }
 
-func TestGenerateSupportsTypedFileResponses(t *testing.T) {
+func TestGenerateSupportsTypedFileFields(t *testing.T) {
 	schema := Schema{
 		SchemaVersion:   SupportedSchemaVersion,
 		ProtocolVersion: 2,
 		Methods: []Method{{
 			Name:       "reports.export",
 			ClientName: "exportReport",
+			Params: &Object{
+				GoType:   "ImportReportRequest",
+				DartType: "ImportReportRequest",
+				Fields: []Field{
+					{Name: "source", Type: "file"},
+				},
+			},
 			Result: Object{
 				GoType:   "ExportReportResponse",
 				DartType: "ExportReportResult",
@@ -146,6 +153,15 @@ func TestGenerateSupportsTypedFileResponses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate: %v", err)
 	}
+	requests := generatedContent(t, outputs, GoRequestsPath)
+	for _, fragment := range []string{
+		`"example.test/bridra/framework"`,
+		"Source framework.FileReference",
+	} {
+		if !strings.Contains(requests, fragment) {
+			t.Errorf("Go requests do not contain %q:\n%s", fragment, requests)
+		}
+	}
 	responses := generatedContent(t, outputs, GoResponsesPath)
 	for _, fragment := range []string{
 		`"example.test/bridra/framework"`,
@@ -158,6 +174,8 @@ func TestGenerateSupportsTypedFileResponses(t *testing.T) {
 	}
 	dart := generatedContent(t, outputs, DartClientPath)
 	for _, fragment := range []string{
+		"final RpcFileReference source;",
+		"'source': source.toJson()",
 		"final RpcFileReference file;",
 		"final RpcFileReference? preview;",
 		"_requireFileField(result, 'file')",
@@ -357,7 +375,7 @@ func TestSchemaRejectsInvalidEnumAndNestedObjectDefinitions(t *testing.T) {
 	}
 }
 
-func TestSchemaRestrictsFileFieldsToScalarResponses(t *testing.T) {
+func TestSchemaRestrictsFileFieldsToScalars(t *testing.T) {
 	result := Object{
 		GoType:   "Result",
 		DartType: "ResultModel",
@@ -379,8 +397,7 @@ func TestSchemaRestrictsFileFieldsToScalarResponses(t *testing.T) {
 			}},
 		}
 	}
-	if err := schemaWithParams(Field{Name: "file", Type: "file"}).Validate(); err == nil ||
-		!strings.Contains(err.Error(), "response-only") {
+	if err := schemaWithParams(Field{Name: "file", Type: "file"}).Validate(); err != nil {
 		t.Fatalf("request file validation error = %v", err)
 	}
 

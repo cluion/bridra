@@ -39,8 +39,9 @@ Bridra is licensed under the [MIT License](LICENSE), Copyright (c) 2026 Cluion.
 - Parent-bound desktop Sidecars that shut down when their Flutter owner exits
 - Typed server streams with progress events, cancellation, and bounded
   per-stream backpressure
-- Out-of-band large-file downloads with one-time HTTP capabilities, managed
-  Desktop files, and end-to-end size plus SHA-256 verification
+- Out-of-band large-file uploads and resumable downloads with short-lived HTTP
+  capabilities, managed Desktop files, bounded retries, and end-to-end size
+  plus SHA-256 verification
 - Real process, HTTP, browser, widget, race, public API, and coverage tests
 
 ## Platform model

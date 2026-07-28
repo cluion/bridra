@@ -70,6 +70,74 @@ class RpcFileReference {
   final String? localPath;
 
   bool get isExpired => !DateTime.now().toUtc().isBefore(expiresAt);
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'name': name,
+    'mediaType': mediaType,
+    'size': size,
+    'sha256': sha256,
+    'expiresAt': expiresAt.toUtc().toIso8601String(),
+  };
+}
+
+typedef RpcFileRangeReader = Stream<List<int>> Function(int offset);
+
+class RpcFileUpload {
+  factory RpcFileUpload({
+    required String name,
+    required String mediaType,
+    required int size,
+    required String sha256,
+    required RpcFileRangeReader openRead,
+  }) {
+    if (name.isEmpty ||
+        name == '.' ||
+        name == '..' ||
+        RegExp(r'[/\\\x00-\x1f\x7f]').hasMatch(name)) {
+      throw ArgumentError.value(name, 'name', 'Use a safe base file name.');
+    }
+    if (mediaType.isEmpty ||
+        mediaType.contains('\r') ||
+        mediaType.contains('\n')) {
+      throw ArgumentError.value(
+        mediaType,
+        'mediaType',
+        'Use a valid media type.',
+      );
+    }
+    if (size < 0) {
+      throw ArgumentError.value(size, 'size', 'The size cannot be negative.');
+    }
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(sha256)) {
+      throw ArgumentError.value(
+        sha256,
+        'sha256',
+        'Use a lowercase SHA-256 digest.',
+      );
+    }
+    return RpcFileUpload._(
+      name: name,
+      mediaType: mediaType,
+      size: size,
+      sha256: sha256,
+      openRead: openRead,
+    );
+  }
+
+  const RpcFileUpload._({
+    required this.name,
+    required this.mediaType,
+    required this.size,
+    required this.sha256,
+    required this.openRead,
+  });
+
+  final String name;
+  final String mediaType;
+  final int size;
+  final String sha256;
+  final RpcFileRangeReader openRead;
 }
 
 class RpcReply {
@@ -196,12 +264,12 @@ class BackendProtocolException extends BackendConnectionException {
 }
 
 class RpcFileExpiredException extends BackendConnectionException {
-  const RpcFileExpiredException() : super('The file download has expired.');
+  const RpcFileExpiredException() : super('The file transfer has expired.');
 }
 
 class RpcFileUnavailableException extends BackendConnectionException {
   const RpcFileUnavailableException()
-    : super('The file download is unavailable.');
+    : super('The file transfer is unavailable.');
 }
 
 abstract interface class RpcClient {
@@ -223,6 +291,14 @@ abstract interface class RpcClient {
     RpcFileReference file, {
     Duration timeout = const Duration(minutes: 15),
     RpcCancellationToken? cancellationToken,
+    int maxAttempts = 3,
+  });
+
+  Future<RpcFileReference> upload(
+    RpcFileUpload file, {
+    Duration timeout = const Duration(minutes: 15),
+    RpcCancellationToken? cancellationToken,
+    int maxAttempts = 3,
   });
 
   Future<void> close();

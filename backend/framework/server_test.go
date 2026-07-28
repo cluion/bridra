@@ -3,10 +3,14 @@ package framework
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -67,6 +71,223 @@ func TestServerRequiresDependencies(t *testing.T) {
 	}
 	if err := (&Server{Router: NewRouter(), Input: strings.NewReader("")}).Serve(nil); err == nil {
 		t.Fatal("expected nil context error")
+	}
+}
+
+func TestServerImportsVerifiedSidecarFileUpload(t *testing.T) {
+	store, err := NewFileTransferStore(FileTransferOptions{
+		TTL:      time.Minute,
+		MaxBytes: 1024,
+	})
+	if err != nil {
+		t.Fatalf("create store: %v", err)
+	}
+	defer store.Close()
+	content := []byte("sidecar upload")
+	sum := sha256.Sum256(content)
+	sourcePath := filepath.Join(t.TempDir(), "upload.bin")
+	if err := os.WriteFile(sourcePath, content, 0o600); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	params, err := json.Marshal(map[string]any{
+		"path":      sourcePath,
+		"name":      "upload.bin",
+		"mediaType": "application/octet-stream",
+		"size":      len(content),
+		"sha256":    hex.EncodeToString(sum[:]),
+	})
+	if err != nil {
+		t.Fatalf("encode params: %v", err)
+	}
+	input := fmt.Sprintf(
+		"{\"id\":\"upload\",\"method\":\"rpc.file_upload\",\"params\":%s,\"meta\":{\"token\":\"secret\"}}\n",
+		params,
+	)
+	var output bytes.Buffer
+	server := &Server{
+		Router:        NewRouter(),
+		Input:         strings.NewReader(input),
+		Output:        &output,
+		FileTransfers: store,
+		Token:         "secret",
+	}
+
+	if err := server.Serve(context.Background()); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	var response struct {
+		ID     string        `json:"id"`
+		Result FileReference `json:"result"`
+		Error  *RPCError     `json:"error"`
+	}
+	if err := json.NewDecoder(&output).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.ID != "upload" || response.Error != nil {
+		t.Fatalf("response = %#v", response)
+	}
+	upload, err := store.ConsumeUpload(response.Result)
+	if err != nil {
+		t.Fatalf("consume upload: %v", err)
+	}
+	got, err := io.ReadAll(upload)
+	if err != nil {
+		t.Fatalf("read upload: %v", err)
+	}
+	if err := upload.Close(); err != nil {
+		t.Fatalf("close upload: %v", err)
+	}
+	if !bytes.Equal(got, content) {
+		t.Fatalf("upload = %q", got)
+	}
+}
+
+func TestServerRejectsInvalidSidecarFileUploads(t *testing.T) {
+	store, err := NewFileTransferStore(FileTransferOptions{
+		TTL:      time.Minute,
+		MaxBytes: 4,
+	})
+	if err != nil {
+		t.Fatalf("create store: %v", err)
+	}
+	defer store.Close()
+	sourcePath := filepath.Join(t.TempDir(), "upload.bin")
+	if err := os.WriteFile(sourcePath, []byte("data"), 0o600); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	validParams := func(overrides map[string]any) json.RawMessage {
+		t.Helper()
+		values := map[string]any{
+			"path":      sourcePath,
+			"name":      "upload.bin",
+			"mediaType": "application/octet-stream",
+			"size":      4,
+			"sha256":    "3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7",
+		}
+		for key, value := range overrides {
+			values[key] = value
+		}
+		params, err := json.Marshal(values)
+		if err != nil {
+			t.Fatalf("encode params: %v", err)
+		}
+		return params
+	}
+	tests := []struct {
+		name    string
+		server  *Server
+		ctx     context.Context
+		request Request
+		code    string
+	}{
+		{
+			name:   "store",
+			server: &Server{Token: "secret"},
+			ctx:    context.Background(),
+			request: Request{
+				ID: "1", Params: validParams(nil), Meta: map[string]string{"token": "secret"},
+			},
+			code: "file_upload_unavailable",
+		},
+		{
+			name:   "token",
+			server: &Server{FileTransfers: store, Token: "secret"},
+			ctx:    context.Background(),
+			request: Request{
+				ID: "1", Params: validParams(nil), Meta: map[string]string{"token": "wrong"},
+			},
+			code: "unauthenticated",
+		},
+		{
+			name:   "json",
+			server: &Server{FileTransfers: store, Token: "secret"},
+			ctx:    context.Background(),
+			request: Request{
+				ID: "1", Params: json.RawMessage("{"), Meta: map[string]string{"token": "secret"},
+			},
+			code: "invalid_params",
+		},
+		{
+			name:   "missing path",
+			server: &Server{FileTransfers: store, Token: "secret"},
+			ctx:    context.Background(),
+			request: Request{
+				ID:     "1",
+				Params: validParams(map[string]any{"path": ""}),
+				Meta:   map[string]string{"token": "secret"},
+			},
+			code: "invalid_params",
+		},
+		{
+			name:   "source",
+			server: &Server{FileTransfers: store, Token: "secret"},
+			ctx:    context.Background(),
+			request: Request{
+				ID:     "1",
+				Params: validParams(map[string]any{"path": sourcePath + ".missing"}),
+				Meta:   map[string]string{"token": "secret"},
+			},
+			code: "file_upload_unavailable",
+		},
+		{
+			name:   "too large",
+			server: &Server{FileTransfers: store, Token: "secret"},
+			ctx:    context.Background(),
+			request: Request{
+				ID:     "1",
+				Params: validParams(map[string]any{"size": 5}),
+				Meta:   map[string]string{"token": "secret"},
+			},
+			code: "file_upload_too_large",
+		},
+		{
+			name:   "checksum",
+			server: &Server{FileTransfers: store, Token: "secret"},
+			ctx:    context.Background(),
+			request: Request{
+				ID:     "1",
+				Params: validParams(map[string]any{"sha256": strings.Repeat("0", 64)}),
+				Meta:   map[string]string{"token": "secret"},
+			},
+			code: "file_upload_checksum_mismatch",
+		},
+		{
+			name:   "invalid metadata",
+			server: &Server{FileTransfers: store, Token: "secret"},
+			ctx:    context.Background(),
+			request: Request{
+				ID:     "1",
+				Params: validParams(map[string]any{"name": "../bad"}),
+				Meta:   map[string]string{"token": "secret"},
+			},
+			code: "file_upload_invalid",
+		},
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	tests = append(tests, struct {
+		name    string
+		server  *Server
+		ctx     context.Context
+		request Request
+		code    string
+	}{
+		name:   "cancelled",
+		server: &Server{FileTransfers: store, Token: "secret"},
+		ctx:    cancelled,
+		request: Request{
+			ID: "1", Params: validParams(nil), Meta: map[string]string{"token": "secret"},
+		},
+		code: "request_cancelled",
+	})
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response := test.server.importSidecarUpload(test.ctx, test.request)
+			if response.Error == nil || response.Error.Code != test.code {
+				t.Fatalf("response = %#v, want %q", response, test.code)
+			}
+		})
 	}
 }
 

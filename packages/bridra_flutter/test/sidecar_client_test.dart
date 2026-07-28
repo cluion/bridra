@@ -769,6 +769,48 @@ void main() {
     expect(await file.exists(), isFalse);
   });
 
+  test('uploads through a verified managed staging file', () async {
+    final content = utf8.encode('large desktop upload');
+    final checksum = sha256.convert(content).toString();
+    final process = FakeSidecarProcess();
+    final client = await _startClient(process);
+    addTearDown(client.close);
+    final upload = RpcFileUpload(
+      name: 'upload.bin',
+      mediaType: 'application/octet-stream',
+      size: content.length,
+      sha256: checksum,
+      openRead: (offset) => Stream.value(content.sublist(offset)),
+    );
+
+    final uploaded = client.upload(upload);
+    final request = await process.nextRequest();
+    expect(request['method'], 'rpc.file_upload');
+    final params = Map<String, dynamic>.from(request['params'] as Map);
+    final stagedPath = params['path'] as String;
+    expect(await File(stagedPath).readAsBytes(), content);
+    process.respond({
+      'id': request['id'],
+      'result': {
+        'id': 'd' * 64,
+        'name': upload.name,
+        'mediaType': upload.mediaType,
+        'size': upload.size,
+        'sha256': upload.sha256,
+        'expiresAt': DateTime.now()
+            .add(const Duration(hours: 1))
+            .toUtc()
+            .toIso8601String(),
+      },
+    });
+
+    final reference = await uploaded;
+
+    expect(reference.name, upload.name);
+    expect(reference.sha256, upload.sha256);
+    expect(await File(stagedPath).exists(), isFalse);
+  });
+
   test('rejects stream windows outside the bounded protocol range', () async {
     var starts = 0;
     Future<SidecarProcess> start(String _, List<String> _) async {

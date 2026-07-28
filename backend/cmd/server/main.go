@@ -59,14 +59,18 @@ func main() {
 	mux.Handle("/rpc/files/", &framework.FileTransferHTTPHandler{
 		Store:         fileTransfers,
 		AllowedOrigin: *allowedOrigin,
-		Errors:        os.Stderr,
+		Token: framework.ConfigValue(
+			application.Config(),
+			settings.BackendToken,
+		),
+		Errors: os.Stderr,
 	})
 
 	server := &http.Server{
 		Addr:              *listenAddress,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       10 * time.Second,
+		ReadTimeout:       15 * time.Minute,
 		WriteTimeout:      15 * time.Minute,
 		IdleTimeout:       60 * time.Second,
 		ErrorLog:          log.New(os.Stderr, "server: ", 0),

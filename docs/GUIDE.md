@@ -1234,10 +1234,10 @@ an unbounded queue. HTTP streams use NDJSON and the response socket's write
 backpressure. `rpc.stream_ack` is a reserved Sidecar control method and must not
 be registered as an application route.
 
-### Large-file downloads
+### Large-file transfers
 
-Use a response-only `"type": "file"` field when the result is too large for the
-4 MiB JSON envelope:
+Use a `"type": "file"` field when an input or result is too large for the 4 MiB
+JSON envelope:
 
 ```json
 {
@@ -1252,8 +1252,8 @@ Use a response-only `"type": "file"` field when the result is too large for the
 ```
 
 The generator maps that field to `framework.FileReference` in Go and
-`RpcFileReference` in Dart. Stage the bytes from a Controller or Service through
-the request scope:
+`RpcFileReference` in Dart. Stage output bytes from a Controller or Service
+through the request scope:
 
 ```go
 store, err := framework.Resolve(
@@ -1285,14 +1285,43 @@ await for (final chunk in backend.download(result.file)) {
 }
 ```
 
+For large input, declare the same field in `params`, prepare a repeatable range
+reader, and upload before calling the generated method:
+
+```dart
+final source = File(path);
+final digest = await sha256.bind(source.openRead()).first;
+final upload = RpcFileUpload(
+  name: 'archive.zip',
+  mediaType: 'application/zip',
+  size: await source.length(),
+  sha256: digest.toString(),
+  openRead: (offset) => source.openRead(offset),
+);
+final reference = await backend.upload(upload);
+await api.importArchive(ImportArchiveRequest(file: reference));
+```
+
+Consume the uploaded capability exactly once inside the Go request:
+
+```go
+upload, err := store.ConsumeUpload(request.File)
+if err != nil {
+    return nil, err
+}
+defer upload.Close()
+// Stream from upload without buffering the complete file.
+```
+
 The default store limit is 2 GiB and references expire after 15 minutes.
-Desktop Sidecars expose only a framework-managed temporary path and delete it
-after use. HTTP uses `GET /rpc/files/<capability>` with a random 256-bit,
-one-time capability. Both transports validate the declared size and SHA-256
-digest while preserving stream backpressure. A failed or interrupted download
-may already have written partial bytes; delete that output and request a new
-reference. File uploads, retry/range requests, binary RPC frames, and shared
-memory are not part of this slice.
+Desktop Sidecars use framework-verified managed temporary files. HTTP uses
+random 256-bit capabilities: download retries send `Range: bytes=<offset>-`,
+while uploads recover from the server's `Upload-Offset`. Flutter uses at most
+three attempts by default, preserves stream backpressure, and validates the
+declared size and SHA-256 digest. A download capability is consumed only after
+a complete response; an uploaded reference is consumed by
+`FileTransferStore.ConsumeUpload`. Binary RPC frames and shared memory remain
+out of scope.
 
 ## Add an endpoint
 
