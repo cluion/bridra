@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -55,7 +56,7 @@ func TestFileTransferStoreStagesAndConsumesManagedFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat staged file: %v", err)
 	}
-	if permissions := info.Mode().Perm(); permissions != 0o600 {
+	if permissions := info.Mode().Perm(); runtime.GOOS != "windows" && permissions != 0o600 {
 		t.Fatalf("permissions = %o", permissions)
 	}
 
