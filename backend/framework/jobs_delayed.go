@@ -134,19 +134,27 @@ func (queue *JobQueue) schedule() {
 		case <-timerReady:
 			queue.promoteScheduledJob(heap.Pop(pending).(scheduledJob))
 		case <-queue.scheduleStop:
-			for {
-				select {
-				case scheduled := <-queue.scheduled:
-					sequence++
-					scheduled.sequence = sequence
-					heap.Push(pending, scheduled)
-				default:
-					for pending.Len() != 0 {
-						queue.promoteScheduledJob(heap.Pop(pending).(scheduledJob))
-					}
-					return
-				}
+			queue.drainScheduledJobs(pending, &sequence)
+			return
+		}
+	}
+}
+
+func (queue *JobQueue) drainScheduledJobs(
+	pending *scheduledJobHeap,
+	sequence *uint64,
+) {
+	for {
+		select {
+		case scheduled := <-queue.scheduled:
+			*sequence++
+			scheduled.sequence = *sequence
+			heap.Push(pending, scheduled)
+		default:
+			for pending.Len() != 0 {
+				queue.promoteScheduledJob(heap.Pop(pending).(scheduledJob))
 			}
+			return
 		}
 	}
 }

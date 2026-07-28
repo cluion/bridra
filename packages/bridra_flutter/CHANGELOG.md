@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.0 - 2026-07-29
+
 - Added `RpcStreamEvent`, `RpcStreamData`, `RpcStreamProgress`, and
   `RpcProgress`, with HTTP NDJSON and acknowledged Sidecar streaming.
 - Added bounded Sidecar stream windows so paused consumers cannot create
@@ -12,6 +14,8 @@
   uploads, plus bounded byte-range retry for interrupted downloads and uploads.
 - Kept RPC protocol version `1` because unary calls remain wire-compatible and
   streaming and file references are opt-in.
+- Kept the package version aligned with the Bridra 0.6.0 Go Framework, CLI, and
+  project metadata.
 
 ## 0.5.0 - 2026-07-27
 

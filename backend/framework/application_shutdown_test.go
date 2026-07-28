@@ -165,6 +165,54 @@ func (provider *blockingShutdownProvider) Terminate(context.Context, *Applicatio
 	return provider.err
 }
 
+type shutdownWaitContext struct {
+	context.Context
+	entered chan struct{}
+	once    sync.Once
+}
+
+func (ctx *shutdownWaitContext) Done() <-chan struct{} {
+	ctx.once.Do(func() { close(ctx.entered) })
+	return nil
+}
+
+func TestApplicationShutdownWaitsForInProgressShutdown(t *testing.T) {
+	provider := &blockingShutdownProvider{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	application := NewApplication(nil)
+	if err := application.Register(provider); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	firstResult := make(chan error, 1)
+	go func() {
+		firstResult <- application.Shutdown(context.Background())
+	}()
+	<-provider.started
+
+	waiterEntered := make(chan struct{})
+	waiterContext := &shutdownWaitContext{
+		Context: context.Background(),
+		entered: waiterEntered,
+	}
+	go func() {
+		<-waiterEntered
+		close(provider.release)
+	}()
+
+	if err := application.Shutdown(waiterContext); err != nil {
+		t.Fatalf("wait for shutdown: %v", err)
+	}
+	if err := <-firstResult; err != nil {
+		t.Fatalf("initial shutdown: %v", err)
+	}
+	if calls := provider.calls.Load(); calls != 1 {
+		t.Fatalf("terminate calls = %d, want 1", calls)
+	}
+}
+
 func TestApplicationConcurrentShutdownCallsShareOneResult(t *testing.T) {
 	providerError := errors.New("shutdown failed")
 	provider := &blockingShutdownProvider{

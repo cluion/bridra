@@ -5,6 +5,8 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-29
+
 ### Added
 
 - Added generated typed server-streaming methods, data and progress events,
@@ -23,6 +25,15 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
   an opt-in method capability using additive frame metadata. File references
   are additive request/response DTOs whose bytes travel outside the JSON RPC
   envelope.
+- Registered an automatic `0.5.0` to `0.6.0` upgrade because the new contracts
+  are opt-in and Project Template version `2`, project metadata schema `2`, and
+  RPC protocol version `1` remain unchanged.
+
+### Support
+
+- The latest `0.6.x` release receives best-effort security fixes until the next
+  minor line is published. The `0.5.x` line is no longer supported after this
+  release.
 
 ## [0.5.0] - 2026-07-27
 

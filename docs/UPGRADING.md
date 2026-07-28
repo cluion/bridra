@@ -9,8 +9,8 @@ Run the read-only planner from a project root before changing dependencies:
 
 ```bash
 bridra upgrade
-bridra upgrade --plan --to 0.5.0
-bridra upgrade --plan --to 0.5.0 --json
+bridra upgrade --plan --to 0.6.0
+bridra upgrade --plan --to 0.6.0 --json
 ```
 
 When invoking the CLI through the backend dependency, use:
@@ -77,7 +77,7 @@ fails verification.
 | Identity | Current | Compatibility rule |
 | --- | ---: | --- |
 | Project metadata schema | 2 | Schema 1 remains readable by core project commands but requires a metadata migration. A newer schema requires a newer CLI. |
-| Framework SemVer | 0.5.0 | The project and selected target must match. An older version requires a complete registered migration path; downgrade plans are rejected. |
+| Framework SemVer | 0.6.0 | The project and selected target must match. An older version requires a complete registered migration path; downgrade plans are rejected. |
 | Project Template | 2 | Older templates require manual review. A newer template cannot be evaluated by an older CLI. |
 | RPC protocol | 1 | Go and Flutter runtimes must use the same protocol. Upgrade them together. |
 
@@ -103,7 +103,7 @@ the Go and Flutter dependencies together, add the version contract:
   "projectName": "your_app",
   "goModule": "example.com/your/app",
   "frameworkModule": "github.com/cluion/bridra/backend",
-  "frameworkVersion": "0.5.0",
+  "frameworkVersion": "0.6.0",
   "templateVersion": 2,
   "protocolVersion": 1
 }
@@ -127,6 +127,31 @@ Services, Models, configuration, UI, or native runner files.
    template, and protocol changes it records have actually been applied.
 6. Run any platform builds required by the application before committing the
    upgrade.
+
+## Framework 0.5.0 to 0.6.0
+
+The `0.6.0` transition is automatic because typed server streaming, progress,
+bounded Sidecar backpressure, and verified out-of-band file transfer are
+additive and opt-in. Existing unary methods retain their wire envelopes and
+behavior.
+
+Update the Go and Flutter framework dependencies together. Run `make generate`
+when the application schema opts into streaming or `file` request/response
+fields, then run the full verification:
+
+```bash
+cd backend
+go get github.com/cluion/bridra/backend@v0.6.0
+cd ..
+fvm flutter pub upgrade bridra_flutter
+make generate
+make verify
+```
+
+After verification succeeds, update `.bridra/project.json` to framework version
+`0.6.0`. Project Template version `2`, project metadata schema `2`, and RPC
+protocol version `1` remain unchanged. Roll back by restoring the previous Go
+and Flutter dependency versions, lockfiles, and project metadata.
 
 ## Framework 0.4.0 to 0.5.0
 

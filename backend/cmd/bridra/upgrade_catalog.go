@@ -71,6 +71,12 @@ var registeredUpgradeReleases = []upgradeRelease{
 		TemplateVersion:        2,
 		ProtocolVersion:        1,
 	},
+	{
+		FrameworkVersion:       "0.6.0",
+		ProjectMetadataVersion: 2,
+		TemplateVersion:        2,
+		ProtocolVersion:        1,
+	},
 }
 
 var registeredFrameworkMigrations = []frameworkMigration{
@@ -108,6 +114,13 @@ var registeredFrameworkMigrations = []frameworkMigration{
 		To:          "0.5.0",
 		Description: "Update both framework dependencies and adopt desktop single-instance ownership in the application-owned Flutter entrypoint.",
 		Automatic:   false,
+	},
+	{
+		ID:          "framework-0.5.0-to-0.6.0",
+		From:        "0.5.0",
+		To:          "0.6.0",
+		Description: "Update the Go and Flutter framework dependencies for opt-in streaming and verified out-of-band file transfer.",
+		Automatic:   true,
 	},
 }
 
