@@ -232,16 +232,16 @@ func TestDevRebuildsHTTPBackendWithoutRestartingFlutter(t *testing.T) {
 			harness.watcher.events <- devWatchEvent{paths: []string{"backend/app/router.go"}}
 		}
 	}
-	harness.afterReady = func(index int) {
-		if index == 1 {
+	stdout := &devOutputWriter{
+		match: "Rebuilt Go HTTP backend is ready.",
+		notify: func() {
 			flutter.finish(nil)
-		}
+		},
 	}
-	var stdout bytes.Buffer
 
 	err := (devCommand{system: harness.system()}).run(
 		[]string{"--root", root, "--device", "chrome"},
-		&stdout,
+		stdout,
 		&bytes.Buffer{},
 	)
 	if err != nil {
@@ -336,7 +336,10 @@ func TestDevKillsChildThatIgnoresGracefulSignal(t *testing.T) {
 	process := newFakeDevProcess(false)
 	running := &runningDevProcess{name: "stuck", process: process}
 	processes, events := watchDevProcesses(running)
-	command := devCommand{system: devSystem{stopTimeout: time.Millisecond}}
+	command := devCommand{system: devSystem{
+		stopTimeout: time.Millisecond,
+		killTimeout: time.Second,
+	}}
 
 	if err := command.stopProcesses(processes, events, os.Interrupt); err != nil {
 		t.Fatalf("stop: %v", err)
@@ -525,7 +528,6 @@ type devHarness struct {
 	watcher       *fakeDevWatcher
 	afterRun      func(int)
 	afterStart    func(int)
-	afterReady    func(int)
 }
 
 func newDevHarness(processes ...*fakeDevProcess) *devHarness {
@@ -544,6 +546,7 @@ func (harness *devHarness) system() devSystem {
 		stdin:        strings.NewReader(""),
 		readyTimeout: time.Second,
 		stopTimeout:  50 * time.Millisecond,
+		killTimeout:  50 * time.Millisecond,
 		abs:          filepath.Abs,
 		stat:         os.Stat,
 		mkdirAll:     os.MkdirAll,
@@ -595,14 +598,9 @@ func (harness *devHarness) system() devSystem {
 		},
 		waitReady: func(address string, _ time.Duration) error {
 			harness.mutex.Lock()
-			index := len(harness.ready)
 			harness.ready = append(harness.ready, address)
 			readyError := harness.readyError
-			afterReady := harness.afterReady
 			harness.mutex.Unlock()
-			if afterReady != nil {
-				afterReady(index)
-			}
 			return readyError
 		},
 		watch: func(string) (devWatcher, error) {
@@ -631,6 +629,21 @@ func (harness *devHarness) installations() [][2]string {
 	harness.mutex.Lock()
 	defer harness.mutex.Unlock()
 	return append([][2]string(nil), harness.installs...)
+}
+
+type devOutputWriter struct {
+	bytes.Buffer
+	once   sync.Once
+	match  string
+	notify func()
+}
+
+func (writer *devOutputWriter) Write(data []byte) (int, error) {
+	written, err := writer.Buffer.Write(data)
+	if strings.Contains(writer.Buffer.String(), writer.match) {
+		writer.once.Do(writer.notify)
+	}
+	return written, err
 }
 
 type fakeDevWatcher struct {
