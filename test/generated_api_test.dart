@@ -24,6 +24,16 @@ class RecordingRpcClient implements RpcClient {
   }
 
   @override
+  Stream<RpcStreamEvent<RpcReply>> stream(
+    String method, {
+    Map<String, Object?> params = const {},
+    Duration timeout = const Duration(minutes: 5),
+    RpcCancellationToken? cancellationToken,
+  }) {
+    return const Stream.empty();
+  }
+
+  @override
   Future<void> close() async {}
 }
 

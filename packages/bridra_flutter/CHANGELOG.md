@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Added `RpcStreamEvent`, `RpcStreamData`, `RpcStreamProgress`, and
+  `RpcProgress`, with HTTP NDJSON and acknowledged Sidecar streaming.
+- Added bounded Sidecar stream windows so paused consumers cannot create
+  unbounded response queues.
+- Kept RPC protocol version `1` because unary calls remain wire-compatible and
+  streaming is opt-in.
+
 ## 0.5.0 - 2026-07-27
 
 - Added `DesktopSingleInstance`, `DesktopSingleInstanceSession`, and

@@ -421,6 +421,14 @@ termination or inherited pipe handles.
   `server_busy` error. HTTP handlers use the Go HTTP server's concurrency.
 - `rpc.cancel` is a reserved stdio control method. It cancels the matching
   request context only when its request ID and launch token both match.
+- Methods declared with `stream: true` produce ordered `data`, `progress`, and
+  terminal `complete` frames. HTTP transports encode them as NDJSON and flush
+  each frame.
+- Sidecar streams use an authenticated per-request credit window. The Flutter
+  consumer sends reserved `rpc.stream_ack` control messages only after delivery;
+  the Go producer blocks when all credits are in flight. The bounded window
+  prevents an idle consumer from creating an unbounded response queue while
+  leaving other request workers available.
 - RPC error `code` values are stable API; `message` is human-readable.
 - Params reject unknown fields to catch client/backend schema drift.
 - Request bodies and stdio lines are limited to 4 MiB.
@@ -437,6 +445,9 @@ termination or inherited pipe handles.
 - Go drains accepted requests after stdin closes, serializes concurrent replies,
   and may return them out of order. Flutter correlates replies by ID and ignores
   late timeout replies.
+- Frames within one stream have strictly increasing sequence numbers. Flutter
+  rejects gaps, duplicates, malformed progress, and missing completion frames as
+  protocol failures.
 - Flutter timeouts and explicit `RpcCancellationToken` cancellation send the
   reserved control method so cooperative Go handlers can stop work.
 

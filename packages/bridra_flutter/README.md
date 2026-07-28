@@ -47,6 +47,21 @@ cancellation path automatically.
     );
     cancellationToken.cancel();
 
+Server-streaming calls emit typed data and progress events. Generated APIs
+perform application-result decoding; the transport package owns framing:
+
+    await for (final event in api.buildReport(request)) {
+      if (event is RpcStreamProgress<ReportPage>) {
+        updateProgress(event.progress.fraction);
+      } else {
+        render((event as RpcStreamData<ReportPage>).value);
+      }
+    }
+
+The default stream timeout is five minutes. HTTP uses flushed NDJSON. Desktop
+Sidecars use a bounded credit window and acknowledge each event only after the
+listener consumes it.
+
 ## Desktop single instance
 
 Acquire ownership once in the root isolate before `runApp`. A later process
@@ -82,6 +97,7 @@ Desktop-only code may import the explicit sidecar library:
     final client = await SidecarClient.start(
       executablePath: executablePath,
       token: SidecarClient.createToken(),
+      streamWindow: 16,
       restartPolicy: const SidecarRestartPolicy(
         maxAttempts: 3,
         initialDelay: Duration(milliseconds: 250),

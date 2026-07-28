@@ -24,6 +24,7 @@ type Schema struct {
 type Method struct {
 	Name       string  `json:"name"`
 	ClientName string  `json:"clientName"`
+	Stream     bool    `json:"stream,omitempty"`
 	Params     *Object `json:"params,omitempty"`
 	Result     Object  `json:"result"`
 	Meta       []Field `json:"meta,omitempty"`

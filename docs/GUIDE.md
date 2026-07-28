@@ -1178,6 +1178,62 @@ Errors have stable codes and may include structured data:
 `system.health` returns `frameworkVersion` and `protocolVersion`; Flutter
 rejects incompatible wire protocols. Requests are limited to 4 MiB.
 
+### Server streaming, progress, and backpressure
+
+Declare a server-streaming method with `"stream": true` in
+`schema/bridra.json`. Code generation changes only that Dart method to return
+`Stream<RpcStreamEvent<ResultType>>`; unary methods keep returning `Future`.
+
+Inside the Controller, bind and validate the request before producing the
+stream:
+
+```go
+func (controller *ReportController) Build(ctx *framework.Context) (any, error) {
+	request, err := framework.BindAndValidate[requests.BuildReportRequest](ctx)
+	if err != nil {
+		return nil, err
+	}
+	return framework.ProduceStream(ctx, func(stream *framework.StreamWriter) error {
+		for page := int64(1); page <= request.Pages; page++ {
+			if err := stream.Report(framework.Progress{
+				Completed: page - 1,
+				Total:     request.Pages,
+				Message:   "Rendering report",
+				Unit:      "pages",
+			}); err != nil {
+				return err
+			}
+			if err := stream.Send(responses.ReportPage{Page: page}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+```
+
+Consume typed data and progress from the generated Flutter API:
+
+```dart
+await for (final event in api.buildReport(request)) {
+  if (event is RpcStreamProgress<ReportPage>) {
+    setProgress(event.progress.fraction);
+  } else {
+    final page = (event as RpcStreamData<ReportPage>).value;
+    render(page);
+  }
+}
+```
+
+The default stream timeout is five minutes and can be overridden on the
+generated method. Cancellation uses the existing `RpcCancellationToken`.
+Desktop Sidecar streams start with a 16-event credit window, configurable from
+1 to 256 through `SidecarClient.start(streamWindow: ...)`. Flutter acknowledges
+an event only after its listener consumes it, so a paused listener cannot create
+an unbounded queue. HTTP streams use NDJSON and the response socket's write
+backpressure. `rpc.stream_ack` is a reserved Sidecar control method and must not
+be registered as an application route.
+
 ## Add an endpoint
 
 1. Define the method, params, result, metadata, and validation in

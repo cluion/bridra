@@ -68,6 +68,10 @@ make generate
 make codegen-check
 ```
 
+Set `"stream": true` on a schema method to generate a typed
+`Stream<RpcStreamEvent<ResultType>>`; use `framework.ProduceStream` in its Go
+Controller.
+
 ## Application scaffolds
 
 The committed `.bridra/project.json` lets the Bridra CLI discover this project.

@@ -37,6 +37,8 @@ Bridra is licensed under the [MIT License](LICENSE), Copyright (c) 2026 Cluion.
   release metadata, and transactional upgrades through one CLI
 - Single-instance desktop ownership with later-launch activation forwarding
 - Parent-bound desktop Sidecars that shut down when their Flutter owner exits
+- Typed server streams with progress events, cancellation, and bounded
+  per-stream backpressure
 - Real process, HTTP, browser, widget, race, public API, and coverage tests
 
 ## Platform model

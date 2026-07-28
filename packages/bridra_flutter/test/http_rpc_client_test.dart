@@ -7,6 +7,132 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 void main() {
+  test('streams NDJSON progress and data in order', () async {
+    final transport = StreamingResponseClient();
+    final client = HttpRpcClient(
+      endpoint: Uri.parse('https://backend.example/rpc'),
+      token: 'remote-token',
+      client: transport,
+    );
+    addTearDown(client.close);
+
+    final events = await client.stream('reports.build').toList();
+
+    expect(transport.payload['method'], 'reports.build');
+    expect((transport.payload['meta'] as Map)['stream'], '1');
+    final progress = events[0] as RpcStreamProgress<RpcReply>;
+    expect(progress.progress.completed, 1);
+    expect(progress.progress.total, 2);
+    final data = events[1] as RpcStreamData<RpcReply>;
+    expect(data.value.result, {'page': 1});
+  });
+
+  test('rejects stream calls after close or prior cancellation', () async {
+    var sends = 0;
+    final client = HttpRpcClient(
+      endpoint: Uri.parse('https://backend.example/rpc'),
+      token: 'remote-token',
+      client: MockClient((_) async {
+        sends++;
+        return http.Response('{}', 200);
+      }),
+    );
+    final cancellationToken = RpcCancellationToken()..cancel();
+
+    await expectLater(
+      client
+          .stream('reports.build', cancellationToken: cancellationToken)
+          .toList(),
+      throwsA(isA<RpcCancelledException>()),
+    );
+    await client.close();
+    await expectLater(
+      client.stream('reports.build').toList(),
+      throwsA(isA<BackendClosedException>()),
+    );
+    expect(sends, 0);
+  });
+
+  test('maps stream status and framing failures', () async {
+    final statusClient = HttpRpcClient(
+      endpoint: Uri.parse('https://backend.example/rpc'),
+      token: 'remote-token',
+      client: StreamingResponseClient(statusCode: 503),
+    );
+    addTearDown(statusClient.close);
+    await expectLater(
+      statusClient.stream('reports.build').toList(),
+      throwsA(isA<BackendTransportException>()),
+    );
+
+    final sequenceClient = HttpRpcClient(
+      endpoint: Uri.parse('https://backend.example/rpc'),
+      token: 'remote-token',
+      client: StreamingResponseClient(
+        frames: (id) => [
+          {
+            'id': id,
+            'result': {'page': 1},
+            'stream': {'sequence': 2, 'kind': 'data'},
+          },
+        ],
+      ),
+    );
+    addTearDown(sequenceClient.close);
+    await expectLater(
+      sequenceClient.stream('reports.build').toList(),
+      throwsA(isA<BackendProtocolException>()),
+    );
+
+    final incompleteClient = HttpRpcClient(
+      endpoint: Uri.parse('https://backend.example/rpc'),
+      token: 'remote-token',
+      client: StreamingResponseClient(
+        frames: (id) => [
+          {
+            'id': id,
+            'result': {'page': 1},
+            'stream': {'sequence': 1, 'kind': 'data'},
+          },
+        ],
+      ),
+    );
+    addTearDown(incompleteClient.close);
+    await expectLater(
+      incompleteClient.stream('reports.build').toList(),
+      throwsA(isA<BackendProtocolException>()),
+    );
+  });
+
+  test('preserves terminal streaming RPC errors', () async {
+    final client = HttpRpcClient(
+      endpoint: Uri.parse('https://backend.example/rpc'),
+      token: 'remote-token',
+      client: StreamingResponseClient(
+        frames: (id) => [
+          {
+            'id': id,
+            'result': null,
+            'error': {'code': 'report_failed', 'message': 'Report failed.'},
+            'stream': {'sequence': 1, 'kind': 'complete'},
+          },
+        ],
+      ),
+    );
+    addTearDown(client.close);
+
+    await expectLater(
+      client.stream('reports.build').toList(),
+      throwsA(
+        isA<RpcException>().having(
+          (error) => error.code,
+          'code',
+          'report_failed',
+        ),
+      ),
+    );
+  });
+
   test('rejects invalid endpoint and token configuration', () {
     expect(
       () => HttpRpcClient(endpoint: Uri.parse('/rpc'), token: 'token'),
@@ -194,5 +320,53 @@ class AbortObservingClient extends http.BaseClient {
     await abortable.abortTrigger;
     aborted = true;
     throw http.RequestAbortedException(request.url);
+  }
+}
+
+class StreamingResponseClient extends http.BaseClient {
+  StreamingResponseClient({this.frames, this.statusCode = 200});
+
+  final List<Map<String, Object?>> Function(Object? id)? frames;
+  final int statusCode;
+  Map<String, dynamic> payload = {};
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    payload = Map<String, dynamic>.from(
+      jsonDecode(await request.finalize().bytesToString()) as Map,
+    );
+    final id = payload['id'];
+    final responseFrames =
+        frames?.call(id) ??
+        [
+          {
+            'id': id,
+            'result': null,
+            'meta': <String, Object?>{},
+            'stream': {
+              'sequence': 1,
+              'kind': 'progress',
+              'progress': {'completed': 1, 'total': 2},
+            },
+          },
+          {
+            'id': id,
+            'result': {'page': 1},
+            'meta': <String, Object?>{},
+            'stream': {'sequence': 2, 'kind': 'data'},
+          },
+          {
+            'id': id,
+            'result': null,
+            'meta': <String, Object?>{},
+            'stream': {'sequence': 3, 'kind': 'complete'},
+          },
+        ];
+    final body = responseFrames.map(jsonEncode).join('\n');
+    return http.StreamedResponse(
+      Stream.value(utf8.encode('$body\n')),
+      statusCode,
+      headers: const {'content-type': 'application/x-ndjson'},
+    );
   }
 }

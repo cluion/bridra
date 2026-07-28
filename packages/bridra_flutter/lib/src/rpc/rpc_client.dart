@@ -8,6 +8,61 @@ class RpcReply {
   final Map<String, dynamic> meta;
 }
 
+class RpcProgress {
+  const RpcProgress({
+    required this.completed,
+    required this.total,
+    this.message,
+    this.unit,
+  });
+
+  final int completed;
+  final int total;
+  final String? message;
+  final String? unit;
+
+  double get fraction => completed / total;
+}
+
+sealed class RpcStreamEvent<T> {
+  const RpcStreamEvent({required this.sequence, required this.meta});
+
+  final int sequence;
+  final Map<String, dynamic> meta;
+}
+
+final class RpcStreamData<T> extends RpcStreamEvent<T> {
+  const RpcStreamData({
+    required super.sequence,
+    required super.meta,
+    required this.value,
+  });
+
+  final T value;
+}
+
+final class RpcStreamProgress<T> extends RpcStreamEvent<T> {
+  const RpcStreamProgress({
+    required super.sequence,
+    required super.meta,
+    required this.progress,
+  });
+
+  final RpcProgress progress;
+}
+
+class RpcStreamFrame {
+  const RpcStreamFrame._({
+    required this.sequence,
+    required this.done,
+    this.event,
+  });
+
+  final int sequence;
+  final bool done;
+  final RpcStreamEvent<RpcReply>? event;
+}
+
 class RpcException implements Exception {
   const RpcException(this.code, this.message, {this.data = const {}});
 
@@ -77,6 +132,13 @@ abstract interface class RpcClient {
     RpcCancellationToken? cancellationToken,
   });
 
+  Stream<RpcStreamEvent<RpcReply>> stream(
+    String method, {
+    Map<String, Object?> params = const {},
+    Duration timeout = const Duration(minutes: 5),
+    RpcCancellationToken? cancellationToken,
+  });
+
   Future<void> close();
 }
 
@@ -85,12 +147,21 @@ String encodeRpcRequest({
   required String method,
   required Map<String, Object?> params,
   required String token,
+  bool stream = false,
+  int? streamWindow,
 }) {
+  final meta = <String, String>{'token': token};
+  if (stream) {
+    meta['stream'] = '1';
+  }
+  if (streamWindow != null) {
+    meta['stream_window'] = '$streamWindow';
+  }
   return jsonEncode({
     'id': id,
     'method': method,
     'params': params,
-    'meta': {'token': token},
+    'meta': meta,
   });
 }
 
@@ -103,7 +174,121 @@ String encodeRpcCancellation({required String id, required String token}) {
   );
 }
 
+String encodeRpcStreamAcknowledgement({
+  required String id,
+  required int sequence,
+  required String token,
+}) {
+  return encodeRpcRequest(
+    id: id,
+    method: 'rpc.stream_ack',
+    params: {'sequence': sequence},
+    token: token,
+  );
+}
+
 RpcReply decodeRpcReply(Object? decoded, {required String expectedID}) {
+  final message = _decodeEnvelope(decoded, expectedID: expectedID);
+  _throwRpcError(message);
+
+  if (!message.containsKey('result')) {
+    throw const FormatException('Response is missing a result.');
+  }
+  return RpcReply(result: message['result'], meta: _decodeMeta(message));
+}
+
+RpcStreamFrame decodeRpcStreamFrame(
+  Object? decoded, {
+  required String expectedID,
+}) {
+  final message = _decodeEnvelope(decoded, expectedID: expectedID);
+  final stream = message['stream'];
+  if (stream is! Map) {
+    throw const FormatException(
+      'Streaming response is missing stream metadata.',
+    );
+  }
+  final metadata = Map<String, dynamic>.from(stream);
+  final sequence = metadata['sequence'];
+  final kind = metadata['kind'];
+  if (sequence is! int || sequence < 1) {
+    throw const FormatException(
+      'Streaming response sequence must be a positive integer.',
+    );
+  }
+  if (kind is! String) {
+    throw const FormatException('Streaming response kind must be a string.');
+  }
+
+  if (kind == 'complete') {
+    _throwRpcError(message);
+    return RpcStreamFrame._(sequence: sequence, done: true);
+  }
+  _throwRpcError(message);
+  final meta = _decodeMeta(message);
+  if (kind == 'data') {
+    if (!message.containsKey('result')) {
+      throw const FormatException('Streaming data is missing a result.');
+    }
+    return RpcStreamFrame._(
+      sequence: sequence,
+      done: false,
+      event: RpcStreamData<RpcReply>(
+        sequence: sequence,
+        meta: meta,
+        value: RpcReply(result: message['result'], meta: meta),
+      ),
+    );
+  }
+  if (kind == 'progress') {
+    final progressValue = metadata['progress'];
+    if (progressValue is! Map) {
+      throw const FormatException(
+        'Streaming progress is missing progress metadata.',
+      );
+    }
+    final progress = Map<String, dynamic>.from(progressValue);
+    final completed = progress['completed'];
+    final total = progress['total'];
+    final messageText = progress['message'];
+    final unit = progress['unit'];
+    if (completed is! int ||
+        total is! int ||
+        completed < 0 ||
+        total <= 0 ||
+        completed > total) {
+      throw const FormatException(
+        'Streaming progress requires 0 <= completed <= total and total > 0.',
+      );
+    }
+    if (messageText != null && messageText is! String) {
+      throw const FormatException('Progress message must be a string.');
+    }
+    if (unit != null && unit is! String) {
+      throw const FormatException('Progress unit must be a string.');
+    }
+    return RpcStreamFrame._(
+      sequence: sequence,
+      done: false,
+      event: RpcStreamProgress<RpcReply>(
+        sequence: sequence,
+        meta: meta,
+        progress: RpcProgress(
+          completed: completed,
+          total: total,
+          message: messageText as String?,
+          unit: unit as String?,
+        ),
+      ),
+    );
+  }
+  throw FormatException('Unknown streaming response kind $kind.');
+}
+
+Map<String, dynamic> _decodeEnvelope(
+  Object? decoded, {
+  required String expectedID,
+}) {
   if (decoded is! Map) {
     throw const FormatException('Response must be a JSON object.');
   }
@@ -115,38 +300,36 @@ RpcReply decodeRpcReply(Object? decoded, {required String expectedID}) {
   if (id != expectedID) {
     throw FormatException('Expected response $expectedID but received $id.');
   }
+  return message;
+}
 
-  final error = message['error'];
-  if (error != null) {
-    if (error is! Map) {
-      throw const FormatException('Response error must be an object.');
-    }
-    final errorData = Map<String, dynamic>.from(error);
-    final code = errorData['code'];
-    final messageText = errorData['message'];
-    if (code is! String || messageText is! String) {
-      throw const FormatException('Response error is missing code or message.');
-    }
-    final data = errorData['data'];
-    if (data != null && data is! Map) {
-      throw const FormatException('Response error data must be an object.');
-    }
-    throw RpcException(
-      code,
-      messageText,
-      data: data == null ? const {} : Map<String, dynamic>.from(data),
-    );
-  }
-
-  if (!message.containsKey('result')) {
-    throw const FormatException('Response is missing a result.');
-  }
+Map<String, dynamic> _decodeMeta(Map<String, dynamic> message) {
   final meta = message['meta'];
   if (meta != null && meta is! Map) {
     throw const FormatException('Response meta must be an object.');
   }
-  return RpcReply(
-    result: message['result'],
-    meta: meta == null ? const {} : Map<String, dynamic>.from(meta),
+  return meta == null ? const {} : Map<String, dynamic>.from(meta);
+}
+
+void _throwRpcError(Map<String, dynamic> message) {
+  final error = message['error'];
+  if (error == null) return;
+  if (error is! Map) {
+    throw const FormatException('Response error must be an object.');
+  }
+  final errorData = Map<String, dynamic>.from(error);
+  final code = errorData['code'];
+  final messageText = errorData['message'];
+  if (code is! String || messageText is! String) {
+    throw const FormatException('Response error is missing code or message.');
+  }
+  final data = errorData['data'];
+  if (data != null && data is! Map) {
+    throw const FormatException('Response error data must be an object.');
+  }
+  throw RpcException(
+    code,
+    messageText,
+    data: data == null ? const {} : Map<String, dynamic>.from(data),
   );
 }

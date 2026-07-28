@@ -7,12 +7,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"sync"
 )
 
 const defaultMaxConcurrentRequests = 8
 const defaultMaxPendingRequests = 64
+const defaultStreamWindow = 16
+const maxStreamWindow = 256
 const rpcCancellationMethod = "rpc.cancel"
+const rpcStreamAckMethod = "rpc.stream_ack"
 
 type Server struct {
 	Router                *Router
@@ -56,7 +60,26 @@ func (s *Server) Serve(ctx context.Context) error {
 			defer workers.Done()
 			for request := range jobs {
 				if request.Context.Err() == nil {
-					_ = encoder.Encode(s.Router.Dispatch(request.Context, request.Request))
+					if request.flow == nil {
+						_ = encoder.Encode(s.Router.Dispatch(request.Context, request.Request))
+					} else {
+						_ = s.Router.DispatchStream(
+							request.Context,
+							request.Request,
+							func(response Response) error {
+								if response.Stream != nil &&
+									response.Stream.Kind != streamCompleteKind {
+									if err := request.flow.Acquire(
+										request.Context,
+										response.Stream.Sequence,
+									); err != nil {
+										return err
+									}
+								}
+								return encoder.Encode(response)
+							},
+						)
+					}
 				}
 				requests.Complete(request)
 			}
@@ -82,6 +105,10 @@ scan:
 		}
 		if request.Method == rpcCancellationMethod {
 			requests.Cancel(request.ID, request.Meta["token"])
+			continue
+		}
+		if request.Method == rpcStreamAckMethod {
+			requests.Acknowledge(request.ID, request.Meta["token"], request.Params)
 			continue
 		}
 
@@ -115,6 +142,7 @@ scan:
 	}
 
 	scanError := scanner.Err()
+	requests.CancelStreams()
 	close(jobs)
 	workers.Wait()
 	return errors.Join(scanError, encoder.Err())
@@ -124,6 +152,7 @@ type serverRequest struct {
 	Context context.Context
 	Request Request
 	cancel  context.CancelFunc
+	flow    *streamFlow
 }
 
 type serverRequestRegistry struct {
@@ -145,6 +174,9 @@ func (r *serverRequestRegistry) Register(
 		Request: request,
 		cancel:  cancel,
 	}
+	if request.Meta[streamRequestMeta] == "1" {
+		registered.flow = newStreamFlow(parseStreamWindow(request.Meta[streamWindowMeta]))
+	}
 	if request.ID == "" {
 		return registered, false
 	}
@@ -157,6 +189,34 @@ func (r *serverRequestRegistry) Register(
 	}
 	r.requests[request.ID] = registered
 	return registered, false
+}
+
+func (r *serverRequestRegistry) Acknowledge(
+	id string,
+	token string,
+	params json.RawMessage,
+) {
+	if id == "" || token == "" {
+		return
+	}
+	var acknowledgement struct {
+		Sequence int64 `json:"sequence"`
+	}
+	if err := json.Unmarshal(params, &acknowledgement); err != nil {
+		return
+	}
+
+	r.mu.Lock()
+	request := r.requests[id]
+	if request == nil ||
+		request.flow == nil ||
+		request.Request.Meta["token"] != token {
+		r.mu.Unlock()
+		return
+	}
+	flow := request.flow
+	r.mu.Unlock()
+	flow.Acknowledge(acknowledgement.Sequence)
 }
 
 func (r *serverRequestRegistry) Cancel(id, token string) {
@@ -185,6 +245,81 @@ func (r *serverRequestRegistry) Complete(request *serverRequest) {
 		r.mu.Unlock()
 	}
 	request.cancel()
+}
+
+func (r *serverRequestRegistry) CancelStreams() {
+	r.mu.Lock()
+	var cancels []context.CancelFunc
+	for _, request := range r.requests {
+		if request.flow != nil {
+			cancels = append(cancels, request.cancel)
+		}
+	}
+	r.mu.Unlock()
+	for _, cancel := range cancels {
+		cancel()
+	}
+}
+
+type streamFlow struct {
+	credits chan struct{}
+	mu      sync.Mutex
+	sent    int64
+	acked   int64
+}
+
+func newStreamFlow(window int) *streamFlow {
+	flow := &streamFlow{credits: make(chan struct{}, window)}
+	for range window {
+		flow.credits <- struct{}{}
+	}
+	return flow
+}
+
+func (f *streamFlow) Acquire(ctx context.Context, sequence int64) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-f.credits:
+	}
+	f.mu.Lock()
+	if sequence > f.sent {
+		f.sent = sequence
+	}
+	f.mu.Unlock()
+	return nil
+}
+
+func (f *streamFlow) Acknowledge(sequence int64) {
+	f.mu.Lock()
+	if sequence <= f.acked || sequence > f.sent {
+		f.mu.Unlock()
+		return
+	}
+	release := sequence - f.acked
+	f.acked = sequence
+	f.mu.Unlock()
+
+	for range release {
+		select {
+		case f.credits <- struct{}{}:
+		default:
+			return
+		}
+	}
+}
+
+func parseStreamWindow(value string) int {
+	if value == "" {
+		return defaultStreamWindow
+	}
+	window, err := strconv.Atoi(value)
+	if err != nil ||
+		window < 1 ||
+		window > maxStreamWindow {
+		return defaultStreamWindow
+	}
+	return window
 }
 
 type serverResponseEncoder struct {

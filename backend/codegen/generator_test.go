@@ -82,6 +82,46 @@ func TestGenerateSupportsCustomRuntimeImports(t *testing.T) {
 	}
 }
 
+func TestGenerateSupportsTypedStreamingMethods(t *testing.T) {
+	schema := Schema{
+		SchemaVersion:   SupportedSchemaVersion,
+		ProtocolVersion: 2,
+		Methods: []Method{{
+			Name:       "reports.build",
+			ClientName: "buildReport",
+			Stream:     true,
+			Result: Object{
+				GoType:   "ReportPageResponse",
+				DartType: "ReportPage",
+				Fields: []Field{{
+					Name: "page",
+					Type: "integer",
+				}},
+			},
+		}},
+	}
+
+	outputs, err := Generate(schema)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	dart := generatedContent(t, outputs, DartClientPath)
+	for _, fragment := range []string{
+		"Stream<RpcStreamEvent<ReportPage>> buildReport(",
+		"final events = _client.stream(",
+		"Duration timeout = const Duration(minutes: 5)",
+		"timeout: timeout",
+		"await for (final event in events)",
+		"yield RpcStreamProgress<ReportPage>(",
+		"final data = event as RpcStreamData<RpcReply>;",
+		"yield RpcStreamData(",
+	} {
+		if !strings.Contains(dart, fragment) {
+			t.Errorf("Dart streaming client does not contain %q:\n%s", fragment, dart)
+		}
+	}
+}
+
 func TestCheckReportsMissingAndStaleOutputs(t *testing.T) {
 	root := t.TempDir()
 	outputs := []Output{

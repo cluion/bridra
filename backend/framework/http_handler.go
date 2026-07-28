@@ -59,7 +59,47 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if request.Meta[streamRequestMeta] == "1" {
+		h.writeStream(w, r, request)
+		return
+	}
 	h.writeJSON(w, http.StatusOK, h.Router.Dispatch(r.Context(), request))
+}
+
+func (h *HTTPHandler) writeStream(
+	w http.ResponseWriter,
+	r *http.Request,
+	request Request,
+) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		h.writeError(
+			w,
+			http.StatusInternalServerError,
+			"streaming_not_supported",
+			"The HTTP response writer does not support streaming.",
+		)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusOK)
+	encoder := json.NewEncoder(w)
+	err := h.Router.DispatchStream(
+		r.Context(),
+		request,
+		func(response Response) error {
+			if err := encoder.Encode(response); err != nil {
+				return err
+			}
+			flusher.Flush()
+			return nil
+		},
+	)
+	if err != nil && r.Context().Err() == nil {
+		h.logf("http backend: stream response: %v\n", err)
+	}
 }
 
 func (h *HTTPHandler) allowOrigin(w http.ResponseWriter, r *http.Request) bool {

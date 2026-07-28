@@ -525,51 +525,130 @@ func writeDartConstructor(output *strings.Builder, dartType string, fields []Fie
 
 func writeDartClientMethod(output *strings.Builder, method Method) {
 	output.WriteString("\n  @override\n")
-	fmt.Fprintf(output, "  %s async {\n", dartMethodSignature(method))
+	if method.Stream {
+		fmt.Fprintf(output, "  %s async* {\n", dartMethodSignature(method))
+	} else {
+		fmt.Fprintf(output, "  %s async {\n", dartMethodSignature(method))
+	}
 	methodConstant := "BridraMethods." + dartMethodConstant(method.Name)
-	output.WriteString("    final reply = await _client.call(\n")
+	if method.Stream {
+		output.WriteString("    final events = _client.stream(\n")
+	} else {
+		output.WriteString("    final reply = await _client.call(\n")
+	}
 	fmt.Fprintf(output, "      %s,\n", methodConstant)
 	if method.Params != nil {
 		output.WriteString("      params: request.toJson(),\n")
 	}
+	if method.Stream {
+		output.WriteString("      timeout: timeout,\n")
+	}
 	output.WriteString("      cancellationToken: cancellationToken,\n")
 	output.WriteString("    );\n")
-	output.WriteString("    try {\n")
+	if method.Stream {
+		output.WriteString("    await for (final event in events) {\n")
+		output.WriteString("      if (event is RpcStreamProgress<RpcReply>) {\n")
+		fmt.Fprintf(
+			output,
+			"        yield RpcStreamProgress<%s>(\n",
+			method.Result.DartType,
+		)
+		output.WriteString("          sequence: event.sequence,\n")
+		output.WriteString("          meta: event.meta,\n")
+		output.WriteString("          progress: event.progress,\n")
+		output.WriteString("        );\n")
+		output.WriteString("        continue;\n")
+		output.WriteString("      }\n")
+		output.WriteString(
+			"      final data = event as RpcStreamData<RpcReply>;\n",
+		)
+		output.WriteString("      final reply = data.value;\n")
+	}
+	bodyIndent := "    "
+	if method.Stream {
+		bodyIndent = "      "
+	}
+	fmt.Fprintf(output, "%stry {\n", bodyIndent)
 	fmt.Fprintf(
 		output,
-		"      final result = _requireMap(reply.result, %s);\n",
+		"%s  final result = _requireMap(reply.result, %s);\n",
+		bodyIndent,
 		dartString(method.Name+" result"),
 	)
-	fmt.Fprintf(output, "      return %s(\n", method.Result.DartType)
-	for _, field := range method.Result.Fields {
+	if method.Stream {
 		fmt.Fprintf(
 			output,
-			"        %s: %s,\n",
-			field.Name,
-			dartDecodeExpression("result", field),
+			"%s  final value = %s(\n",
+			bodyIndent,
+			method.Result.DartType,
 		)
-	}
-	for _, field := range method.Meta {
+		for _, field := range method.Result.Fields {
+			fmt.Fprintf(
+				output,
+				"%s    %s: %s,\n",
+				bodyIndent,
+				field.Name,
+				dartDecodeExpression("result", field),
+			)
+		}
+		for _, field := range method.Meta {
+			fmt.Fprintf(
+				output,
+				"%s    %s: %s,\n",
+				bodyIndent,
+				field.Name,
+				dartDecodeExpression("reply.meta", field),
+			)
+		}
+		fmt.Fprintf(output, "%s  );\n", bodyIndent)
+		fmt.Fprintf(output, "%s  yield RpcStreamData(\n", bodyIndent)
+		fmt.Fprintf(output, "%s    sequence: data.sequence,\n", bodyIndent)
+		fmt.Fprintf(output, "%s    meta: data.meta,\n", bodyIndent)
+		fmt.Fprintf(output, "%s    value: value,\n", bodyIndent)
+		fmt.Fprintf(output, "%s  );\n", bodyIndent)
+	} else {
 		fmt.Fprintf(
 			output,
-			"        %s: %s,\n",
-			field.Name,
-			dartDecodeExpression("reply.meta", field),
+			"%s  return %s(\n",
+			bodyIndent,
+			method.Result.DartType,
 		)
+		for _, field := range method.Result.Fields {
+			fmt.Fprintf(
+				output,
+				"%s    %s: %s,\n",
+				bodyIndent,
+				field.Name,
+				dartDecodeExpression("result", field),
+			)
+		}
+		for _, field := range method.Meta {
+			fmt.Fprintf(
+				output,
+				"%s    %s: %s,\n",
+				bodyIndent,
+				field.Name,
+				dartDecodeExpression("reply.meta", field),
+			)
+		}
+		fmt.Fprintf(output, "%s  );\n", bodyIndent)
 	}
-	output.WriteString("      );\n")
-	output.WriteString("    } on BackendProtocolException {\n")
-	output.WriteString("      rethrow;\n")
-	output.WriteString("    } on Object catch (error) {\n")
-	output.WriteString("      throw BackendProtocolException(\n")
+	fmt.Fprintf(output, "%s} on BackendProtocolException {\n", bodyIndent)
+	fmt.Fprintf(output, "%s  rethrow;\n", bodyIndent)
+	fmt.Fprintf(output, "%s} on Object catch (error) {\n", bodyIndent)
+	fmt.Fprintf(output, "%s  throw BackendProtocolException(\n", bodyIndent)
 	fmt.Fprintf(
 		output,
-		"        %s,\n",
+		"%s    %s,\n",
+		bodyIndent,
 		dartString("The "+method.Name+" response does not match the protocol."),
 	)
-	output.WriteString("        cause: error,\n")
-	output.WriteString("      );\n")
-	output.WriteString("    }\n")
+	fmt.Fprintf(output, "%s    cause: error,\n", bodyIndent)
+	fmt.Fprintf(output, "%s  );\n", bodyIndent)
+	fmt.Fprintf(output, "%s}\n", bodyIndent)
+	if method.Stream {
+		output.WriteString("    }\n")
+	}
 	output.WriteString("  }\n")
 }
 
@@ -871,25 +950,44 @@ func dartString(value string) string {
 }
 
 func dartMethodSignature(method Method) string {
+	returnType := "Future<" + method.Result.DartType + ">"
+	if method.Stream {
+		returnType = "Stream<RpcStreamEvent<" + method.Result.DartType + ">>"
+	}
 	var inline string
 	if method.Params == nil {
+		if method.Stream {
+			return fmt.Sprintf(
+				"%s %s({\n    Duration timeout = const Duration(minutes: 5),\n    RpcCancellationToken? cancellationToken,\n  })",
+				returnType,
+				method.ClientName,
+			)
+		}
 		inline = fmt.Sprintf(
-			"Future<%s> %s({RpcCancellationToken? cancellationToken})",
-			method.Result.DartType,
+			"%s %s({RpcCancellationToken? cancellationToken})",
+			returnType,
 			method.ClientName,
 		)
 		if len(inline)+2 <= 80 {
 			return inline
 		}
 		return fmt.Sprintf(
-			"Future<%s> %s({\n    RpcCancellationToken? cancellationToken,\n  })",
-			method.Result.DartType,
+			"%s %s({\n    RpcCancellationToken? cancellationToken,\n  })",
+			returnType,
 			method.ClientName,
 		)
 	}
+	if method.Stream {
+		return fmt.Sprintf(
+			"%s %s(\n    %s request, {\n    Duration timeout = const Duration(minutes: 5),\n    RpcCancellationToken? cancellationToken,\n  })",
+			returnType,
+			method.ClientName,
+			method.Params.DartType,
+		)
+	}
 	inline = fmt.Sprintf(
-		"Future<%s> %s(%s request, {RpcCancellationToken? cancellationToken})",
-		method.Result.DartType,
+		"%s %s(%s request, {RpcCancellationToken? cancellationToken})",
+		returnType,
 		method.ClientName,
 		method.Params.DartType,
 	)
@@ -897,8 +995,8 @@ func dartMethodSignature(method Method) string {
 		return inline
 	}
 	return fmt.Sprintf(
-		"Future<%s> %s(\n    %s request, {\n    RpcCancellationToken? cancellationToken,\n  })",
-		method.Result.DartType,
+		"%s %s(\n    %s request, {\n    RpcCancellationToken? cancellationToken,\n  })",
+		returnType,
 		method.ClientName,
 		method.Params.DartType,
 	)

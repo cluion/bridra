@@ -102,6 +102,7 @@ class SidecarClient implements RpcClient {
     required this._token,
     required this._processStarter,
     required this._restartPolicy,
+    required this._streamWindow,
     this._onLog,
   }) {
     _attachSession(process);
@@ -111,8 +112,10 @@ class SidecarClient implements RpcClient {
   final String _token;
   final SidecarProcessStarter _processStarter;
   final SidecarRestartPolicy _restartPolicy;
+  final int _streamWindow;
   final void Function(String line)? _onLog;
   final Map<String, _PendingSidecarCall> _pending = {};
+  final Map<String, _PendingSidecarStream> _streams = {};
   final _closingSignal = Completer<void>();
   _SidecarSession? _session;
   Future<void> _writeQueue = Future.value();
@@ -129,8 +132,16 @@ class SidecarClient implements RpcClient {
     void Function(String line)? onLog,
     SidecarProcessStarter? processStarter,
     SidecarRestartPolicy restartPolicy = const SidecarRestartPolicy(),
+    int streamWindow = 16,
   }) async {
     restartPolicy._validate();
+    if (streamWindow < 1 || streamWindow > 256) {
+      throw ArgumentError.value(
+        streamWindow,
+        'streamWindow',
+        'Use a value between 1 and 256.',
+      );
+    }
     final starter = processStarter ?? _startSystemProcess;
     final process = await starter(executablePath, ['--token', token]);
     return SidecarClient._(
@@ -139,6 +150,7 @@ class SidecarClient implements RpcClient {
       token: token,
       processStarter: starter,
       restartPolicy: restartPolicy,
+      streamWindow: streamWindow,
       onLog: onLog,
     );
   }
@@ -179,6 +191,80 @@ class SidecarClient implements RpcClient {
       ),
     );
     return pending.completer.future;
+  }
+
+  @override
+  Stream<RpcStreamEvent<RpcReply>> stream(
+    String method, {
+    Map<String, Object?> params = const {},
+    Duration timeout = const Duration(minutes: 5),
+    RpcCancellationToken? cancellationToken,
+  }) {
+    if (_state == _SidecarState.closing ||
+        _state == _SidecarState.closed ||
+        _state == _SidecarState.failed) {
+      return Stream.error(_terminalError ?? const BackendClosedException());
+    }
+    if (cancellationToken?.isCancelled ?? false) {
+      return Stream.error(RpcCancelledException(method));
+    }
+
+    final id = '${++_nextID}';
+    final pending = _PendingSidecarStream();
+    StreamSubscription<RpcStreamEvent<RpcReply>>? relay;
+    late final StreamController<RpcStreamEvent<RpcReply>> output;
+    output = StreamController<RpcStreamEvent<RpcReply>>(
+      sync: true,
+      onListen: () {
+        _streams[id] = pending;
+        pending.timeout = Timer(
+          timeout,
+          () => _cancelPendingStream(
+            id,
+            TimeoutException('Sidecar stream $method timed out.', timeout),
+          ),
+        );
+        pending.cancellationSubscription = cancellationToken?.onCancel.listen(
+          (_) => _cancelPendingStream(id, RpcCancelledException(method)),
+        );
+        relay = pending.controller.stream.listen(
+          (event) {
+            output.add(event);
+            if (_streams[id] == pending) {
+              unawaited(_sendStreamAcknowledgement(id, event.sequence));
+            }
+          },
+          onError: output.addError,
+          onDone: output.close,
+        );
+        unawaited(
+          _sendRequestWhenReady(
+            id,
+            encodeRpcRequest(
+              id: id,
+              method: method,
+              params: params,
+              token: _token,
+              stream: true,
+              streamWindow: _streamWindow,
+            ),
+          ),
+        );
+      },
+      onPause: () => relay?.pause(),
+      onResume: () => relay?.resume(),
+      onCancel: () async {
+        final abandoned = _streams.remove(id);
+        if (identical(abandoned, pending)) {
+          pending.dispose();
+          if (_state == _SidecarState.running) {
+            unawaited(_sendCancellation(id));
+          }
+        }
+        await relay?.cancel();
+      },
+    );
+    return output.stream;
   }
 
   @override
@@ -310,7 +396,7 @@ class SidecarClient implements RpcClient {
     _SidecarSession? session;
     try {
       session = await _waitForRunning();
-      if (!_pending.containsKey(id)) return;
+      if (!_pending.containsKey(id) && !_streams.containsKey(id)) return;
       await _writeRequest(session, request);
     } on Object catch (error, stackTrace) {
       final transportError = error is BackendConnectionException
@@ -322,6 +408,10 @@ class SidecarClient implements RpcClient {
       final pending = _pending.remove(id);
       if (pending != null) {
         pending.completeError(transportError, stackTrace);
+      }
+      final pendingStream = _streams.remove(id);
+      if (pendingStream != null) {
+        pendingStream.completeError(transportError, stackTrace);
       }
       if (session != null &&
           _state == _SidecarState.running &&
@@ -337,6 +427,42 @@ class SidecarClient implements RpcClient {
     pending.completeError(error, StackTrace.current);
     if (_state == _SidecarState.running) {
       unawaited(_sendCancellation(id));
+    }
+  }
+
+  void _cancelPendingStream(String id, Object error) {
+    final pending = _streams.remove(id);
+    if (pending == null) return;
+    pending.completeError(error, StackTrace.current);
+    if (_state == _SidecarState.running) {
+      unawaited(_sendCancellation(id));
+    }
+  }
+
+  Future<void> _sendStreamAcknowledgement(String id, int sequence) async {
+    final session = _session;
+    if (_state != _SidecarState.running || session == null) return;
+
+    try {
+      await _writeRequest(
+        session,
+        encodeRpcStreamAcknowledgement(
+          id: id,
+          sequence: sequence,
+          token: _token,
+        ),
+      );
+    } on Object catch (error, stackTrace) {
+      if (_state != _SidecarState.running || !identical(_session, session)) {
+        return;
+      }
+      final transportError = error is BackendConnectionException
+          ? error
+          : BackendTransportException(
+              'Could not acknowledge a Go sidecar stream event.',
+              cause: error,
+            );
+      _handleSessionFailure(session, transportError, stackTrace);
     }
   }
 
@@ -391,6 +517,30 @@ class SidecarClient implements RpcClient {
 
       if (_state != _SidecarState.running) {
         _emitLog('Ignored sidecar response while the process was recovering.');
+        return;
+      }
+
+      final pendingStream = _streams[id];
+      if (pendingStream != null) {
+        try {
+          final frame = decodeRpcStreamFrame(message, expectedID: id);
+          if (frame.sequence != pendingStream.expectedSequence) {
+            throw FormatException(
+              'Expected stream sequence ${pendingStream.expectedSequence} '
+              'but received ${frame.sequence}.',
+            );
+          }
+          pendingStream.expectedSequence++;
+          if (frame.done) {
+            _streams.remove(id);
+            pendingStream.complete();
+          } else {
+            pendingStream.add(frame.event!);
+          }
+        } on RpcException catch (error, stackTrace) {
+          _streams.remove(id);
+          pendingStream.completeError(error, stackTrace);
+        }
         return;
       }
 
@@ -732,6 +882,10 @@ class SidecarClient implements RpcClient {
       }
     }
     _pending.clear();
+    for (final pending in _streams.values) {
+      pending.completeError(error, stackTrace);
+    }
+    _streams.clear();
   }
 
   void _emitLog(String line) {
@@ -793,6 +947,42 @@ class _PendingSidecarCall {
   }
 
   void _dispose() {
+    timeout?.cancel();
+    final subscription = cancellationSubscription;
+    if (subscription != null) {
+      unawaited(subscription.cancel());
+    }
+  }
+}
+
+class _PendingSidecarStream {
+  final controller = StreamController<RpcStreamEvent<RpcReply>>();
+  Timer? timeout;
+  StreamSubscription<void>? cancellationSubscription;
+  var expectedSequence = 1;
+  var _completed = false;
+
+  void add(RpcStreamEvent<RpcReply> event) {
+    if (_completed) return;
+    controller.add(event);
+  }
+
+  void complete() {
+    if (_completed) return;
+    _completed = true;
+    dispose();
+    unawaited(controller.close());
+  }
+
+  void completeError(Object error, StackTrace stackTrace) {
+    if (_completed) return;
+    _completed = true;
+    dispose();
+    controller.addError(error, stackTrace);
+    unawaited(controller.close());
+  }
+
+  void dispose() {
     timeout?.cancel();
     final subscription = cancellationSubscription;
     if (subscription != null) {

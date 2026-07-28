@@ -402,6 +402,140 @@ func TestServerRejectsNegativePendingRequestLimit(t *testing.T) {
 	}
 }
 
+func TestServerStreamWindowAppliesBackpressureUntilAcknowledged(t *testing.T) {
+	router := NewRouter()
+	router.Handle("numbers.list", func(ctx *Context) (any, error) {
+		return ProduceStream(ctx, func(stream *StreamWriter) error {
+			if err := stream.Send(1); err != nil {
+				return err
+			}
+			return stream.Send(2)
+		})
+	})
+
+	inputReader, inputWriter := io.Pipe()
+	outputReader, outputWriter := io.Pipe()
+	server := &Server{
+		Router: router,
+		Input:  inputReader,
+		Output: outputWriter,
+	}
+	result := make(chan error, 1)
+	go func() {
+		err := server.Serve(context.Background())
+		_ = outputWriter.CloseWithError(err)
+		result <- err
+	}()
+
+	writeServerRequest(
+		t,
+		inputWriter,
+		`{"id":"stream","method":"numbers.list","meta":{"token":"secret","stream":"1","stream_window":"1"}}`,
+	)
+	decoder := json.NewDecoder(outputReader)
+	var first Response
+	if err := decoder.Decode(&first); err != nil {
+		t.Fatalf("decode first event: %v", err)
+	}
+	if first.Stream == nil || first.Stream.Sequence != 1 || first.Result != float64(1) {
+		t.Fatalf("first response = %#v", first)
+	}
+
+	secondResult := make(chan Response, 1)
+	secondError := make(chan error, 1)
+	go func() {
+		var second Response
+		if err := decoder.Decode(&second); err != nil {
+			secondError <- err
+			return
+		}
+		secondResult <- second
+	}()
+	select {
+	case response := <-secondResult:
+		t.Fatalf("second event bypassed backpressure: %#v", response)
+	case err := <-secondError:
+		t.Fatalf("decode second event: %v", err)
+	case <-time.After(25 * time.Millisecond):
+	}
+
+	writeServerRequest(
+		t,
+		inputWriter,
+		`{"id":"stream","method":"rpc.stream_ack","params":{"sequence":1},"meta":{"token":"secret"}}`,
+	)
+	select {
+	case second := <-secondResult:
+		if second.Stream == nil ||
+			second.Stream.Sequence != 2 ||
+			second.Result != float64(2) {
+			t.Fatalf("second response = %#v", second)
+		}
+	case err := <-secondError:
+		t.Fatalf("decode second event: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("acknowledgement did not release stream backpressure")
+	}
+
+	var complete Response
+	if err := decoder.Decode(&complete); err != nil {
+		t.Fatalf("decode completion: %v", err)
+	}
+	if complete.Stream == nil || complete.Stream.Kind != streamCompleteKind {
+		t.Fatalf("complete response = %#v", complete)
+	}
+	if err := inputWriter.Close(); err != nil {
+		t.Fatalf("close input: %v", err)
+	}
+	if err := <-result; err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+}
+
+func TestServerCancelsBackpressuredStreamsWhenInputCloses(t *testing.T) {
+	router := NewRouter()
+	firstSent := make(chan struct{})
+	router.Handle("numbers.list", func(ctx *Context) (any, error) {
+		return ProduceStream(ctx, func(stream *StreamWriter) error {
+			if err := stream.Send(1); err != nil {
+				return err
+			}
+			close(firstSent)
+			return stream.Send(2)
+		})
+	})
+
+	inputReader, inputWriter := io.Pipe()
+	server := &Server{
+		Router: router,
+		Input:  inputReader,
+		Output: io.Discard,
+	}
+	result := make(chan error, 1)
+	go func() { result <- server.Serve(context.Background()) }()
+	writeServerRequest(
+		t,
+		inputWriter,
+		`{"id":"stream","method":"numbers.list","meta":{"stream":"1","stream_window":"1"}}`,
+	)
+	select {
+	case <-firstSent:
+	case <-time.After(time.Second):
+		t.Fatal("first stream event was not sent")
+	}
+	if err := inputWriter.Close(); err != nil {
+		t.Fatalf("close input: %v", err)
+	}
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatalf("serve: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("server did not cancel the backpressured stream on input EOF")
+	}
+}
+
 func writeServerRequest(t *testing.T, output io.Writer, request string) {
 	t.Helper()
 	if _, err := fmt.Fprintln(output, request); err != nil {

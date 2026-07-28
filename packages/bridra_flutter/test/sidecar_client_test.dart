@@ -8,6 +8,158 @@ import 'package:bridra_flutter/bridra_flutter_sidecar.dart';
 
 void main() {
   test(
+    'streams typed progress and data with acknowledgements after consumption',
+    () async {
+      final process = FakeSidecarProcess();
+      final client = await _startClient(process);
+      addTearDown(client.close);
+
+      final iterator = StreamIterator(client.stream('reports.build'));
+      final firstMove = iterator.moveNext();
+      final request = await process.nextRequest();
+      expect(request['method'], 'reports.build');
+      expect((request['meta'] as Map)['stream'], '1');
+      expect((request['meta'] as Map)['stream_window'], '16');
+
+      process.respond({
+        'id': request['id'],
+        'result': null,
+        'meta': <String, Object?>{},
+        'stream': {
+          'sequence': 1,
+          'kind': 'progress',
+          'progress': {
+            'completed': 1,
+            'total': 2,
+            'message': 'Preparing',
+            'unit': 'steps',
+          },
+        },
+      });
+      expect(await firstMove, isTrue);
+      final progress = iterator.current as RpcStreamProgress<RpcReply>;
+      expect(progress.progress.fraction, 0.5);
+      expect(progress.progress.message, 'Preparing');
+
+      final firstAck = await process.nextRequest();
+      expect(firstAck['method'], 'rpc.stream_ack');
+      expect(firstAck['id'], request['id']);
+      expect((firstAck['params'] as Map)['sequence'], 1);
+      process.respond({
+        'id': request['id'],
+        'result': {'page': 1},
+        'meta': {
+          'pipeline': ['auth:before'],
+        },
+        'stream': {'sequence': 2, 'kind': 'data'},
+      });
+      final secondMove = iterator.moveNext();
+      expect(await secondMove, isTrue);
+      final data = iterator.current as RpcStreamData<RpcReply>;
+      expect(data.value.result, {'page': 1});
+
+      final secondAck = await process.nextRequest();
+      expect(secondAck['method'], 'rpc.stream_ack');
+      expect((secondAck['params'] as Map)['sequence'], 2);
+      process.respond({
+        'id': request['id'],
+        'result': null,
+        'meta': <String, Object?>{},
+        'stream': {'sequence': 3, 'kind': 'complete'},
+      });
+      final finalMove = iterator.moveNext();
+      expect(await finalMove, isFalse);
+    },
+  );
+
+  test('cancelling a stream subscription cancels only that request', () async {
+    final process = FakeSidecarProcess();
+    final client = await _startClient(process);
+    addTearDown(client.close);
+
+    final subscription = client.stream('reports.build').listen((_) {});
+    final request = await process.nextRequest();
+    await subscription.cancel();
+
+    final cancellation = await process.nextRequest();
+    expect(cancellation['method'], 'rpc.cancel');
+    expect(cancellation['id'], request['id']);
+    expect((cancellation['meta'] as Map)['token'], 'test-token');
+
+    final next = client.call('next');
+    final nextRequest = await process.nextRequest();
+    process.respond({
+      'id': nextRequest['id'],
+      'result': 'ok',
+      'meta': <String, Object?>{},
+    });
+    expect((await next).result, 'ok');
+  });
+
+  test(
+    'stream cancellation tokens and timeouts send control requests',
+    () async {
+      final process = FakeSidecarProcess();
+      final client = await _startClient(process);
+      addTearDown(client.close);
+      final cancellationToken = RpcCancellationToken();
+
+      final cancelledExpectation = expectLater(
+        client.stream(
+          'reports.cancelled',
+          cancellationToken: cancellationToken,
+        ),
+        emitsError(isA<RpcCancelledException>()),
+      );
+      final cancelledRequest = await process.nextRequest();
+      cancellationToken.cancel();
+      await cancelledExpectation;
+      final cancellation = await process.nextRequest();
+      expect(cancellation['method'], 'rpc.cancel');
+      expect(cancellation['id'], cancelledRequest['id']);
+
+      final timeoutExpectation = expectLater(
+        client.stream(
+          'reports.timeout',
+          timeout: const Duration(milliseconds: 5),
+        ),
+        emitsError(isA<TimeoutException>()),
+      );
+      final timeoutRequest = await process.nextRequest();
+      await timeoutExpectation;
+      final timeoutCancellation = await process.nextRequest();
+      expect(timeoutCancellation['method'], 'rpc.cancel');
+      expect(timeoutCancellation['id'], timeoutRequest['id']);
+    },
+  );
+
+  test('preserves terminal streaming RPC errors', () async {
+    final process = FakeSidecarProcess();
+    final client = await _startClient(process);
+    addTearDown(client.close);
+
+    final expectation = expectLater(
+      client.stream('reports.build'),
+      emitsError(
+        isA<RpcException>().having(
+          (error) => error.code,
+          'code',
+          'report_failed',
+        ),
+      ),
+    );
+    final request = await process.nextRequest();
+    process.respond({
+      'id': request['id'],
+      'result': null,
+      'error': {'code': 'report_failed', 'message': 'Report failed.'},
+      'stream': {'sequence': 1, 'kind': 'complete'},
+    });
+
+    await expectation;
+  });
+
+  test(
     'matches concurrent replies by id and preserves RPC error data',
     () async {
       final process = FakeSidecarProcess();
@@ -581,6 +733,34 @@ void main() {
 
     expect(token, hasLength(64));
     expect(RegExp(r'^[0-9a-f]{64}$').hasMatch(token), isTrue);
+  });
+
+  test('rejects stream windows outside the bounded protocol range', () async {
+    var starts = 0;
+    Future<SidecarProcess> start(String _, List<String> _) async {
+      starts++;
+      return FakeSidecarProcess();
+    }
+
+    await expectLater(
+      SidecarClient.start(
+        executablePath: '/fake/sidecar',
+        token: 'test-token',
+        streamWindow: 0,
+        processStarter: start,
+      ),
+      throwsArgumentError,
+    );
+    await expectLater(
+      SidecarClient.start(
+        executablePath: '/fake/sidecar',
+        token: 'test-token',
+        streamWindow: 257,
+        processStarter: start,
+      ),
+      throwsArgumentError,
+    );
+    expect(starts, 0);
   });
 }
 

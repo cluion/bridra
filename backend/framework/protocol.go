@@ -10,6 +10,11 @@ import (
 const FrameworkVersion = "0.5.0"
 const MaxRequestBytes = 4 * 1024 * 1024
 
+const (
+	streamRequestMeta = "stream"
+	streamWindowMeta  = "stream_window"
+)
+
 type Request struct {
 	ID     string            `json:"id"`
 	Method string            `json:"method"`
@@ -22,6 +27,20 @@ type Response struct {
 	Result any            `json:"result"`
 	Error  *RPCError      `json:"error,omitempty"`
 	Meta   map[string]any `json:"meta,omitempty"`
+	Stream *StreamFrame   `json:"stream,omitempty"`
+}
+
+type StreamFrame struct {
+	Sequence int64     `json:"sequence"`
+	Kind     string    `json:"kind"`
+	Progress *Progress `json:"progress,omitempty"`
+}
+
+type Progress struct {
+	Completed int64  `json:"completed"`
+	Total     int64  `json:"total"`
+	Message   string `json:"message,omitempty"`
+	Unit      string `json:"unit,omitempty"`
 }
 
 type RPCError struct {
@@ -47,6 +66,7 @@ type Context struct {
 	Request Request
 	Trace   []string
 	scope   *Scope
+	stream  *StreamWriter
 }
 
 func NewContext(parent context.Context, request Request) *Context {

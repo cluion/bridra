@@ -5,6 +5,17 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 
 ## [Unreleased]
 
+### Added
+
+- Added generated typed server-streaming methods, data and progress events,
+  flushed HTTP NDJSON, Sidecar stream cancellation, strict frame sequencing,
+  and bounded per-stream credit backpressure.
+
+### Changed
+
+- Kept RPC protocol version `1`: unary envelopes are unchanged and streaming is
+  an opt-in method capability using additive frame metadata.
+
 ## [0.5.0] - 2026-07-27
 
 ### Added

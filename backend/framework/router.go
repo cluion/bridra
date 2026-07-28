@@ -68,6 +68,50 @@ func (r *Router) HandleWithPolicies(
 }
 
 func (r *Router) Dispatch(parent context.Context, request Request) Response {
+	ctx, handler := r.resolve(parent, request)
+	result, err := handler(ctx)
+	return r.response(ctx, result, err)
+}
+
+func (r *Router) DispatchStream(
+	parent context.Context,
+	request Request,
+	emit func(Response) error,
+) error {
+	if emit == nil {
+		return fmt.Errorf("framework: stream response emitter is required")
+	}
+	ctx, handler := r.resolve(parent, request)
+	writer := &StreamWriter{
+		ctx:       ctx,
+		requestID: request.ID,
+		meta: func() map[string]any {
+			return map[string]any{"pipeline": append([]string(nil), ctx.Trace...)}
+		},
+		emit: emit,
+	}
+	ctx.stream = writer
+
+	result, err := handler(ctx)
+	if writer.err != nil {
+		return writer.err
+	}
+	if err != nil {
+		response := r.response(ctx, nil, err)
+		return writer.complete(response.Error)
+	}
+	if _, streamed := result.(streamCompleted); !streamed {
+		if err := writer.Send(result); err != nil {
+			return err
+		}
+	}
+	return writer.complete(nil)
+}
+
+func (r *Router) resolve(
+	parent context.Context,
+	request Request,
+) (*Context, Handler) {
 	var scope *Scope
 	if r.container != nil {
 		scope = r.container.NewScope()
@@ -85,10 +129,12 @@ func (r *Router) Dispatch(parent context.Context, request Request) Response {
 	}
 
 	handler = applyMiddlewares(handler, r.middlewares)
+	return ctx, handler
+}
 
-	result, err := handler(ctx)
+func (r *Router) response(ctx *Context, result any, err error) Response {
 	response := Response{
-		ID: request.ID,
+		ID: ctx.Request.ID,
 		Meta: map[string]any{
 			"pipeline": ctx.Trace,
 		},

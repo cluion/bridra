@@ -170,3 +170,51 @@ func TestHTTPHandlerPropagatesRequestCancellation(t *testing.T) {
 		t.Fatal("HTTP handler did not finish after request cancellation")
 	}
 }
+
+func TestHTTPHandlerStreamsNDJSONAndFlushesCompletion(t *testing.T) {
+	router := NewRouter()
+	router.Handle("reports.build", func(ctx *Context) (any, error) {
+		return ProduceStream(ctx, func(stream *StreamWriter) error {
+			if err := stream.Report(Progress{Completed: 1, Total: 2}); err != nil {
+				return err
+			}
+			return stream.Send(map[string]any{"page": 1})
+		})
+	})
+	handler := &HTTPHandler{Router: router}
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/rpc",
+		strings.NewReader(
+			`{"id":"1","method":"reports.build","meta":{"stream":"1"}}`,
+		),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/x-ndjson")
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	if contentType := recorder.Header().Get("Content-Type"); contentType != "application/x-ndjson" {
+		t.Fatalf("content type = %q", contentType)
+	}
+	decoder := json.NewDecoder(recorder.Body)
+	for sequence, kind := range []string{
+		streamProgressKind,
+		streamDataKind,
+		streamCompleteKind,
+	} {
+		var response Response
+		if err := decoder.Decode(&response); err != nil {
+			t.Fatalf("decode response %d: %v", sequence+1, err)
+		}
+		if response.Stream == nil ||
+			response.Stream.Sequence != int64(sequence+1) ||
+			response.Stream.Kind != kind {
+			t.Fatalf("response %d = %#v", sequence+1, response)
+		}
+	}
+}
