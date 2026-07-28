@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.6.1 - 2026-07-29
+
+- Kept the public Dart API and RPC protocol unchanged while aligning the package
+  with the Bridra `0.6.1` generated-consumer patch.
+
 ## 0.6.0 - 2026-07-29
 
 - Added `RpcStreamEvent`, `RpcStreamData`, `RpcStreamProgress`, and

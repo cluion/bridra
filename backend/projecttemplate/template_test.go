@@ -157,6 +157,19 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 	}
 }
 
+func TestRenderedFlutterConsumerCompilesOutsideRepository(t *testing.T) {
+	root := t.TempDir()
+	if err := Render(root, testConfig(t)); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	command := exec.Command("fvm", "flutter", "test")
+	command.Dir = root
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("generated Flutter consumer: %v\n%s", err, output)
+	}
+}
+
 func TestRenderUsesVersionedPublishedDependenciesWithoutLocalOverrides(t *testing.T) {
 	root := t.TempDir()
 	config := testConfig(t)

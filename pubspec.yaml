@@ -1,7 +1,7 @@
 name: bridra
 description: Bridra - a Go-powered application framework for Flutter, by Cluion.
 publish_to: 'none'
-version: 0.6.0
+version: 0.6.1
 repository: https://github.com/cluion/bridra
 
 environment:

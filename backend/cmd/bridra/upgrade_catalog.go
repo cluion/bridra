@@ -77,6 +77,12 @@ var registeredUpgradeReleases = []upgradeRelease{
 		TemplateVersion:        2,
 		ProtocolVersion:        1,
 	},
+	{
+		FrameworkVersion:       "0.6.1",
+		ProjectMetadataVersion: 2,
+		TemplateVersion:        2,
+		ProtocolVersion:        1,
+	},
 }
 
 var registeredFrameworkMigrations = []frameworkMigration{
@@ -121,6 +127,13 @@ var registeredFrameworkMigrations = []frameworkMigration{
 		To:          "0.6.0",
 		Description: "Update the Go and Flutter framework dependencies for opt-in streaming and verified out-of-band file transfer.",
 		Automatic:   true,
+	},
+	{
+		ID:          "framework-0.6.0-to-0.6.1",
+		From:        "0.6.0",
+		To:          "0.6.1",
+		Description: "Update the Go and Flutter framework dependencies to the generated-consumer verification patch.",
+		Automatic:   false,
 	},
 }
 
