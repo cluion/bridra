@@ -54,6 +54,7 @@ type devSystem struct {
 	stdin        io.Reader
 	readyTimeout time.Duration
 	stopTimeout  time.Duration
+	killTimeout  time.Duration
 	abs          func(string) (string, error)
 	stat         func(string) (os.FileInfo, error)
 	mkdirAll     func(string, os.FileMode) error
@@ -105,6 +106,7 @@ func defaultDevSystem() devSystem {
 		stdin:        os.Stdin,
 		readyTimeout: 10 * time.Second,
 		stopTimeout:  5 * time.Second,
+		killTimeout:  5 * time.Second,
 		abs:          filepath.Abs,
 		stat:         os.Stat,
 		mkdirAll:     os.MkdirAll,
@@ -991,7 +993,7 @@ func (item devCommand) stopDevProcess(
 				)
 			}
 			killed = true
-			timer.Reset(item.system.stopTimeout)
+			timer.Reset(item.system.killTimeout)
 		}
 	}
 }
@@ -1049,7 +1051,7 @@ func (item devCommand) stopProcesses(
 				}
 			}
 			killed = true
-			timer.Reset(item.system.stopTimeout)
+			timer.Reset(item.system.killTimeout)
 		}
 	}
 	return errors.Join(operationErrors...)
