@@ -429,6 +429,9 @@ termination or inherited pipe handles.
   the Go producer blocks when all credits are in flight. The bounded window
   prevents an idle consumer from creating an unbounded response queue while
   leaving other request workers available.
+- Response-only `file` fields serialize a short-lived descriptor rather than
+  file bytes. The descriptor carries a random capability ID, safe display name,
+  media type, byte count, SHA-256 digest, and expiry.
 - RPC error `code` values are stable API; `message` is human-readable.
 - Params reject unknown fields to catch client/backend schema drift.
 - Request bodies and stdio lines are limited to 4 MiB.
@@ -450,6 +453,9 @@ termination or inherited pipe handles.
   protocol failures.
 - Flutter timeouts and explicit `RpcCancellationToken` cancellation send the
   reserved control method so cooperative Go handlers can stop work.
+- Sidecar file references contain only paths created inside the Sidecar-owned
+  temporary root. Flutter streams, verifies, and deletes each managed file;
+  arbitrary application paths are never accepted by the Go staging API.
 
 The launch token prevents accidental messages outside the parent's launch
 context. It is not an isolation boundary against another process running as the
@@ -463,10 +469,18 @@ same OS user.
 - Browser origins are denied unless the server has a matching CORS origin or
   the explicit development wildcard.
 - The server has read, write, header, idle, and graceful-shutdown timeouts.
+- `GET /rpc/files/<capability>` consumes one random 256-bit capability and
+  streams its staged file with `no-store` and `nosniff` headers. Capabilities
+  expire after 15 minutes by default and cannot be retried after consumption.
 - Flutter uses an abortable HTTP request for timeout and explicit cancellation,
   which cancels the request context observed by the Go Router.
 - A real integration test starts the compiled Go server on an ephemeral port
   and exercises the full Flutter-to-Go pipeline.
+
+Both file paths retain transport backpressure and verify byte count plus
+SHA-256 at completion. They are an out-of-band download transport, not binary
+RPC framing, shared memory, upload streaming, range resumption, or durable
+object storage.
 
 Both transports can handle requests concurrently. Services added to the starter
 must therefore be concurrency-safe.

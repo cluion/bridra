@@ -131,7 +131,10 @@ flutter-package-test: backend-build
 	cd $(BRIDRA_FLUTTER_PACKAGE) && BRIDRA_SIDECAR_PATH=$(SIDECAR) $(FLUTTER) test
 
 flutter-web-test:
-	cd $(BRIDRA_FLUTTER_PACKAGE) && $(FLUTTER) test --platform chrome test/default_connector_web_test.dart
+	cd $(BRIDRA_FLUTTER_PACKAGE) && $(FLUTTER) test --platform chrome \
+		test/default_connector_web_test.dart \
+		test/rpc_file_test.dart \
+		test/http_rpc_client_test.dart
 
 flutter-test: backend-build
 	BRIDRA_SIDECAR_PATH=$(SIDECAR) BRIDRA_SERVER_PATH=$(HTTP_SERVER) $(FLUTTER) test

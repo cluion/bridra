@@ -15,6 +15,11 @@ func TestBuildApplicationLoadsTokenFromEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
+	t.Cleanup(func() {
+		if err := shutdownApplication(application); err != nil {
+			t.Errorf("shutdown: %v", err)
+		}
+	})
 	response := application.Router().Dispatch(context.Background(), framework.Request{
 		ID: "1", Method: "system.health", Meta: map[string]string{"token": "environment-token"},
 	})
@@ -30,6 +35,11 @@ func TestBuildApplicationExplicitTokenOverridesEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
+	t.Cleanup(func() {
+		if err := shutdownApplication(application); err != nil {
+			t.Errorf("shutdown: %v", err)
+		}
+	})
 	response := application.Router().Dispatch(context.Background(), framework.Request{
 		ID: "1", Method: "system.health", Meta: map[string]string{"token": "runtime-token"},
 	})

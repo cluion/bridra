@@ -22,13 +22,32 @@ func main() {
 		fmt.Fprintln(os.Stderr, "server: token or BRIDRA_BACKEND_TOKEN is required")
 		os.Exit(2)
 	}
-	handler := &framework.HTTPHandler{
-		Router: app.NewRouter(*token, os.Stderr, "Go HTTP server"),
+	fileTransfers, err := framework.NewFileTransferStore(
+		framework.DefaultFileTransferOptions(),
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "server: file transfers: %v\n", err)
+		os.Exit(2)
+	}
+	defer fileTransfers.Close()
+	mux := http.NewServeMux()
+	mux.Handle("/rpc", &framework.HTTPHandler{
+		Router: app.NewRouterWithFileTransfers(
+			*token,
+			os.Stderr,
+			"Go HTTP server",
+			fileTransfers,
+		),
 		AllowedOrigin: *origin,
 		Errors: os.Stderr,
-	}
+	})
+	mux.Handle("/rpc/files/", &framework.FileTransferHTTPHandler{
+		Store: fileTransfers,
+		AllowedOrigin: *origin,
+		Errors: os.Stderr,
+	})
 	fmt.Fprintf(os.Stderr, "server: listening on http://%s/rpc\n", *listen)
-	if err := http.ListenAndServe(*listen, handler); err != nil {
+	if err := http.ListenAndServe(*listen, mux); err != nil {
 		fmt.Fprintf(os.Stderr, "server: %v\n", err)
 		os.Exit(1)
 	}

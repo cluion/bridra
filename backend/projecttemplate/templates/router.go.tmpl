@@ -10,11 +10,30 @@ import (
 )
 
 func NewRouter(token string, logs io.Writer, runtime string) *framework.Router {
+	return NewRouterWithFileTransfers(token, logs, runtime, nil)
+}
+
+func NewRouterWithFileTransfers(
+	token string,
+	logs io.Writer,
+	runtime string,
+	fileTransfers *framework.FileTransferStore,
+) *framework.Router {
 	greetingService := services.NewGreetingService()
 	greetingController := controllers.NewGreetingController(greetingService)
 	systemController := controllers.NewSystemController(runtime)
 
-	router := framework.NewRouter()
+	container := framework.NewContainer()
+	if fileTransfers != nil {
+		if err := framework.Instance(
+			container,
+			framework.FileTransferStoreKey,
+			fileTransfers,
+		); err != nil {
+			panic(err)
+		}
+	}
+	router := framework.NewRouterWithContainer(container)
 	middlewares := []framework.Middleware{
 		framework.Traced("recovery", framework.Recovery()),
 		framework.Traced("request-id", framework.RequireRequestID()),

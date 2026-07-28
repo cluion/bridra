@@ -10,11 +10,15 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 - Added generated typed server-streaming methods, data and progress events,
   flushed HTTP NDJSON, Sidecar stream cancellation, strict frame sequencing,
   and bounded per-stream credit backpressure.
+- Added response-only `file` schema fields, managed Go file staging, one-time
+  HTTP downloads, Desktop out-of-band file reads, and streaming size plus
+  SHA-256 verification in Flutter.
 
 ### Changed
 
 - Kept RPC protocol version `1`: unary envelopes are unchanged and streaming is
-  an opt-in method capability using additive frame metadata.
+  an opt-in method capability using additive frame metadata. File references
+  are additive response DTOs whose bytes travel outside the JSON RPC envelope.
 
 ## [0.5.0] - 2026-07-27
 

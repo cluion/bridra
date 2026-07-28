@@ -27,7 +27,9 @@ func main() {
 		Token:   *token,
 		Logs:    os.Stderr,
 		Runtime: "Go sidecar",
-	})
+	}, framework.NewFileTransferServiceProvider(framework.FileTransferOptions{
+		ExposeLocalPath: true,
+	}))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "sidecar: configure: %v\n", err)
 		os.Exit(2)

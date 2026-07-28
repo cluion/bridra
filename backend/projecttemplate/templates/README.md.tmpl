@@ -72,6 +72,12 @@ Set `"stream": true` on a schema method to generate a typed
 `Stream<RpcStreamEvent<ResultType>>`; use `framework.ProduceStream` in its Go
 Controller.
 
+Use a response-only `"type": "file"` field for large output. Stage it through
+`framework.FileTransferStoreKey`, then consume the generated
+`RpcFileReference` with `BackendGateway.download`. Desktop uses a managed
+temporary file; HTTP uses a one-time `/rpc/files/<capability>` download. Both
+paths verify size and SHA-256.
+
 ## Application scaffolds
 
 The committed `.bridra/project.json` lets the Bridra CLI discover this project.

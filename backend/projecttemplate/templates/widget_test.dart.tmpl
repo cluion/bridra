@@ -33,6 +33,15 @@ class FakeBackend implements BackendGateway {
       pipeline: const ['middleware', 'controller', 'service'],
     );
   }
+
+  @override
+  Stream<List<int>> download(
+    RpcFileReference file, {
+    Duration timeout = const Duration(minutes: 15),
+    RpcCancellationToken? cancellationToken,
+  }) {
+    return const Stream.empty();
+  }
 }
 
 void main() {

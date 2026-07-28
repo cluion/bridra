@@ -67,7 +67,10 @@ func GenerateWithOptions(schema Schema, options Options) ([]Output, error) {
 	if err != nil {
 		return nil, err
 	}
-	responses, err := formatGo(GoResponsesPath, renderGoResponses(schema))
+	responses, err := formatGo(
+		GoResponsesPath,
+		renderGoResponses(schema, options.GoFrameworkImport),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -191,10 +194,13 @@ func renderGoRequests(schema Schema, frameworkImport string) []byte {
 	return []byte(output.String())
 }
 
-func renderGoResponses(schema Schema) []byte {
+func renderGoResponses(schema Schema, frameworkImport string) []byte {
 	var output strings.Builder
 	writeGeneratedHeader(&output, "//")
 	output.WriteString("package responses\n")
+	if schemaHasFileResponses(schema) {
+		fmt.Fprintf(&output, "\nimport %q\n", frameworkImport)
+	}
 	for _, method := range schema.Methods {
 		for _, field := range method.Meta {
 			if field.Object != nil {
@@ -743,6 +749,23 @@ func writeDartDecoders(output *strings.Builder, schema Schema) {
 		output.WriteString(") {\n")
 		output.WriteString("  final value = data[field];\n")
 		output.WriteString("  return value == null ? null : decode(_requireMap(value, field));\n")
+		output.WriteString("}\n\n")
+	}
+	if usage.requiredFile {
+		output.WriteString("RpcFileReference _requireFileField(\n")
+		output.WriteString("  Map<String, dynamic> data,\n")
+		output.WriteString("  String field,\n")
+		output.WriteString(") => RpcFileReference.fromJson(_requireMap(data[field], field));\n\n")
+	}
+	if usage.optionalFile {
+		output.WriteString("RpcFileReference? _optionalFileField(\n")
+		output.WriteString("  Map<String, dynamic> data,\n")
+		output.WriteString("  String field,\n")
+		output.WriteString(") {\n")
+		output.WriteString("  final value = data[field];\n")
+		output.WriteString(
+			"  return value == null ? null : RpcFileReference.fromJson(_requireMap(value, field));\n",
+		)
 		output.WriteString("}\n")
 	}
 }
@@ -758,6 +781,8 @@ type dartDecoderUsage struct {
 	optionalList         bool
 	requiredObject       bool
 	optionalObject       bool
+	requiredFile         bool
+	optionalFile         bool
 }
 
 func collectDartDecoderUsage(schema Schema) dartDecoderUsage {
@@ -772,6 +797,12 @@ func collectDartDecoderUsage(schema Schema) dartDecoderUsage {
 func collectDartFieldUsage(fields []Field, usage *dartDecoderUsage) {
 	for _, field := range fields {
 		switch {
+		case field.Type == "file":
+			if field.Nullable {
+				usage.optionalFile = true
+			} else {
+				usage.requiredFile = true
+			}
 		case field.Object != nil:
 			if field.Nullable {
 				usage.optionalObject = true
@@ -815,11 +846,34 @@ func appendFields(groups ...[]Field) []Field {
 	return fields
 }
 
+func schemaHasFileResponses(schema Schema) bool {
+	for _, method := range schema.Methods {
+		if fieldsHaveType(method.Result.Fields, "file") ||
+			fieldsHaveType(method.Meta, "file") {
+			return true
+		}
+	}
+	return false
+}
+
+func fieldsHaveType(fields []Field, fieldType string) bool {
+	for _, field := range fields {
+		if field.Type == fieldType {
+			return true
+		}
+		if field.Object != nil && fieldsHaveType(field.Object.Fields, fieldType) {
+			return true
+		}
+	}
+	return false
+}
+
 func goType(field Field) string {
 	value := map[string]string{
 		"string":  "string",
 		"integer": "int",
 		"boolean": "bool",
+		"file":    "framework.FileReference",
 	}[field.Type]
 	if field.Object != nil {
 		value = field.Object.GoType
@@ -838,6 +892,7 @@ func dartType(field Field) string {
 		"string":  "String",
 		"integer": "int",
 		"boolean": "bool",
+		"file":    "RpcFileReference",
 	}[field.Type]
 	if field.Object != nil {
 		value = field.Object.DartType
@@ -855,6 +910,13 @@ func dartType(field Field) string {
 }
 
 func dartDecodeExpression(source string, field Field) string {
+	if field.Type == "file" {
+		helper := "_requireFileField"
+		if field.Nullable {
+			helper = "_optionalFileField"
+		}
+		return fmt.Sprintf("%s(%s, %s)", helper, source, dartString(field.Name))
+	}
 	if field.Object != nil {
 		helper := "_requireObjectField"
 		if field.Nullable {

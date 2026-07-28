@@ -119,14 +119,14 @@ func (schema Schema) Validate() error {
 		clients[method.ClientName] = struct{}{}
 
 		if method.Params != nil {
-			if err := validateObject(path+".params", *method.Params, goTypes, dartTypes); err != nil {
+			if err := validateObject(path+".params", *method.Params, goTypes, dartTypes, false); err != nil {
 				return err
 			}
 		}
-		if err := validateObject(path+".result", method.Result, goTypes, dartTypes); err != nil {
+		if err := validateObject(path+".result", method.Result, goTypes, dartTypes, true); err != nil {
 			return err
 		}
-		if err := validateFields(path+".meta", method.Meta, goTypes, dartTypes); err != nil {
+		if err := validateFields(path+".meta", method.Meta, goTypes, dartTypes, true); err != nil {
 			return err
 		}
 	}
@@ -138,6 +138,7 @@ func validateObject(
 	object Object,
 	goTypes map[string]string,
 	dartTypes map[string]string,
+	allowFile bool,
 ) error {
 	if !identifierPattern.MatchString(object.GoType) {
 		return fmt.Errorf("codegen: %s.goType %q is invalid", path, object.GoType)
@@ -166,7 +167,7 @@ func validateObject(
 	if len(object.Fields) == 0 {
 		return fmt.Errorf("codegen: %s.fields must not be empty", path)
 	}
-	return validateFields(path+".fields", object.Fields, goTypes, dartTypes)
+	return validateFields(path+".fields", object.Fields, goTypes, dartTypes, allowFile)
 }
 
 func validateFields(
@@ -174,6 +175,7 @@ func validateFields(
 	fields []Field,
 	goTypes map[string]string,
 	dartTypes map[string]string,
+	allowFile bool,
 ) error {
 	names := make(map[string]struct{}, len(fields))
 	for index, field := range fields {
@@ -190,6 +192,16 @@ func validateFields(
 			if field.Object != nil {
 				return fmt.Errorf("codegen: %s.object requires type object", fieldPath)
 			}
+		case "file":
+			if !allowFile {
+				return fmt.Errorf("codegen: %s file fields are response-only", fieldPath)
+			}
+			if field.Object != nil {
+				return fmt.Errorf("codegen: %s.object requires type object", fieldPath)
+			}
+			if field.Array {
+				return fmt.Errorf("codegen: %s file arrays are not supported", fieldPath)
+			}
 		case "object":
 			if field.Object == nil {
 				return fmt.Errorf("codegen: %s.object is required for type object", fieldPath)
@@ -197,7 +209,13 @@ func validateFields(
 			if field.Array {
 				return fmt.Errorf("codegen: %s nested object arrays are not supported", fieldPath)
 			}
-			if err := validateObject(fieldPath+".object", *field.Object, goTypes, dartTypes); err != nil {
+			if err := validateObject(
+				fieldPath+".object",
+				*field.Object,
+				goTypes,
+				dartTypes,
+				allowFile,
+			); err != nil {
 				return err
 			}
 		default:

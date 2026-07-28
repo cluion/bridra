@@ -30,6 +30,15 @@ class FakeBackend implements BackendGateway {
   }
 
   @override
+  Stream<List<int>> download(
+    RpcFileReference file, {
+    Duration timeout = const Duration(minutes: 15),
+    RpcCancellationToken? cancellationToken,
+  }) {
+    return const Stream.empty();
+  }
+
+  @override
   Future<HealthInfo> health({RpcCancellationToken? cancellationToken}) async {
     healthCalls++;
     return HealthInfo(

@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter_test/flutter_test.dart';
 import 'package:bridra_flutter/bridra_flutter.dart';
+import 'package:crypto/crypto.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
@@ -309,6 +310,68 @@ void main() {
     );
     expect(sends, 0);
   });
+
+  test('downloads and verifies a one-time file stream', () async {
+    final content = utf8.encode('large report');
+    final transport = FileDownloadClient([
+      content.sublist(0, 4),
+      content.sublist(4),
+    ]);
+    final client = HttpRpcClient(
+      endpoint: Uri.parse('https://backend.example/rpc?discarded=query'),
+      token: 'remote-token',
+      client: transport,
+    );
+    addTearDown(client.close);
+    final reference = _httpFileReference(content);
+
+    final downloaded = await client
+        .download(reference)
+        .expand((chunk) => chunk)
+        .toList();
+
+    expect(downloaded, content);
+    expect(transport.method, 'GET');
+    expect(
+      transport.url,
+      Uri.parse('https://backend.example/rpc/files/${reference.id}'),
+    );
+    expect(transport.accept, 'text/plain');
+  });
+
+  test('maps missing and cancelled file downloads', () async {
+    final content = utf8.encode('large report');
+    final missingTransport = FileDownloadClient(const [], statusCode: 404);
+    final missingClient = HttpRpcClient(
+      endpoint: Uri.parse('https://backend.example/rpc'),
+      token: 'remote-token',
+      client: missingTransport,
+    );
+    addTearDown(missingClient.close);
+    await expectLater(
+      missingClient.download(_httpFileReference(content)).toList(),
+      throwsA(isA<RpcFileUnavailableException>()),
+    );
+
+    final cancelledTransport = FileDownloadClient([content]);
+    final cancelledClient = HttpRpcClient(
+      endpoint: Uri.parse('https://backend.example/rpc'),
+      token: 'remote-token',
+      client: cancelledTransport,
+    );
+    addTearDown(cancelledClient.close);
+    final cancellationToken = RpcCancellationToken()..cancel();
+    await expectLater(
+      cancelledClient
+          .download(
+            _httpFileReference(content),
+            cancellationToken: cancellationToken,
+          )
+          .toList(),
+      throwsA(isA<RpcCancelledException>()),
+    );
+    expect(cancelledTransport.sendCount, 0);
+  });
 }
 
 class AbortObservingClient extends http.BaseClient {
@@ -369,4 +432,45 @@ class StreamingResponseClient extends http.BaseClient {
       headers: const {'content-type': 'application/x-ndjson'},
     );
   }
+}
+
+class FileDownloadClient extends http.BaseClient {
+  FileDownloadClient(this.chunks, {this.statusCode = 200});
+
+  final List<List<int>> chunks;
+  final int statusCode;
+  Uri? url;
+  String? method;
+  String? accept;
+  var sendCount = 0;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    sendCount++;
+    url = request.url;
+    method = request.method;
+    accept = request.headers['accept'];
+    return http.StreamedResponse(
+      Stream.fromIterable(chunks),
+      statusCode,
+      contentLength: chunks.fold<int>(
+        0,
+        (total, chunk) => total + chunk.length,
+      ),
+    );
+  }
+}
+
+RpcFileReference _httpFileReference(List<int> content) {
+  return RpcFileReference.fromJson({
+    'id': 'b' * 64,
+    'name': 'report.txt',
+    'mediaType': 'text/plain',
+    'size': content.length,
+    'sha256': sha256.convert(content).toString(),
+    'expiresAt': DateTime.now()
+        .add(const Duration(hours: 1))
+        .toUtc()
+        .toIso8601String(),
+  });
 }

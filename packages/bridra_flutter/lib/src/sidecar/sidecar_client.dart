@@ -268,6 +268,80 @@ class SidecarClient implements RpcClient {
   }
 
   @override
+  Stream<List<int>> download(
+    RpcFileReference file, {
+    Duration timeout = const Duration(minutes: 15),
+    RpcCancellationToken? cancellationToken,
+  }) async* {
+    if (_state == _SidecarState.closing ||
+        _state == _SidecarState.closed ||
+        _state == _SidecarState.failed) {
+      throw _terminalError ?? const BackendClosedException();
+    }
+    if (cancellationToken?.isCancelled ?? false) {
+      throw const RpcCancelledException('file.download');
+    }
+    final localPath = file.localPath;
+    if (localPath == null) {
+      throw const BackendProtocolException(
+        'The Sidecar file reference is missing its managed local path.',
+      );
+    }
+    if (file.isExpired) {
+      await _deleteDownloadedFile(localPath);
+      throw const RpcFileExpiredException();
+    }
+
+    Object? requestedError;
+    final timeoutTimer = Timer(timeout, () {
+      requestedError = TimeoutException(
+        'Sidecar file download timed out.',
+        timeout,
+      );
+    });
+    final cancellationSubscription = cancellationToken?.onCancel.listen((_) {
+      requestedError = const RpcCancelledException('file.download');
+    });
+    try {
+      final source = File(localPath).openRead();
+      await for (final chunk in verifyRpcFileDownload(source, file)) {
+        final error = requestedError;
+        if (error != null) throw error;
+        yield chunk;
+      }
+      final error = requestedError;
+      if (error != null) throw error;
+    } on TimeoutException {
+      rethrow;
+    } on RpcCancelledException {
+      rethrow;
+    } on BackendConnectionException {
+      rethrow;
+    } on FileSystemException catch (error) {
+      throw BackendTransportException(
+        'Could not read the Sidecar file ${file.name}.',
+        cause: error,
+      );
+    } finally {
+      timeoutTimer.cancel();
+      if (cancellationSubscription != null) {
+        unawaited(cancellationSubscription.cancel());
+      }
+      await _deleteDownloadedFile(localPath);
+    }
+  }
+
+  Future<void> _deleteDownloadedFile(String path) async {
+    try {
+      await File(path).delete();
+    } on FileSystemException catch (error) {
+      if (await File(path).exists()) {
+        _emitLog('sidecar: remove downloaded file: $error');
+      }
+    }
+  }
+
+  @override
   Future<void> close() => _closeFuture ??= _performClose();
 
   Future<void> _performClose() async {

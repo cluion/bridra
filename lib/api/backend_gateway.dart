@@ -5,6 +5,12 @@ import 'generated/bridra_api.g.dart';
 export 'generated/bridra_api.g.dart';
 
 abstract interface class BackendGateway implements BridraApi {
+  Stream<List<int>> download(
+    RpcFileReference file, {
+    Duration timeout = const Duration(minutes: 15),
+    RpcCancellationToken? cancellationToken,
+  });
+
   Future<void> close();
 }
 
@@ -49,6 +55,19 @@ class RpcBackend implements BackendGateway {
     RpcCancellationToken? cancellationToken,
   }) {
     return _api.greet(request, cancellationToken: cancellationToken);
+  }
+
+  @override
+  Stream<List<int>> download(
+    RpcFileReference file, {
+    Duration timeout = const Duration(minutes: 15),
+    RpcCancellationToken? cancellationToken,
+  }) {
+    return _client.download(
+      file,
+      timeout: timeout,
+      cancellationToken: cancellationToken,
+    );
   }
 
   @override

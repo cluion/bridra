@@ -240,6 +240,98 @@ class HttpRpcClient implements RpcClient {
   }
 
   @override
+  Stream<List<int>> download(
+    RpcFileReference file, {
+    Duration timeout = const Duration(minutes: 15),
+    RpcCancellationToken? cancellationToken,
+  }) async* {
+    if (_closed) throw const BackendClosedException();
+    if (cancellationToken?.isCancelled ?? false) {
+      throw const RpcCancelledException('file.download');
+    }
+    final abort = Completer<void>();
+    Object? abortError;
+    void requestAbort(Object error) {
+      if (abort.isCompleted) return;
+      abortError = error;
+      abort.complete();
+    }
+
+    final timeoutTimer = Timer(
+      timeout,
+      () => requestAbort(
+        TimeoutException('HTTP file download timed out.', timeout),
+      ),
+    );
+    final cancellationSubscription = cancellationToken?.onCancel.listen(
+      (_) => requestAbort(const RpcCancelledException('file.download')),
+    );
+    final request = http.AbortableRequest(
+      'GET',
+      _fileDownloadEndpoint(file),
+      abortTrigger: abort.future,
+    )..headers['accept'] = file.mediaType;
+
+    try {
+      final responseFuture = _client.send(request);
+      final abortFuture = abort.future.then<http.StreamedResponse>(
+        (_) => throw abortError!,
+      );
+      final response = await Future.any([responseFuture, abortFuture]);
+      if (response.statusCode == 404 || response.statusCode == 410) {
+        throw const RpcFileUnavailableException();
+      }
+      if (response.statusCode != 200) {
+        throw BackendTransportException(
+          'The Go HTTP backend returned status ${response.statusCode} '
+          'for the file download.',
+        );
+      }
+      await for (final chunk in verifyRpcFileDownload(response.stream, file)) {
+        yield chunk;
+      }
+    } on TimeoutException {
+      rethrow;
+    } on RpcCancelledException {
+      rethrow;
+    } on BackendConnectionException {
+      rethrow;
+    } on http.RequestAbortedException {
+      final error = abortError;
+      if (error != null) throw error;
+      throw const RpcCancelledException('file.download');
+    } on Object catch (error) {
+      final requestedError = abortError;
+      if (requestedError != null) throw requestedError;
+      throw BackendTransportException(
+        'Could not download ${file.name} from the Go HTTP backend.',
+        cause: error,
+      );
+    } finally {
+      timeoutTimer.cancel();
+      if (cancellationSubscription != null) {
+        unawaited(cancellationSubscription.cancel());
+      }
+      if (!abort.isCompleted) {
+        abort.complete();
+      }
+    }
+  }
+
+  Uri _fileDownloadEndpoint(RpcFileReference file) {
+    final rpcPath = endpoint.path.endsWith('/')
+        ? endpoint.path.substring(0, endpoint.path.length - 1)
+        : endpoint.path;
+    return Uri(
+      scheme: endpoint.scheme,
+      userInfo: endpoint.userInfo,
+      host: endpoint.host,
+      port: endpoint.hasPort ? endpoint.port : null,
+      path: '$rpcPath/files/${file.id}',
+    );
+  }
+
+  @override
   Future<void> close() async {
     if (_closed) return;
     _closed = true;

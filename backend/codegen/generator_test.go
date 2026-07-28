@@ -122,6 +122,54 @@ func TestGenerateSupportsTypedStreamingMethods(t *testing.T) {
 	}
 }
 
+func TestGenerateSupportsTypedFileResponses(t *testing.T) {
+	schema := Schema{
+		SchemaVersion:   SupportedSchemaVersion,
+		ProtocolVersion: 2,
+		Methods: []Method{{
+			Name:       "reports.export",
+			ClientName: "exportReport",
+			Result: Object{
+				GoType:   "ExportReportResponse",
+				DartType: "ExportReportResult",
+				Fields: []Field{
+					{Name: "file", Type: "file"},
+					{Name: "preview", Type: "file", Nullable: true},
+				},
+			},
+		}},
+	}
+
+	outputs, err := GenerateWithOptions(schema, Options{
+		GoFrameworkImport: "example.test/bridra/framework",
+	})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	responses := generatedContent(t, outputs, GoResponsesPath)
+	for _, fragment := range []string{
+		`"example.test/bridra/framework"`,
+		"File    framework.FileReference",
+		"Preview *framework.FileReference",
+	} {
+		if !strings.Contains(responses, fragment) {
+			t.Errorf("Go responses do not contain %q:\n%s", fragment, responses)
+		}
+	}
+	dart := generatedContent(t, outputs, DartClientPath)
+	for _, fragment := range []string{
+		"final RpcFileReference file;",
+		"final RpcFileReference? preview;",
+		"_requireFileField(result, 'file')",
+		"_optionalFileField(result, 'preview')",
+		"RpcFileReference.fromJson",
+	} {
+		if !strings.Contains(dart, fragment) {
+			t.Errorf("Dart client does not contain %q:\n%s", fragment, dart)
+		}
+	}
+}
+
 func TestCheckReportsMissingAndStaleOutputs(t *testing.T) {
 	root := t.TempDir()
 	outputs := []Output{
@@ -306,6 +354,52 @@ func TestSchemaRejectsInvalidEnumAndNestedObjectDefinitions(t *testing.T) {
 				t.Fatalf("error = %v, want %q", err, test.want)
 			}
 		})
+	}
+}
+
+func TestSchemaRestrictsFileFieldsToScalarResponses(t *testing.T) {
+	result := Object{
+		GoType:   "Result",
+		DartType: "ResultModel",
+		Fields:   []Field{{Name: "value", Type: "string"}},
+	}
+	schemaWithParams := func(field Field) Schema {
+		return Schema{
+			SchemaVersion:   SupportedSchemaVersion,
+			ProtocolVersion: 1,
+			Methods: []Method{{
+				Name:       "files.write",
+				ClientName: "writeFile",
+				Params: &Object{
+					GoType:   "WriteFileRequest",
+					DartType: "WriteFileRequest",
+					Fields:   []Field{field},
+				},
+				Result: result,
+			}},
+		}
+	}
+	if err := schemaWithParams(Field{Name: "file", Type: "file"}).Validate(); err == nil ||
+		!strings.Contains(err.Error(), "response-only") {
+		t.Fatalf("request file validation error = %v", err)
+	}
+
+	schema := Schema{
+		SchemaVersion:   SupportedSchemaVersion,
+		ProtocolVersion: 1,
+		Methods: []Method{{
+			Name:       "files.read",
+			ClientName: "readFile",
+			Result: Object{
+				GoType:   "ReadFileResponse",
+				DartType: "ReadFileResult",
+				Fields:   []Field{{Name: "files", Type: "file", Array: true}},
+			},
+		}},
+	}
+	if err := schema.Validate(); err == nil ||
+		!strings.Contains(err.Error(), "file arrays are not supported") {
+		t.Fatalf("file array validation error = %v", err)
 	}
 }
 

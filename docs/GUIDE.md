@@ -1234,6 +1234,66 @@ an unbounded queue. HTTP streams use NDJSON and the response socket's write
 backpressure. `rpc.stream_ack` is a reserved Sidecar control method and must not
 be registered as an application route.
 
+### Large-file downloads
+
+Use a response-only `"type": "file"` field when the result is too large for the
+4 MiB JSON envelope:
+
+```json
+{
+  "name": "reports.export",
+  "clientName": "exportReport",
+  "result": {
+    "goType": "ExportReportResponse",
+    "dartType": "ExportReportResult",
+    "fields": [{"name": "file", "type": "file"}]
+  }
+}
+```
+
+The generator maps that field to `framework.FileReference` in Go and
+`RpcFileReference` in Dart. Stage the bytes from a Controller or Service through
+the request scope:
+
+```go
+store, err := framework.Resolve(
+    ctx.Scope(),
+    framework.FileTransferStoreKey,
+)
+if err != nil {
+    return nil, err
+}
+file, err := store.Stage(
+    ctx,
+    "report.pdf",
+    "application/pdf",
+    reportReader,
+)
+if err != nil {
+    return nil, err
+}
+return responses.ExportReportResponse{File: file}, nil
+```
+
+Consume the generated reference through the gateway without buffering the
+complete file:
+
+```dart
+final result = await backend.exportReport();
+await for (final chunk in backend.download(result.file)) {
+  output.add(chunk);
+}
+```
+
+The default store limit is 2 GiB and references expire after 15 minutes.
+Desktop Sidecars expose only a framework-managed temporary path and delete it
+after use. HTTP uses `GET /rpc/files/<capability>` with a random 256-bit,
+one-time capability. Both transports validate the declared size and SHA-256
+digest while preserving stream backpressure. A failed or interrupted download
+may already have written partial bytes; delete that output and request a new
+reference. File uploads, retry/range requests, binary RPC frames, and shared
+memory are not part of this slice.
+
 ## Add an endpoint
 
 1. Define the method, params, result, metadata, and validation in

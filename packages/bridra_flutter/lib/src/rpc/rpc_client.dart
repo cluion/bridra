@@ -1,6 +1,77 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
+
+class RpcFileReference {
+  RpcFileReference._({
+    required this.id,
+    required this.name,
+    required this.mediaType,
+    required this.size,
+    required this.sha256,
+    required this.expiresAt,
+    required this.localPath,
+  });
+
+  factory RpcFileReference.fromJson(Map<String, dynamic> json) {
+    final id = json['id'];
+    final name = json['name'];
+    final mediaType = json['mediaType'];
+    final size = json['size'];
+    final checksum = json['sha256'];
+    final expiresAt = json['expiresAt'];
+    final localPath = json['localPath'];
+    if (id is! String ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(id) ||
+        name is! String ||
+        name.isEmpty ||
+        name == '.' ||
+        name == '..' ||
+        RegExp(r'[/\\\x00-\x1f\x7f]').hasMatch(name) ||
+        mediaType is! String ||
+        mediaType.isEmpty ||
+        mediaType.contains('\r') ||
+        mediaType.contains('\n') ||
+        size is! int ||
+        size < 0 ||
+        checksum is! String ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(checksum) ||
+        expiresAt is! String ||
+        (localPath != null && (localPath is! String || localPath.isEmpty))) {
+      throw const BackendProtocolException('The file reference is invalid.');
+    }
+    DateTime expiry;
+    try {
+      expiry = DateTime.parse(expiresAt).toUtc();
+    } on FormatException catch (error) {
+      throw BackendProtocolException(
+        'The file reference expiry is invalid.',
+        cause: error,
+      );
+    }
+    return RpcFileReference._(
+      id: id,
+      name: name,
+      mediaType: mediaType,
+      size: size,
+      sha256: checksum,
+      expiresAt: expiry,
+      localPath: localPath as String?,
+    );
+  }
+
+  final String id;
+  final String name;
+  final String mediaType;
+  final int size;
+  final String sha256;
+  final DateTime expiresAt;
+  final String? localPath;
+
+  bool get isExpired => !DateTime.now().toUtc().isBefore(expiresAt);
+}
+
 class RpcReply {
   const RpcReply({required this.result, required this.meta});
 
@@ -124,6 +195,15 @@ class BackendProtocolException extends BackendConnectionException {
   final Object? cause;
 }
 
+class RpcFileExpiredException extends BackendConnectionException {
+  const RpcFileExpiredException() : super('The file download has expired.');
+}
+
+class RpcFileUnavailableException extends BackendConnectionException {
+  const RpcFileUnavailableException()
+    : super('The file download is unavailable.');
+}
+
 abstract interface class RpcClient {
   Future<RpcReply> call(
     String method, {
@@ -139,7 +219,61 @@ abstract interface class RpcClient {
     RpcCancellationToken? cancellationToken,
   });
 
+  Stream<List<int>> download(
+    RpcFileReference file, {
+    Duration timeout = const Duration(minutes: 15),
+    RpcCancellationToken? cancellationToken,
+  });
+
   Future<void> close();
+}
+
+Stream<List<int>> verifyRpcFileDownload(
+  Stream<List<int>> source,
+  RpcFileReference file,
+) async* {
+  final digest = _DigestSink();
+  final hashInput = sha256.startChunkedConversion(digest);
+  var received = 0;
+  try {
+    await for (final chunk in source) {
+      received += chunk.length;
+      if (received > file.size) {
+        throw BackendProtocolException(
+          'File ${file.name} exceeds its declared size.',
+        );
+      }
+      hashInput.add(chunk);
+      yield chunk;
+    }
+  } finally {
+    hashInput.close();
+  }
+  if (received != file.size) {
+    throw BackendProtocolException(
+      'File ${file.name} has $received bytes; expected ${file.size}.',
+    );
+  }
+  if (digest.value?.toString() != file.sha256) {
+    throw BackendProtocolException(
+      'File ${file.name} failed SHA-256 verification.',
+    );
+  }
+}
+
+class _DigestSink implements Sink<Digest> {
+  Digest? value;
+
+  @override
+  void add(Digest data) {
+    if (value != null) {
+      throw StateError('The SHA-256 digest was emitted more than once.');
+    }
+    value = data;
+  }
+
+  @override
+  void close() {}
 }
 
 String encodeRpcRequest({

@@ -2,9 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
 import 'package:bridra_flutter/bridra_flutter.dart';
 import 'package:bridra_flutter/bridra_flutter_sidecar.dart';
+import 'package:crypto/crypto.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test(
@@ -733,6 +734,39 @@ void main() {
 
     expect(token, hasLength(64));
     expect(RegExp(r'^[0-9a-f]{64}$').hasMatch(token), isTrue);
+  });
+
+  test('downloads a verified managed file and deletes it after use', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'bridra-sidecar-download-test-',
+    );
+    addTearDown(() => directory.delete(recursive: true));
+    final content = utf8.encode('large desktop report');
+    final file = File('${directory.path}${Platform.pathSeparator}report.bin');
+    await file.writeAsBytes(content);
+    final reference = RpcFileReference.fromJson({
+      'id': 'c' * 64,
+      'name': 'report.bin',
+      'mediaType': 'application/octet-stream',
+      'size': content.length,
+      'sha256': sha256.convert(content).toString(),
+      'expiresAt': DateTime.now()
+          .add(const Duration(hours: 1))
+          .toUtc()
+          .toIso8601String(),
+      'localPath': file.path,
+    });
+    final process = FakeSidecarProcess();
+    final client = await _startClient(process);
+    addTearDown(client.close);
+
+    final downloaded = await client
+        .download(reference)
+        .expand((chunk) => chunk)
+        .toList();
+
+    expect(downloaded, content);
+    expect(await file.exists(), isFalse);
   });
 
   test('rejects stream windows outside the bounded protocol range', () async {

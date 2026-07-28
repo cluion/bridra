@@ -34,6 +34,15 @@ class RecordingRpcClient implements RpcClient {
   }
 
   @override
+  Stream<List<int>> download(
+    RpcFileReference file, {
+    Duration timeout = const Duration(minutes: 15),
+    RpcCancellationToken? cancellationToken,
+  }) {
+    return const Stream.empty();
+  }
+
+  @override
   Future<void> close() async {}
 }
 

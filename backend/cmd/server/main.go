@@ -38,10 +38,26 @@ func main() {
 		fmt.Fprintf(os.Stderr, "server: configure: %v\n", err)
 		os.Exit(2)
 	}
+	fileTransfers, err := framework.Resolve(
+		application.Container(),
+		framework.FileTransferStoreKey,
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "server: file transfers: %v\n", err)
+		if shutdownErr := shutdownApplication(application); shutdownErr != nil {
+			fmt.Fprintf(os.Stderr, "server: application shutdown: %v\n", shutdownErr)
+		}
+		os.Exit(2)
+	}
 
 	mux := http.NewServeMux()
 	mux.Handle("/rpc", &framework.HTTPHandler{
 		Router:        application.Router(),
+		AllowedOrigin: *allowedOrigin,
+		Errors:        os.Stderr,
+	})
+	mux.Handle("/rpc/files/", &framework.FileTransferHTTPHandler{
+		Store:         fileTransfers,
 		AllowedOrigin: *allowedOrigin,
 		Errors:        os.Stderr,
 	})
@@ -51,7 +67,7 @@ func main() {
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      10 * time.Second,
+		WriteTimeout:      15 * time.Minute,
 		IdleTimeout:       60 * time.Second,
 		ErrorLog:          log.New(os.Stderr, "server: ", 0),
 	}
@@ -109,5 +125,7 @@ func buildApplication(token string, tokenProvided bool) (*framework.Application,
 	return app.BuildFromSources([]framework.ConfigSource{
 		framework.NewEnvironmentConfigSource("BRIDRA_"),
 		framework.NewMapConfigSource("runtime", overrides),
-	})
+	}, framework.NewFileTransferServiceProvider(
+		framework.DefaultFileTransferOptions(),
+	))
 }

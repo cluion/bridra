@@ -20,8 +20,21 @@ func main() {
 		fmt.Fprintln(os.Stderr, "sidecar: --token is required")
 		os.Exit(2)
 	}
+	fileTransfers, err := framework.NewFileTransferStore(
+		framework.FileTransferOptions{ExposeLocalPath: true},
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "sidecar: file transfers: %v\n", err)
+		os.Exit(2)
+	}
+	defer fileTransfers.Close()
 	server := framework.Server{
-		Router: app.NewRouter(*token, os.Stderr, "Go sidecar"),
+		Router: app.NewRouterWithFileTransfers(
+			*token,
+			os.Stderr,
+			"Go sidecar",
+			fileTransfers,
+		),
 		Input: os.Stdin, Output: os.Stdout, Errors: os.Stderr,
 	}
 	signalContext, stopSignals := signal.NotifyContext(
