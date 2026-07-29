@@ -111,6 +111,25 @@ Reverting to an older release is safe only after stopping workers and accounting
 for all Jobs whose persisted Handler or JSON shape the older code cannot read.
 Never point two processes at the same `FileJobStore` path.
 
+## Adopting persistent Scheduler state
+
+Persistent scheduling is opt-in. Existing `SchedulerOptions` without a `Store` keep
+their process-local timing behavior.
+
+Before configuring `FileSchedulerStore`:
+
+1. Treat every Task name as a stable persisted key.
+2. Make Task side effects idempotent because crash recovery is at least once.
+3. Set `TaskTimeout` and a longer `LeaseDuration`; Tasks must honor cancellation.
+4. Use a protected application-data path owned by one Bridra process and monitor
+   the append-only plaintext log.
+5. Decide whether one overdue occurrence after downtime is acceptable before
+   enabling persistence for a high-frequency Task.
+
+`FileSchedulerStore` is not a distributed `onOneServer` backend. Multiple hosts or
+processes require a shared `SchedulerStore` whose reserve and complete operations
+are atomic. Stop every Scheduler before reverting or replacing its Store.
+
 ## Project metadata schema 1 to 2
 
 Project Template v1 did not record framework, template, or protocol versions.

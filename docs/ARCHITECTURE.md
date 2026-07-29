@@ -337,10 +337,18 @@ a future database or network implementation without changing typed dispatch.
 `Scheduler` owns one independent loop per named Task. Fixed-delay loops wait one
 interval after each completed invocation. Cron loops calculate their next wall-clock
 occurrence from a five-field expression and the configured Scheduler time zone.
-Missed cron occurrences are skipped. Both modes run the Task synchronously with an
-optional timeout, making same-Task overlap impossible without global serialization;
+Without a `SchedulerStore`, missed cron occurrences are skipped. Both modes run the
+Task synchronously with an optional timeout, making same-Task overlap impossible;
 different Tasks can still run concurrently. Errors and recovered panics are reported
 through a typed failure callback and do not stop later runs.
+
+With a `SchedulerStore`, startup initializes missing state without replacing an
+existing next-run time. Each loop reads that state and atomically reserves a due
+occurrence with a lease before executing. Completion advances the next run and
+records the previous scheduled time, completion time, and error. A stale lease makes
+the same occurrence eligible again, giving at-least-once recovery. After downtime,
+one overdue occurrence runs before the normal fixed-delay or cron calculation skips
+the remaining missed ticks.
 
 The Scheduler Service Provider starts loops during Boot and stops them during reverse
 shutdown. Provider order is deliberate when Tasks dispatch Jobs:
@@ -354,8 +362,11 @@ This prevents new scheduled Jobs before the Queue drains and keeps lower-level
 resources alive until queued work completes. A shutdown caller timeout stops only
 that wait; an invocation already running continues under its Task timeout.
 
-The Scheduler is process-local. It has no persistent schedule state, missed-run
-catch-up, distributed leader election, or cross-process overlap lock.
+The built-in `FileSchedulerStore` is a synchronized append-only state log for one
+process and host. It does not compact or encrypt state and cannot coordinate separate
+processes. The `SchedulerStore` reservation contract permits a shared database or
+network implementation to provide distributed one-run coordination without changing
+Task registration.
 
 ## Transport selection
 

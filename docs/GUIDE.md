@@ -1141,9 +1141,9 @@ pending and failed Jobs using the old schema have been completed or forgotten.
 
 ## Task scheduler
 
-The Scheduler runs named Tasks using either a process-local fixed delay or a
-five-field cron expression. Register the Queue before the Scheduler when scheduled
-Tasks dispatch Jobs, then register application Tasks last:
+The Scheduler runs named Tasks using either a fixed delay or a five-field cron
+expression. Register the Queue before the Scheduler when scheduled Tasks dispatch
+Jobs, then register application Tasks last:
 
 ```go
 if err := application.Register(
@@ -1190,14 +1190,55 @@ may run concurrently. `TaskTimeout` supplies each invocation context. Errors and
 recovered panics are wrapped by `ErrScheduledTaskExecutionFailed` and sent to
 `ReportFailure`.
 
+Without a `SchedulerStore`, next-run and completion state remain process-local. To
+preserve them across Sidecar or server restarts, configure `FileSchedulerStore`:
+
+```go
+schedulerStore, err := framework.NewFileSchedulerStore(
+    framework.DefaultFileSchedulerStoreOptions(
+        filepath.Join(applicationDataDirectory, "scheduler", "tasks.log"),
+    ),
+)
+if err != nil {
+    return err
+}
+
+schedulerOptions := framework.DefaultSchedulerOptions()
+schedulerOptions.Store = schedulerStore
+schedulerProvider := framework.NewSchedulerServiceProvider(schedulerOptions)
+```
+
+Persistent scheduling stores each Task's next run, last scheduled and completed
+times, last error, and active lease. Startup keeps an existing next-run time instead
+of restarting the interval. When the process was down past that time, Bridra recovers
+one overdue occurrence, then calculates the following occurrence from its completion
+time. It does not replay every missed cron tick. If a Task's interval or cron
+expression changes while keeping the same name, its already-persisted next occurrence
+runs first and the new schedule controls later occurrences.
+
+Persistent Task execution is at least once. A process crash after a side effect but
+before `Complete` makes that occurrence eligible again after `LeaseDuration`.
+Handlers must be idempotent, `LeaseDuration` must exceed `TaskTimeout`, and Handlers
+must honor cancellation so they do not run past a recovered lease.
+
+`SchedulerStore.Reserve` is the atomic coordination boundary. Multiple Scheduler
+instances sharing a correctly implemented database or network Store compete for one
+lease, matching Laravel's `onOneServer` behavior. Same-Task execution remains
+non-overlapping like Laravel's `withoutOverlapping`.
+
+The built-in `FileSchedulerStore` is for one Bridra process on one host. Do not open
+the same path from multiple processes; use a shared atomic `SchedulerStore`
+implementation for distributed coordination. `States` exposes local persisted state
+for diagnostics. The file is append-only, unencrypted, and not automatically
+compacted, so keep it in protected application data and monitor its size. Stable Task
+names are persistence keys; removed names retain state in the log.
+
 `SchedulerServiceProvider` starts during Application Boot. Shutdown stops pending
 timers and waits for running Tasks before the Queue drains, following reverse Provider
 order. If the shutdown context expires, running Tasks continue toward their own
 timeout and a later Shutdown call can wait again. Tasks must honor context and must
-not call Scheduler Shutdown from inside themselves.
-
-The Scheduler does not persist schedules, catch up missed runs, or coordinate
-multiple application instances.
+not call Scheduler Shutdown from inside themselves. After successful shutdown, the
+Provider closes a configured Store that implements `Close`.
 
 ## RPC contract
 

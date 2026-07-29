@@ -1,6 +1,9 @@
 package framework
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 var SchedulerKey = NewServiceKey[*Scheduler]("framework.scheduler")
 
@@ -43,5 +46,15 @@ func (provider *SchedulerServiceProvider) Terminate(
 	if provider.scheduler == nil {
 		return nil
 	}
-	return provider.scheduler.Shutdown(ctx)
+	if err := provider.scheduler.Shutdown(ctx); err != nil {
+		return err
+	}
+	closer, ok := provider.options.Store.(interface{ Close() error })
+	if !ok {
+		return nil
+	}
+	if err := closer.Close(); err != nil {
+		return errors.Join(ErrSchedulerStoreOperationFailed, err)
+	}
+	return nil
 }

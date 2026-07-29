@@ -21,11 +21,17 @@ var (
 	ErrScheduledTaskExecutionFailed    = errors.New("framework: scheduled task execution failed")
 )
 
+const (
+	defaultSchedulerPollInterval  = 100 * time.Millisecond
+	defaultSchedulerLeaseDuration = time.Minute
+)
+
 type ScheduledTask func(context.Context) error
 
 type ScheduledTaskFailure struct {
-	Task string
-	Err  error
+	Task        string
+	ScheduledAt time.Time
+	Err         error
 }
 
 type ScheduledTaskFailureReporter func(ScheduledTaskFailure)
@@ -34,12 +40,17 @@ type SchedulerOptions struct {
 	TaskTimeout   time.Duration
 	ReportFailure ScheduledTaskFailureReporter
 	Location      *time.Location
+	Store         SchedulerStore
+	PollInterval  time.Duration
+	LeaseDuration time.Duration
 }
 
 func DefaultSchedulerOptions() SchedulerOptions {
 	return SchedulerOptions{
-		TaskTimeout: 30 * time.Second,
-		Location:    time.Local,
+		TaskTimeout:   30 * time.Second,
+		Location:      time.Local,
+		PollInterval:  defaultSchedulerPollInterval,
+		LeaseDuration: defaultSchedulerLeaseDuration,
 	}
 }
 
@@ -59,6 +70,8 @@ type Scheduler struct {
 	taskNames    map[string]struct{}
 	stopping     chan struct{}
 	shutdownDone chan struct{}
+	workerCtx    context.Context
+	cancelWorker context.CancelFunc
 	state        schedulerState
 	runners      sync.WaitGroup
 	mu           sync.Mutex
@@ -119,7 +132,9 @@ func NewScheduler(options SchedulerOptions) (*Scheduler, error) {
 }
 
 func newScheduler(options SchedulerOptions, clock schedulerClock) (*Scheduler, error) {
-	if options.TaskTimeout < 0 {
+	if options.TaskTimeout < 0 ||
+		options.PollInterval < 0 ||
+		options.LeaseDuration < 0 {
 		return nil, ErrInvalidSchedulerOptions
 	}
 	if clock == nil {
@@ -127,6 +142,20 @@ func newScheduler(options SchedulerOptions, clock schedulerClock) (*Scheduler, e
 	}
 	if options.Location == nil {
 		options.Location = time.Local
+	}
+	if options.Store != nil {
+		if options.TaskTimeout == 0 {
+			options.TaskTimeout = DefaultSchedulerOptions().TaskTimeout
+		}
+		if options.PollInterval == 0 {
+			options.PollInterval = defaultSchedulerPollInterval
+		}
+		if options.LeaseDuration == 0 {
+			options.LeaseDuration = defaultSchedulerLeaseDuration
+		}
+		if options.LeaseDuration <= options.TaskTimeout {
+			return nil, ErrInvalidSchedulerOptions
+		}
 	}
 	return &Scheduler{
 		options:      options,
@@ -205,11 +234,28 @@ func (scheduler *Scheduler) Start() error {
 		scheduler.mu.Unlock()
 		return ErrSchedulerStopped
 	}
-	scheduler.state = schedulerRunning
 	tasks := append([]scheduledTaskEntry(nil), scheduler.tasks...)
+	if scheduler.options.Store != nil {
+		runnable, err := scheduler.initializePersistentTasks(tasks)
+		if err != nil {
+			scheduler.mu.Unlock()
+			return err
+		}
+		tasks = runnable
+		scheduler.workerCtx, scheduler.cancelWorker = context.WithCancel(
+			context.Background(),
+		)
+	}
+	scheduler.state = schedulerRunning
 	scheduler.runners.Add(len(tasks))
 	scheduler.mu.Unlock()
 
+	if scheduler.options.Store != nil {
+		for _, task := range tasks {
+			go scheduler.runPersistentTaskLoop(task)
+		}
+		return nil
+	}
 	for _, task := range tasks {
 		go scheduler.runTaskLoop(task)
 	}
@@ -241,11 +287,14 @@ func (scheduler *Scheduler) runTaskLoop(task scheduledTaskEntry) {
 			return
 		default:
 		}
-		scheduler.execute(task)
+		scheduler.execute(task, time.Time{})
 	}
 }
 
-func (scheduler *Scheduler) execute(task scheduledTaskEntry) {
+func (scheduler *Scheduler) execute(
+	task scheduledTaskEntry,
+	scheduledAt time.Time,
+) error {
 	ctx := context.Background()
 	cancel := func() {}
 	if scheduler.options.TaskTimeout > 0 {
@@ -263,10 +312,11 @@ func (scheduler *Scheduler) execute(task scheduledTaskEntry) {
 		taskError = task.run(ctx)
 	}()
 	if taskError == nil {
-		return
+		return nil
 	}
 	scheduler.report(ScheduledTaskFailure{
-		Task: task.name,
+		Task:        task.name,
+		ScheduledAt: scheduledAt,
 		Err: fmt.Errorf(
 			"%w: task %q: %w",
 			ErrScheduledTaskExecutionFailed,
@@ -274,6 +324,7 @@ func (scheduler *Scheduler) execute(task scheduledTaskEntry) {
 			taskError,
 		),
 	})
+	return taskError
 }
 
 func (scheduler *Scheduler) report(failure ScheduledTaskFailure) {
@@ -321,6 +372,9 @@ func (scheduler *Scheduler) Shutdown(ctx context.Context) error {
 
 	scheduler.state = schedulerStopping
 	close(scheduler.stopping)
+	if scheduler.cancelWorker != nil {
+		scheduler.cancelWorker()
+	}
 	done := scheduler.shutdownDone
 	scheduler.mu.Unlock()
 

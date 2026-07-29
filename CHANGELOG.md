@@ -12,12 +12,18 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
   Job retention across process and Sidecar restarts.
 - Added leased at-least-once delivery plus failed Job inspection, retry, and forget
   operations.
+- Added opt-in `SchedulerStore` state, atomic Task leases, one-occurrence restart
+  recovery, and a local append-only `FileSchedulerStore`.
+- Added persisted next-run, last scheduled, last completed, and last error
+  diagnostics for scheduled Tasks.
 
 ### Changed
 
 - Persistent Queue shutdown now finishes active work, leaves pending Jobs durable
   for the next start, and closes the configured Store through
   `QueueServiceProvider`.
+- Persistent Scheduler shutdown now finishes active Tasks and closes its configured
+  Store through `SchedulerServiceProvider`.
 
 ## [0.6.1] - 2026-07-29
 
