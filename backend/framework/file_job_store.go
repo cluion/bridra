@@ -91,7 +91,7 @@ func NewFileJobStore(options FileJobStoreOptions) (*FileJobStore, error) {
 	if err := os.MkdirAll(filepath.Dir(normalized.Path), 0o700); err != nil {
 		return nil, fmt.Errorf("%w: create directory: %w", ErrJobStoreOperationFailed, err)
 	}
-	file, err := os.OpenFile(normalized.Path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o600)
+	file, err := os.OpenFile(normalized.Path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("%w: open log: %w", ErrJobStoreOperationFailed, err)
 	}
