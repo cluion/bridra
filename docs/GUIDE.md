@@ -8,7 +8,7 @@ Go module: `github.com/cluion/bridra/backend`
 
 License: [MIT](../LICENSE), Copyright (c) 2026 Cluion
 
-Bridra 0.6 is a six-platform framework starter with a typed
+Bridra 0.7 is a six-platform framework starter with a typed
 Flutter gateway and a Laravel-inspired Go application pipeline. Windows,
 macOS, and Linux bundle Go as a child-process sidecar; Android, iOS, and Web
 use the same backend through an HTTP RPC adapter.
@@ -27,7 +27,7 @@ Flutter UI -> typed gateway -> RPC client
 
 The application entrypoint is `lib/main.dart`. Both transports use the same
 versioned request, response, error, and health-handshake contract. Framework
-SemVer (`0.6.1`) and wire protocol version (`1`) evolve independently.
+SemVer (`0.7.0`) and wire protocol version (`1`) evolve independently.
 
 ## Platform support
 
@@ -135,7 +135,7 @@ this starter currently uses Flutter's Swift Package Manager integration.
 Install the exact CLI version through Go:
 
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.6.1
+go install github.com/cluion/bridra/backend/cmd/bridra@v0.7.0
 bridra version
 bridra version --json
 ```
@@ -151,15 +151,15 @@ Upgrade by installing an explicit newer version, then inspect it before updating
 projects:
 
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.6.1
+go install github.com/cluion/bridra/backend/cmd/bridra@v0.7.0
 bridra version --json
-bridra upgrade --plan --to 0.6.1 --root /path/to/project
+bridra upgrade --plan --to 0.7.0 --root /path/to/project
 ```
 
 Bridra does not silently auto-update the CLI. Project compatibility,
 migration, deprecation, and rollback rules are documented in
 [UPGRADING.md](UPGRADING.md). Maintainer release steps are documented in
-[RELEASING.md](RELEASING.md). The `0.5.0` to `0.6.1` transition is automatic
+[RELEASING.md](RELEASING.md). The `0.5.0` to `0.7.0` transition is automatic
 because its streaming and file-transfer APIs are opt-in. Projects upgrading
 from earlier releases must still complete the manual application-owned steps
 introduced by `0.4.0` and `0.5.0`.
@@ -169,9 +169,9 @@ introduced by `0.4.0` and `0.5.0`.
 Framework maintainers enter the public SemVer once:
 
 ```bash
-make release-prepare VERSION=0.6.1
-make release-check VERSION=0.6.1
-make release-check VERSION=0.6.1 FINAL=1
+make release-prepare VERSION=0.7.0
+make release-check VERSION=0.7.0
+make release-check VERSION=0.7.0 FINAL=1
 ```
 
 `release-prepare` synchronizes the root `VERSION`, Go Framework and CLI metadata,
@@ -182,7 +182,7 @@ independent and change only when their compatibility contracts change.
 
 The command prepares a reviewable change only. It never creates or pushes a Git
 tag, publishes to pub.dev, or creates a GitHub Release. Windows maintainers use
-`.\tool\windows.ps1 -Task release-prepare -Version 0.6.1` and the corresponding
+`.\tool\windows.ps1 -Task release-prepare -Version 0.7.0` and the corresponding
 `release-check` task. The final check rejects a release while either changelog is
 still marked `Unreleased`; on Windows, add `-Final`.
 
@@ -204,7 +204,7 @@ The release packager builds with `CGO_ENABLED=0`, `-trimpath`, disabled VCS
 stamping, an empty Go build ID, and ldflag-injected version/commit/date metadata.
 Archive timestamps come from the source commit date, so identical inputs produce
 identical archives and checksums. Outputs are written under `build/bridra/cli/`.
-Each version has its own directory, such as `build/bridra/cli/0.6.1/`, so stale
+Each version has its own directory, such as `build/bridra/cli/0.7.0/`, so stale
 assets from an earlier release cannot be uploaded accidentally.
 
 ## Verify

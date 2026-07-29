@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.7.0 - 2026-07-29
+
+- Kept the public Dart API and RPC protocol unchanged while aligning the package
+  with Bridra 0.7.0's opt-in persistent Go Queue and Scheduler APIs.
+
 ## 0.6.1 - 2026-07-29
 
 - Kept the public Dart API and RPC protocol unchanged while aligning the package

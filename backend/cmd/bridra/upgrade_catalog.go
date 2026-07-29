@@ -83,6 +83,12 @@ var registeredUpgradeReleases = []upgradeRelease{
 		TemplateVersion:        2,
 		ProtocolVersion:        1,
 	},
+	{
+		FrameworkVersion:       "0.7.0",
+		ProjectMetadataVersion: 2,
+		TemplateVersion:        2,
+		ProtocolVersion:        1,
+	},
 }
 
 var registeredFrameworkMigrations = []frameworkMigration{
@@ -134,6 +140,13 @@ var registeredFrameworkMigrations = []frameworkMigration{
 		To:          "0.6.1",
 		Description: "Update the Go and Flutter framework dependencies to the generated-consumer verification patch.",
 		Automatic:   false,
+	},
+	{
+		ID:          "framework-0.6.1-to-0.7.0",
+		From:        "0.6.1",
+		To:          "0.7.0",
+		Description: "Update the Go and Flutter framework dependencies for opt-in persistent Queue and Scheduler stores.",
+		Automatic:   true,
 	},
 }
 

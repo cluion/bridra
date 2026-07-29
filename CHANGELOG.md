@@ -5,6 +5,8 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-29
+
 ### Added
 
 - Added opt-in `JobStore` persistence and a synchronized append-only
@@ -24,6 +26,12 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
   `QueueServiceProvider`.
 - Persistent Scheduler shutdown now finishes active Tasks and closes its configured
   Store through `SchedulerServiceProvider`.
+
+### Support
+
+- The latest `0.7.x` release receives best-effort security fixes until the next
+  minor line is published. The `0.6.x` line is no longer supported after this
+  release.
 
 ## [0.6.1] - 2026-07-29
 
