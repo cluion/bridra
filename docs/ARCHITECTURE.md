@@ -490,6 +490,13 @@ SHA-256 at completion. They are an out-of-band resumable file transport, not
 binary RPC framing, shared memory, client/bidirectional RPC streaming, or
 durable object storage.
 
+The [transport performance evaluation](TRANSPORT_PERFORMANCE.md) keeps JSON as
+the control plane and managed files as the bulk-data path. A length-prefixed
+pipe benchmark shows a useful theoretical binary-frame ceiling, but current
+measurements do not justify a protocol change or three platform-specific shared
+memory implementations. Binary framing is reconsidered only after a real
+cross-platform workload misses an explicit performance budget.
+
 Both transports can handle requests concurrently. Services added to the starter
 must therefore be concurrency-safe.
 

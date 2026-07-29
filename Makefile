@@ -35,7 +35,7 @@ CLI_RELEASE_COMMIT ?= $(shell git describe --always --dirty --abbrev=12 --match 
 CLI_RELEASE_DATE ?= $(shell git show -s --format=%cI HEAD)
 COVERAGE_DIR := $(CURDIR)/coverage
 
-.PHONY: help setup doctor generate codegen-check license-check format backend-build backend-server-build backend-serve backend-format backend-test backend-public-api-test backend-vet \
+.PHONY: help setup doctor generate codegen-check license-check format backend-build backend-server-build backend-serve backend-format backend-test backend-public-api-test backend-vet transport-benchmark \
 	flutter-format flutter-package-test flutter-web-test flutter-test analyze verify coverage backend-coverage flutter-package-coverage flutter-app-coverage coverage-check linux-check linux-run linux-build \
 	linux-smoke macos-check macos-run macos-build macos-smoke windows-run \
 	windows-build windows-smoke windows-verify android-run android-build \
@@ -49,6 +49,7 @@ help:
 	@echo "make license-check Verify publishable packages carry the root MIT license"
 	@echo "make verify       Run format checks, Go tests, Flutter tests, and analysis"
 	@echo "make coverage     Generate reports and enforce coverage non-regression floors"
+	@echo "make transport-benchmark Measure JSON, binary-pipe, and managed-file transport costs"
 	@echo "make run          Run the starter on the current desktop platform"
 	@echo "make macos-run    Run the starter on macOS"
 	@echo "make macos-build  Build a universal macOS app with its Go sidecar"
@@ -123,6 +124,9 @@ backend-public-api-test:
 
 backend-vet:
 	cd backend && $(GO) vet ./...
+
+transport-benchmark:
+	cd backend && $(GO) test ./framework -run '^$$' -bench '^BenchmarkTransport' -benchmem -benchtime=200ms -count=3
 
 flutter-format:
 	$(DART) format --output=none --set-exit-if-changed lib test $(BRIDRA_FLUTTER_PACKAGE)/lib $(BRIDRA_FLUTTER_PACKAGE)/test
