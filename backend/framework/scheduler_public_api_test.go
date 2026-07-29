@@ -153,6 +153,13 @@ func TestPublicPersistentSchedulerSurvivesProviderRestart(t *testing.T) {
 	if err := firstApplication.Boot(); err != nil {
 		t.Fatalf("boot first application: %v", err)
 	}
+	stateBeforeRestart, err := firstStore.State(
+		context.Background(),
+		"public.persistent",
+	)
+	if err != nil {
+		t.Fatalf("state before restart: %v", err)
+	}
 	if err := firstApplication.Shutdown(context.Background()); err != nil {
 		t.Fatalf("shutdown first application: %v", err)
 	}
@@ -170,7 +177,21 @@ func TestPublicPersistentSchedulerSurvivesProviderRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new second store: %v", err)
 	}
-	ran := make(chan struct{}, 1)
+	stateAfterRestart, err := secondStore.State(
+		context.Background(),
+		"public.persistent",
+	)
+	if err != nil {
+		t.Fatalf("state after restart: %v", err)
+	}
+	if !stateAfterRestart.NextRunAt.Equal(stateBeforeRestart.NextRunAt) {
+		t.Fatalf(
+			"next run after restart = %v, want %v",
+			stateAfterRestart.NextRunAt,
+			stateBeforeRestart.NextRunAt,
+		)
+	}
+	var ranAfterRestart atomic.Bool
 	secondApplication := framework.NewApplication(nil)
 	if err := secondApplication.Register(
 		framework.NewSchedulerServiceProvider(
@@ -178,7 +199,7 @@ func TestPublicPersistentSchedulerSurvivesProviderRestart(t *testing.T) {
 		),
 		&publicPersistentScheduledTaskProvider{
 			run: func(context.Context) error {
-				ran <- struct{}{}
+				ranAfterRestart.Store(true)
 				return nil
 			},
 		},
@@ -188,13 +209,11 @@ func TestPublicPersistentSchedulerSurvivesProviderRestart(t *testing.T) {
 	if err := secondApplication.Boot(); err != nil {
 		t.Fatalf("boot second application: %v", err)
 	}
-	select {
-	case <-ran:
-	case <-time.After(time.Second):
-		t.Fatal("persistent task did not run after provider restart")
-	}
 	if err := secondApplication.Shutdown(context.Background()); err != nil {
 		t.Fatalf("shutdown second application: %v", err)
+	}
+	if ranAfterRestart.Load() {
+		t.Fatal("persistent task ran before its preserved due time")
 	}
 	if _, err := secondStore.State(
 		context.Background(),
@@ -221,7 +240,7 @@ func (provider *publicPersistentScheduledTaskProvider) Register(
 	return framework.ScheduleTask(
 		scheduler,
 		"public.persistent",
-		100*time.Millisecond,
+		time.Hour,
 		provider.run,
 	)
 }
