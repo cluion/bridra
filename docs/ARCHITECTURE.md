@@ -300,30 +300,37 @@ when background work was not accepted.
 
 ## Background job queue
 
-`JobQueue` maps each exact Go Job type to one named Handler. Registration happens
-during the Service Provider Register phase and freezes when workers Start during
-Boot. `DispatchJob` uses a bounded channel for backpressure. `DispatchJobAfter` and
-`DispatchJobAt` place accepted delayed Jobs in a due-time heap with a separate
-capacity-sized admission bound. Configurable workers execute ready Jobs with a
-Queue-owned context and optional per-attempt timeout.
+`JobQueue` maps each exact Go Job type to one stable named Handler. Registration
+happens during the Service Provider Register phase and freezes when workers Start
+during Boot. Without a `JobStore`, `DispatchJob` uses a bounded channel for
+backpressure while delayed Jobs use a due-time heap with a separate capacity-sized
+admission bound.
+
+With a `JobStore`, dispatch JSON-encodes the Job and durably stores its Handler,
+delivery time, and retry state before returning. Workers reserve records with a
+lease, persist every attempt transition, and complete successful records. Bridra's
+`FileJobStore` implements this contract as a synchronized append-only event log.
+It replays complete events at startup and discards an incomplete final event left
+by an interrupted write.
 
 Each Handler may declare a maximum attempt count and fixed retry backoff. Errors,
 timeouts, and recovered panics share one retry path. A successful later attempt
 produces no failure notification; exhaustion reports the attempt metadata while
 preserving the retry sentinel, execution sentinel, and final original cause.
-Retrying Handlers own idempotency because the Queue cannot infer which side effects
-completed before an error.
+Persistent delivery is at least once: an expired reservation is eligible again
+after a crash. Retrying Handlers therefore own idempotency because the Queue cannot
+infer which side effects completed before an error.
 
 `QueueServiceProvider` owns the Queue lifecycle. Its Terminate hook atomically
-stops new dispatches, waits for in-flight enqueue operations, promotes pending
-delayed Jobs without waiting for their due times, closes the work stream, and waits
-for workers to drain every accepted Job. A caller timeout only stops that wait; the
-Queue continues draining and exposes the same completion to later callers.
+stops new dispatches and waits for in-flight enqueue operations. In-memory queues
+promote delayed Jobs and drain every accepted Job. Persistent queues stop reserving
+new work, finish the active attempt, preserve pending work for the next process,
+then close Stores that expose `Close`.
 
-The Queue is intentionally in-memory and single-process. Scheduled times and retry
-state are not durable after a crash, and distributed workers require explicit
-storage and delivery semantics rather than extending the in-memory channel
-implicitly.
+`FileJobStore` is intentionally single-process and single-host. It bounds retained
+records and payload size but does not compact its log, encrypt payloads, coordinate
+multiple processes, or provide distributed workers. The `JobStore` boundary permits
+a future database or network implementation without changing typed dispatch.
 
 ## Task scheduling
 

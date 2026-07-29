@@ -5,6 +5,20 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 
 ## [Unreleased]
 
+### Added
+
+- Added opt-in `JobStore` persistence and a synchronized append-only
+  `FileJobStore` that preserves ready and delayed Jobs, retry attempts, and failed
+  Job retention across process and Sidecar restarts.
+- Added leased at-least-once delivery plus failed Job inspection, retry, and forget
+  operations.
+
+### Changed
+
+- Persistent Queue shutdown now finishes active work, leaves pending Jobs durable
+  for the next start, and closes the configured Store through
+  `QueueServiceProvider`.
+
 ## [0.6.1] - 2026-07-29
 
 ### Fixed

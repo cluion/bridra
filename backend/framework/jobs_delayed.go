@@ -71,6 +71,9 @@ func dispatchJobAt[T any](
 	}
 	defer queue.dispatches.Done()
 
+	if queue.options.Store != nil {
+		return queue.persistJob(ctx, queued, readyAt)
+	}
 	select {
 	case queue.delayedSlots <- struct{}{}:
 	case <-stopping:

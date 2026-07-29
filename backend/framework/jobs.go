@@ -1,9 +1,12 @@
 package framework
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"reflect"
 	"strings"
 	"sync"
@@ -17,6 +20,7 @@ var (
 	ErrInvalidJobHandler            = errors.New("framework: job handler is invalid")
 	ErrInvalidJobHandlerOptions     = errors.New("framework: job handler options are invalid")
 	ErrJobHandlerAlreadyDefined     = errors.New("framework: job handler is already defined")
+	ErrJobHandlerNameAlreadyDefined = errors.New("framework: job handler name is already defined")
 	ErrJobHandlerRegistrationClosed = errors.New("framework: job handler registration is closed")
 	ErrJobHandlerNotFound           = errors.New("framework: job handler is not registered")
 	ErrJobQueueNotRunning           = errors.New("framework: job queue is not running")
@@ -30,11 +34,14 @@ var (
 const (
 	defaultJobQueueCapacity = 64
 	defaultJobQueueWorkers  = 1
+	defaultJobPollInterval  = 100 * time.Millisecond
+	defaultJobLeaseDuration = time.Minute
 )
 
 type JobHandler[T any] func(context.Context, T) error
 
 type JobFailure struct {
+	JobID       string
 	Handler     string
 	JobType     reflect.Type
 	Attempts    int
@@ -49,6 +56,9 @@ type JobQueueOptions struct {
 	Workers       int
 	JobTimeout    time.Duration
 	ReportFailure JobFailureReporter
+	Store         JobStore
+	PollInterval  time.Duration
+	LeaseDuration time.Duration
 }
 
 type JobHandlerOptions struct {
@@ -58,9 +68,11 @@ type JobHandlerOptions struct {
 
 func DefaultJobQueueOptions() JobQueueOptions {
 	return JobQueueOptions{
-		Capacity:   defaultJobQueueCapacity,
-		Workers:    defaultJobQueueWorkers,
-		JobTimeout: 30 * time.Second,
+		Capacity:      defaultJobQueueCapacity,
+		Workers:       defaultJobQueueWorkers,
+		JobTimeout:    30 * time.Second,
+		PollInterval:  defaultJobPollInterval,
+		LeaseDuration: defaultJobLeaseDuration,
 	}
 }
 
@@ -74,25 +86,32 @@ const (
 )
 
 type JobQueue struct {
-	options      JobQueueOptions
-	handlers     map[reflect.Type]jobHandlerEntry
-	jobs         chan queuedJob
-	scheduled    chan scheduledJob
-	delayedSlots chan struct{}
-	scheduleStop chan struct{}
-	scheduleDone chan struct{}
-	stopping     chan struct{}
-	shutdownDone chan struct{}
-	state        jobQueueState
-	workers      sync.WaitGroup
-	dispatches   sync.WaitGroup
-	mu           sync.Mutex
+	options        JobQueueOptions
+	handlers       map[reflect.Type]jobHandlerEntry
+	handlersByName map[string]jobHandlerEntry
+	jobs           chan queuedJob
+	scheduled      chan scheduledJob
+	delayedSlots   chan struct{}
+	scheduleStop   chan struct{}
+	scheduleDone   chan struct{}
+	stopping       chan struct{}
+	shutdownDone   chan struct{}
+	wake           chan struct{}
+	workerCtx      context.Context
+	cancelWorkers  context.CancelFunc
+	state          jobQueueState
+	workers        sync.WaitGroup
+	dispatches     sync.WaitGroup
+	mu             sync.Mutex
 }
 
 type jobHandlerEntry struct {
+	jobType reflect.Type
 	name    string
 	options JobHandlerOptions
 	handle  func(context.Context, any) error
+	encode  func(any) (json.RawMessage, error)
+	decode  func(json.RawMessage) (any, error)
 }
 
 type queuedJob struct {
@@ -107,20 +126,26 @@ func NewJobQueue(options JobQueueOptions) (*JobQueue, error) {
 		return nil, err
 	}
 	return &JobQueue{
-		options:      normalized,
-		handlers:     make(map[reflect.Type]jobHandlerEntry),
-		jobs:         make(chan queuedJob, normalized.Capacity),
-		scheduled:    make(chan scheduledJob, normalized.Capacity),
-		delayedSlots: make(chan struct{}, normalized.Capacity),
-		scheduleStop: make(chan struct{}),
-		scheduleDone: make(chan struct{}),
-		stopping:     make(chan struct{}),
-		shutdownDone: make(chan struct{}),
+		options:        normalized,
+		handlers:       make(map[reflect.Type]jobHandlerEntry),
+		handlersByName: make(map[string]jobHandlerEntry),
+		jobs:           make(chan queuedJob, normalized.Capacity),
+		scheduled:      make(chan scheduledJob, normalized.Capacity),
+		delayedSlots:   make(chan struct{}, normalized.Capacity),
+		scheduleStop:   make(chan struct{}),
+		scheduleDone:   make(chan struct{}),
+		stopping:       make(chan struct{}),
+		shutdownDone:   make(chan struct{}),
+		wake:           make(chan struct{}, 1),
 	}, nil
 }
 
 func normalizeJobQueueOptions(options JobQueueOptions) (JobQueueOptions, error) {
-	if options.Capacity < 0 || options.Workers < 0 || options.JobTimeout < 0 {
+	if options.Capacity < 0 ||
+		options.Workers < 0 ||
+		options.JobTimeout < 0 ||
+		options.PollInterval < 0 ||
+		options.LeaseDuration < 0 {
 		return JobQueueOptions{}, ErrInvalidJobQueueOptions
 	}
 	if options.Capacity == 0 {
@@ -128,6 +153,20 @@ func normalizeJobQueueOptions(options JobQueueOptions) (JobQueueOptions, error) 
 	}
 	if options.Workers == 0 {
 		options.Workers = defaultJobQueueWorkers
+	}
+	if options.Store != nil {
+		if options.JobTimeout == 0 {
+			options.JobTimeout = DefaultJobQueueOptions().JobTimeout
+		}
+		if options.PollInterval == 0 {
+			options.PollInterval = defaultJobPollInterval
+		}
+		if options.LeaseDuration == 0 {
+			options.LeaseDuration = defaultJobLeaseDuration
+		}
+		if options.LeaseDuration <= options.JobTimeout {
+			return JobQueueOptions{}, ErrInvalidJobQueueOptions
+		}
 	}
 	return options, nil
 }
@@ -155,6 +194,7 @@ func HandleJobWithOptions[T any](
 	}
 	jobType := reflect.TypeFor[T]()
 	entry := jobHandlerEntry{
+		jobType: jobType,
 		name:    name,
 		options: normalized,
 		handle: func(ctx context.Context, job any) error {
@@ -163,6 +203,48 @@ func HandleJobWithOptions[T any](
 				return fmt.Errorf("framework: job %s has an invalid runtime type", jobType)
 			}
 			return handler(ctx, typed)
+		},
+		encode: func(job any) (json.RawMessage, error) {
+			typed, ok := job.(T)
+			if !ok {
+				return nil, fmt.Errorf(
+					"%w: job %s has an invalid runtime type",
+					ErrJobPayloadEncodingFailed,
+					jobType,
+				)
+			}
+			payload, err := json.Marshal(typed)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"%w: job %s: %w",
+					ErrJobPayloadEncodingFailed,
+					jobType,
+					err,
+				)
+			}
+			return payload, nil
+		},
+		decode: func(payload json.RawMessage) (any, error) {
+			var typed T
+			decoder := json.NewDecoder(bytes.NewReader(payload))
+			decoder.DisallowUnknownFields()
+			if err := decoder.Decode(&typed); err != nil {
+				return nil, fmt.Errorf(
+					"%w: handler %q: %w",
+					ErrJobPayloadDecodingFailed,
+					name,
+					err,
+				)
+			}
+			var extra any
+			if err := decoder.Decode(&extra); err != io.EOF {
+				return nil, fmt.Errorf(
+					"%w: handler %q has trailing payload data",
+					ErrJobPayloadDecodingFailed,
+					name,
+				)
+			}
+			return typed, nil
 		},
 	}
 
@@ -178,6 +260,17 @@ func HandleJobWithOptions[T any](
 			jobType,
 			registered.name,
 		)
+	}
+	if queue.options.Store != nil {
+		if registered, exists := queue.handlersByName[name]; exists {
+			return fmt.Errorf(
+				"%w: handler %q already belongs to %s",
+				ErrJobHandlerNameAlreadyDefined,
+				name,
+				registered.jobType,
+			)
+		}
+		queue.handlersByName[name] = entry
 	}
 	queue.handlers[jobType] = entry
 	return nil
@@ -200,6 +293,9 @@ func DispatchJob[T any](ctx context.Context, queue *JobQueue, job T) error {
 	}
 	defer queue.dispatches.Done()
 
+	if queue.options.Store != nil {
+		return queue.persistJob(ctx, queued, time.Now().UTC())
+	}
 	select {
 	case <-stopping:
 		return stoppedJobDispatchError(queued.jobType)
@@ -278,8 +374,17 @@ func (queue *JobQueue) Start() error {
 	queue.state = jobQueueRunning
 	workers := queue.options.Workers
 	queue.workers.Add(workers)
+	if queue.options.Store != nil {
+		queue.workerCtx, queue.cancelWorkers = context.WithCancel(context.Background())
+	}
 	queue.mu.Unlock()
 
+	if queue.options.Store != nil {
+		for range workers {
+			go queue.workPersistent()
+		}
+		return nil
+	}
 	go queue.schedule()
 	for range workers {
 		go queue.work()
@@ -402,13 +507,28 @@ func (queue *JobQueue) Shutdown(ctx context.Context) error {
 
 	queue.state = jobQueueStopping
 	close(queue.stopping)
+	if queue.cancelWorkers != nil {
+		queue.cancelWorkers()
+	}
 	done := queue.shutdownDone
 	queue.mu.Unlock()
 
 	queue.dispatches.Wait()
+	if queue.options.Store != nil {
+		go queue.finishPersistentShutdown()
+		return waitForJobQueueShutdown(ctx, done)
+	}
 	close(queue.scheduleStop)
 	go queue.finishShutdown()
 	return waitForJobQueueShutdown(ctx, done)
+}
+
+func (queue *JobQueue) finishPersistentShutdown() {
+	queue.workers.Wait()
+	queue.mu.Lock()
+	queue.state = jobQueueStopped
+	close(queue.shutdownDone)
+	queue.mu.Unlock()
 }
 
 func (queue *JobQueue) finishShutdown() {

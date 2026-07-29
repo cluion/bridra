@@ -52,8 +52,8 @@ or run separately.
   scoped, and aliased services
 - deterministic Service Provider Register, Boot, and reverse-order shutdown
   lifecycle with aggregated cleanup errors
-- typed background Jobs with named handlers, bounded in-memory queues,
-  configurable workers, retries, timeouts, failure reporting, and graceful drain
+- typed background Jobs with named handlers, in-memory or durable local queues,
+  configurable workers, retries, timeouts, failure retention, and graceful shutdown
 - typed queued Event listeners that map synchronous domain Events into background Jobs
 - named fixed-delay and cron scheduled Tasks with non-overlap, time zones,
   timeouts, failure reporting, panic recovery, and Application lifecycle integration
@@ -999,9 +999,9 @@ Handlers, and stopped Queues are wrapped by `ErrQueuedEventEnqueueFailed` while
 preserving `ErrJobDispatchFailed` and the original Queue or context cause. The outer
 Event dispatch also retains `ErrEventDispatchFailed` and the queued listener name.
 
-## Background jobs and in-memory queue
+## Background jobs and queues
 
-Job Queue v0.3 registers one named Handler for each exact Go Job type. Add the
+The Job Queue registers one named Handler for each exact Go Job type. Add the
 Queue Service Provider before providers that register handlers:
 
 ```go
@@ -1066,8 +1066,33 @@ err = framework.DispatchJobAt(
 ```
 
 Zero delays and times in the past dispatch immediately. A negative delay returns
-`ErrInvalidJobDelay`. Delayed Jobs remain in memory and use the Queue capacity as a
-bounded admission limit, so the dispatch context may end while waiting for space.
+`ErrInvalidJobDelay`.
+
+Without a `JobStore`, ready and delayed Jobs remain in memory. `Capacity` bounds
+both admission paths, so dispatch waits for space or returns when its context ends.
+
+For a single-host durable queue, configure `FileJobStore`:
+
+```go
+store, err := framework.NewFileJobStore(
+    framework.DefaultFileJobStoreOptions(
+        filepath.Join(applicationDataDirectory, "queue", "jobs.log"),
+    ),
+)
+if err != nil {
+    return err
+}
+
+queueOptions := framework.DefaultJobQueueOptions()
+queueOptions.Store = store
+queueProvider := framework.NewQueueServiceProvider(queueOptions)
+```
+
+Dispatch returns only after the append-only log entry is written and synchronized.
+Job JSON, its stable Handler name, delayed delivery time, and attempt count survive
+process and Sidecar restarts. `FileJobStoreOptions.MaxJobs` bounds ready, reserved,
+delayed, and retained failed Jobs; `MaxPayloadBytes` bounds each JSON payload.
+`Capacity` applies only to the in-memory queue.
 
 The dispatch context bounds only the enqueue operation; queued work receives a
 new background context for each attempt with the configured `JobTimeout`, so ending
@@ -1078,19 +1103,41 @@ backpressure until capacity becomes available or the dispatch context ends.
 and recovered panics retry after the fixed `RetryBackoff`. Only the final exhausted
 failure is sent to `ReportFailure`; its `Attempts` and `MaxAttempts` identify the
 policy, and its error preserves `ErrJobRetriesExhausted`, `ErrJobExecutionFailed`,
-and the last original cause through `errors.Is`. Handlers with retries must make
-their side effects idempotent.
+and the last original cause through `errors.Is`.
 
-`QueueServiceProvider` implements `TerminableServiceProvider`. Shutdown rejects
-new Jobs and drains every accepted Job, including retry backoff and remaining
-attempts, before returning. Pending delayed Jobs are promoted immediately during
-shutdown so a long delay cannot block process termination or discard accepted work.
-If the shutdown context expires, draining continues in the background and another
-`Shutdown` call can wait for completion. Handlers must honor their context and must
-not call Queue Shutdown from inside their own execution.
+Persistent delivery is at least once. A worker crash after a side effect but before
+`Complete` makes the Job eligible again after `LeaseDuration`, so every persistent
+Handler must be idempotent. `LeaseDuration` must be greater than `JobTimeout`.
+Handlers must still honor cancellation; a Handler that runs past its lease can
+overlap a recovered attempt.
 
-The Queue remains process-local. It does not persist Jobs, scheduled delivery times,
-or retry state across crashes and does not provide distributed workers.
+Exhausted persistent Jobs remain available for inspection and operator action:
+
+```go
+failed := store.FailedJobs()
+err = store.RetryFailed(ctx, failed[0].Job.ID, time.Now())
+err = store.ForgetFailed(ctx, failed[0].Job.ID)
+```
+
+Retry resets the attempt count and schedules the Job at the supplied time. Forget
+permanently removes the failed record. Failed Jobs count toward `MaxJobs`.
+
+`QueueServiceProvider` implements `TerminableServiceProvider`. Shutdown rejects new
+Jobs and waits for active work. The in-memory queue drains accepted work and
+promotes delayed Jobs immediately. A persistent queue stops reserving work and
+leaves pending or delayed Jobs in storage for the next start. After a successful
+shutdown, the Provider closes a configured Store that implements `Close`.
+
+`FileJobStore` is a local, append-only store for exactly one Bridra process at a
+time. Do not open the same path from multiple processes or hosts. The log is not
+automatically compacted, and payloads are plaintext despite restrictive file
+permissions, so place it in protected application data and monitor its size. Use a
+custom `JobStore` when multi-process delivery, database retention, encryption, or
+distributed workers are required.
+
+Persisted Handler names and JSON schemas are data contracts. Keep the name
+registered across deployments and evolve payload fields compatibly until all
+pending and failed Jobs using the old schema have been completed or forgotten.
 
 ## Task scheduler
 

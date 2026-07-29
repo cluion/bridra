@@ -3,7 +3,9 @@ package framework_test
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"reflect"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -37,6 +39,7 @@ var (
 	_ framework.ServiceProvider           = (*framework.QueueServiceProvider)(nil)
 	_ framework.BootableServiceProvider   = (*framework.QueueServiceProvider)(nil)
 	_ framework.TerminableServiceProvider = (*framework.QueueServiceProvider)(nil)
+	_ framework.JobStore                  = (*framework.FileJobStore)(nil)
 )
 
 func TestPublicJobQueueProviderAPI(t *testing.T) {
@@ -137,4 +140,127 @@ func TestPublicJobFailurePreservesOriginalError(t *testing.T) {
 		!errors.Is(failure.Err, providerError) {
 		t.Fatalf("failure error = %v", failure.Err)
 	}
+}
+
+func TestPublicPersistentFileJobQueueSurvivesProviderRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "queue", "jobs.log")
+	storeOptions := framework.DefaultFileJobStoreOptions(path)
+	storeOptions.MaxJobs = 10
+	storeOptions.MaxPayloadBytes = 1024
+	firstStore, err := framework.NewFileJobStore(storeOptions)
+	if err != nil {
+		t.Fatalf("new first store: %v", err)
+	}
+	var ranEarly atomic.Bool
+	firstProvider := framework.NewQueueServiceProvider(
+		publicPersistentQueueOptions(firstStore),
+	)
+	firstApplication := framework.NewApplication(nil)
+	if err := firstApplication.Register(
+		firstProvider,
+		&publicPersistentJobProvider{
+			handle: func(context.Context, publicJob) error {
+				ranEarly.Store(true)
+				return nil
+			},
+		},
+	); err != nil {
+		t.Fatalf("register first application: %v", err)
+	}
+	if err := firstApplication.Boot(); err != nil {
+		t.Fatalf("boot first application: %v", err)
+	}
+	firstQueue, err := framework.Resolve(
+		firstApplication.Container(),
+		framework.JobQueueKey,
+	)
+	if err != nil {
+		t.Fatalf("resolve first queue: %v", err)
+	}
+	readyAt := time.Now().Add(100 * time.Millisecond)
+	if err := framework.DispatchJobAt(
+		context.Background(),
+		firstQueue,
+		readyAt,
+		publicJob{Value: "persisted"},
+	); err != nil {
+		t.Fatalf("dispatch persistent job: %v", err)
+	}
+	if err := firstApplication.Shutdown(context.Background()); err != nil {
+		t.Fatalf("shutdown first application: %v", err)
+	}
+	if _, err := firstStore.Reserve(
+		context.Background(),
+		time.Now(),
+		time.Second,
+	); !errors.Is(err, framework.ErrJobStoreClosed) {
+		t.Fatalf("first provider did not close store: %v", err)
+	}
+	if ranEarly.Load() {
+		t.Fatal("persistent job ran before its ready time")
+	}
+
+	secondStore, err := framework.NewFileJobStore(storeOptions)
+	if err != nil {
+		t.Fatalf("new second store: %v", err)
+	}
+	handled := make(chan publicJob, 1)
+	secondApplication := framework.NewApplication(nil)
+	if err := secondApplication.Register(
+		framework.NewQueueServiceProvider(
+			publicPersistentQueueOptions(secondStore),
+		),
+		&publicPersistentJobProvider{
+			handle: func(_ context.Context, job publicJob) error {
+				handled <- job
+				return nil
+			},
+		},
+	); err != nil {
+		t.Fatalf("register second application: %v", err)
+	}
+	if err := secondApplication.Boot(); err != nil {
+		t.Fatalf("boot second application: %v", err)
+	}
+	select {
+	case job := <-handled:
+		if job.Value != "persisted" {
+			t.Fatalf("handled job = %#v", job)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("persistent job did not run after provider restart")
+	}
+	if err := secondApplication.Shutdown(context.Background()); err != nil {
+		t.Fatalf("shutdown second application: %v", err)
+	}
+	if _, err := secondStore.Reserve(
+		context.Background(),
+		time.Now(),
+		time.Second,
+	); !errors.Is(err, framework.ErrJobStoreClosed) {
+		t.Fatalf("second provider did not close store: %v", err)
+	}
+}
+
+type publicPersistentJobProvider struct {
+	handle framework.JobHandler[publicJob]
+}
+
+func (provider *publicPersistentJobProvider) Register(
+	application *framework.Application,
+) error {
+	queue, err := framework.Resolve(application.Container(), framework.JobQueueKey)
+	if err != nil {
+		return err
+	}
+	return framework.HandleJob(queue, "public.persistent", provider.handle)
+}
+
+func publicPersistentQueueOptions(store framework.JobStore) framework.JobQueueOptions {
+	options := framework.DefaultJobQueueOptions()
+	options.Store = store
+	options.PollInterval = 5 * time.Millisecond
+	options.JobTimeout = 20 * time.Millisecond
+	options.LeaseDuration = 100 * time.Millisecond
+	return options
 }

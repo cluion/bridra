@@ -1,6 +1,9 @@
 package framework
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 var JobQueueKey = NewServiceKey[*JobQueue]("framework.job-queue")
 
@@ -43,5 +46,15 @@ func (provider *QueueServiceProvider) Terminate(
 	if provider.queue == nil {
 		return nil
 	}
-	return provider.queue.Shutdown(ctx)
+	if err := provider.queue.Shutdown(ctx); err != nil {
+		return err
+	}
+	closer, ok := provider.options.Store.(interface{ Close() error })
+	if !ok {
+		return nil
+	}
+	if err := closer.Close(); err != nil {
+		return errors.Join(ErrJobStoreOperationFailed, err)
+	}
+	return nil
 }

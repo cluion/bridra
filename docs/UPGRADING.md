@@ -91,6 +91,26 @@ instead of assuming minor-version compatibility. Patch releases are not skipped
 implicitly either. Every breaking release must include migration and rollback
 instructions.
 
+## Adopting persistent Job storage
+
+Persistent queues are opt-in. Existing `JobQueueOptions` without a `Store` keep
+their in-memory behavior and require no migration.
+
+Before configuring `FileJobStore`:
+
+1. Give every Handler a deployment-stable name and JSON-compatible Job type.
+2. Make Handler side effects idempotent because lease recovery is at least once.
+3. Choose an application-data path owned by one Bridra process, protect and back
+   up the plaintext log, and monitor its growth.
+4. Set `MaxJobs`, `MaxPayloadBytes`, `JobTimeout`, and a longer `LeaseDuration`
+   for the workload.
+5. Drain or forget incompatible pending and failed Jobs before renaming a Handler
+   or making a breaking payload-schema change.
+
+Reverting to an older release is safe only after stopping workers and accounting
+for all Jobs whose persisted Handler or JSON shape the older code cannot read.
+Never point two processes at the same `FileJobStore` path.
+
 ## Project metadata schema 1 to 2
 
 Project Template v1 did not record framework, template, or protocol versions.

@@ -82,6 +82,14 @@ func TestJobQueueRejectsInvalidOptionsAndHandlerRegistration(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("handle job: %v", err)
 	}
+	type sameNameJob struct{}
+	if err := HandleJob(
+		queue,
+		"ordered",
+		func(context.Context, sameNameJob) error { return nil },
+	); err != nil {
+		t.Fatalf("in-memory duplicate name: %v", err)
+	}
 	if err := HandleJob(queue, "duplicate", func(context.Context, orderedJob) error {
 		return nil
 	}); !errors.Is(err, ErrJobHandlerAlreadyDefined) {
