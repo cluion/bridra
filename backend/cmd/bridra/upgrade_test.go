@@ -823,6 +823,12 @@ func TestCurrentCorePackage(t *testing.T) {
 	); err != nil {
 		t.Fatalf("write compatibility test: %v", err)
 	}
+	tidy := exec.Command("go", "mod", "tidy")
+	tidy.Dir = backendRoot
+	tidy.Env = append(os.Environ(), "GOWORK=off")
+	if output, err := tidy.CombinedOutput(); err != nil {
+		t.Fatalf("resolve N-1 project dependencies: %v\n%s", err, output)
+	}
 	command := exec.Command("go", "test", "./...")
 	command.Dir = backendRoot
 	command.Env = append(os.Environ(), "GOWORK=off")

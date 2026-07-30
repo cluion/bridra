@@ -1133,6 +1133,44 @@ retry selection. A shared PostgreSQL or MySQL deployment can therefore coordinat
 multiple hosts; a local SQLite file coordinates only processes that can safely
 access that same database.
 
+For a shared Redis deployment, use the official `go-redis/v9` client and
+`RedisJobStore`:
+
+```go
+redisClient := redis.NewClient(&redis.Options{
+    Addr:     "redis.internal:6379",
+    Username: os.Getenv("REDIS_USERNAME"),
+    Password: os.Getenv("REDIS_PASSWORD"),
+})
+if err := redisClient.Ping(ctx).Err(); err != nil {
+    return err
+}
+
+storeOptions := framework.DefaultRedisJobStoreOptions()
+storeOptions.Namespace = "orders:jobs"
+store, err := framework.NewRedisJobStore(redisClient, storeOptions)
+if err != nil {
+    return err
+}
+
+queueOptions := framework.DefaultJobQueueOptions()
+queueOptions.Store = store
+queueProvider := framework.NewQueueServiceProvider(queueOptions)
+```
+
+`RedisJobStore` uses Lua scripts to atomically move Jobs between ready, reserved,
+and failed states. Separate workers can therefore coordinate one at-least-once
+delivery without process-local locks. All keys use one Redis Cluster hash slot.
+`RedisJobStoreOptions.Namespace` isolates applications and cannot contain braces;
+`MaxPayloadBytes` bounds each stored JSON payload.
+
+The application owns the Redis client. Ping it before Queue Boot, keep it alive
+until Queue shutdown completes, then close it through the resource provider that
+created it. `RedisJobStore` deliberately does not close the client. Configure Redis
+persistence, replication, memory limits, `noeviction`, ACLs, TLS, backup, and
+monitoring for durable production use. Eviction or manual deletion of queue keys
+is data loss.
+
 The dispatch context bounds only the enqueue operation; queued work receives a
 new background context for each attempt with the configured `JobTimeout`, so ending
 an RPC request does not cancel accepted work. A full bounded queue applies
@@ -1158,12 +1196,17 @@ err = store.RetryFailed(ctx, failed[0].Job.ID, time.Now())
 err = store.ForgetFailed(ctx, failed[0].Job.ID)
 ```
 
-SQL inspection performs I/O and therefore accepts a Context and returns an error:
+SQL and Redis inspection perform I/O and therefore accept a Context and return an
+error:
 
 ```go
 failed, err := sqlStore.FailedJobs(ctx)
 err = sqlStore.RetryFailed(ctx, failed[0].Job.ID, time.Now())
 err = sqlStore.ForgetFailed(ctx, failed[0].Job.ID)
+
+failed, err = redisStore.FailedJobs(ctx)
+err = redisStore.RetryFailed(ctx, failed[0].Job.ID, time.Now())
+err = redisStore.ForgetFailed(ctx, failed[0].Job.ID)
 ```
 
 Retry resets the attempt count and schedules the Job at the supplied time. Forget
@@ -1184,6 +1227,11 @@ permissions, so place it in protected application data and monitor its size.
 `SQLJobStore` is stateless around an application-owned `*sql.DB`; Queue shutdown
 does not close that shared pool. Register the Queue after the Database Provider so
 reverse shutdown finishes Queue work before closing database connections.
+
+`RedisJobStore` is stateless around an application-owned `redis.Scripter`; Queue
+shutdown does not close that shared client. Register the Queue after the Redis
+resource provider so reverse shutdown finishes Queue work before closing Redis
+connections.
 
 Persisted Handler names and JSON schemas are data contracts. Keep the name
 registered across deployments and evolve payload fields compatibly until all

@@ -8,18 +8,21 @@ import (
 )
 
 var (
-	ErrJobStoreUnavailable        = errors.New("framework: job store is unavailable")
-	ErrJobStoreClosed             = errors.New("framework: job store is closed")
-	ErrJobStoreEmpty              = errors.New("framework: job store has no ready jobs")
-	ErrJobStoreFull               = errors.New("framework: job store is full")
-	ErrJobStoreConflict           = errors.New("framework: job store record conflicts")
-	ErrJobReservationInvalid      = errors.New("framework: job reservation is invalid")
-	ErrJobPayloadEncodingFailed   = errors.New("framework: job payload encoding failed")
-	ErrJobPayloadDecodingFailed   = errors.New("framework: job payload decoding failed")
-	ErrJobStoreOperationFailed    = errors.New("framework: job store operation failed")
-	ErrInvalidFileJobStoreOptions = errors.New("framework: file job store options are invalid")
-	ErrFileJobStoreCorrupt        = errors.New("framework: file job store log is corrupt")
-	ErrInvalidSQLJobStoreOptions  = errors.New("framework: SQL job store options are invalid")
+	ErrJobStoreUnavailable         = errors.New("framework: job store is unavailable")
+	ErrJobStoreClosed              = errors.New("framework: job store is closed")
+	ErrJobStoreEmpty               = errors.New("framework: job store has no ready jobs")
+	ErrJobStoreFull                = errors.New("framework: job store is full")
+	ErrJobStoreConflict            = errors.New("framework: job store record conflicts")
+	ErrJobReservationInvalid       = errors.New("framework: job reservation is invalid")
+	ErrJobPayloadEncodingFailed    = errors.New("framework: job payload encoding failed")
+	ErrJobPayloadDecodingFailed    = errors.New("framework: job payload decoding failed")
+	ErrJobStoreOperationFailed     = errors.New("framework: job store operation failed")
+	ErrInvalidFileJobStoreOptions  = errors.New("framework: file job store options are invalid")
+	ErrFileJobStoreCorrupt         = errors.New("framework: file job store log is corrupt")
+	ErrInvalidSQLJobStoreOptions   = errors.New("framework: SQL job store options are invalid")
+	ErrInvalidRedisJobStoreOptions = errors.New(
+		"framework: Redis job store options are invalid",
+	)
 )
 
 type StoredJob struct {

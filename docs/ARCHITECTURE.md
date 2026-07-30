@@ -312,7 +312,9 @@ lease, persist every attempt transition, and complete successful records. Bridra
 `FileJobStore` implements this contract as a synchronized append-only event log.
 It replays complete events at startup and discards an incomplete final event left
 by an interrupted write. `SQLJobStore` stores the same state through `database/sql`
-and coordinates separate workers that share one database.
+and coordinates separate workers that share one database. `RedisJobStore` stores
+metadata and payloads separately and uses Lua scripts to atomically coordinate
+workers that share one Redis deployment.
 
 Each Handler may declare a maximum attempt count and fixed retry backoff. Errors,
 timeouts, and recovered panics share one retry path. A successful later attempt
@@ -342,6 +344,18 @@ its idempotent schema initialization before starting workers and keep the Databa
 Provider alive until the Queue finishes shutdown. Actual cross-host availability,
 retention, encryption, backup, and capacity remain properties of the selected SQL
 driver and deployment.
+
+`RedisJobStore` keeps records, payloads, ready order, reservations, and failed order
+in namespaced hash and sorted-set keys. Every key shares one Redis Cluster hash slot.
+Enqueue, reserve, release, completion, failure, retry, and forget transitions execute
+atomically in Redis. Reserve recovers expired leases in bounded batches before
+claiming the oldest eligible Job, preserving at-least-once delivery across worker
+crashes.
+
+The Redis client is application-owned and remains open until Queue shutdown
+finishes. Redis persistence, replication, eviction, ACL, TLS, backup, monitoring,
+and capacity are deployment responsibilities. A production Queue requires a
+non-evicting Redis policy because evicted or manually removed keys are lost Jobs.
 
 ## Task scheduling
 

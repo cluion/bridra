@@ -41,6 +41,7 @@ var (
 	_ framework.TerminableServiceProvider = (*framework.QueueServiceProvider)(nil)
 	_ framework.JobStore                  = (*framework.FileJobStore)(nil)
 	_ framework.JobStore                  = (*framework.SQLJobStore)(nil)
+	_ framework.JobStore                  = (*framework.RedisJobStore)(nil)
 )
 
 func TestPublicJobQueueProviderAPI(t *testing.T) {
@@ -265,6 +266,29 @@ func TestPublicSQLJobStoreAPI(t *testing.T) {
 		framework.ErrJobStoreUnavailable,
 	) {
 		t.Fatalf("nil SQL failed jobs error = %v", err)
+	}
+}
+
+func TestPublicRedisJobStoreAPI(t *testing.T) {
+	options := framework.DefaultRedisJobStoreOptions()
+	if options.Namespace != "bridra:jobs" || options.MaxPayloadBytes <= 0 {
+		t.Fatalf("default Redis job store options = %#v", options)
+	}
+	if _, err := framework.NewRedisJobStore(nil, options); !errors.Is(
+		err,
+		framework.ErrJobStoreUnavailable,
+	) {
+		t.Fatalf("nil Redis client error = %v", err)
+	}
+	var store *framework.RedisJobStore
+	if store.Namespace() != "" {
+		t.Fatalf("nil Redis store namespace = %q", store.Namespace())
+	}
+	if _, err := store.FailedJobs(context.Background()); !errors.Is(
+		err,
+		framework.ErrJobStoreUnavailable,
+	) {
+		t.Fatalf("nil Redis failed jobs error = %v", err)
 	}
 }
 

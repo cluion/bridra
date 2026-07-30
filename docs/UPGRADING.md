@@ -130,6 +130,25 @@ at least once, so moving from a file Store does not remove the idempotency
 requirement. Stop all workers and account for every persisted Job before changing
 the table, driver, placeholder style, or payload contract.
 
+Before configuring `RedisJobStore`:
+
+1. Complete the same stable Handler-name, compatible payload, idempotency,
+   timeout, and lease review required for file and SQL persistence.
+2. Create and ping the application-owned `go-redis/v9` client before Queue Boot,
+   then keep it alive until every Queue worker has stopped.
+3. Choose one stable, application-specific namespace. Namespaces cannot contain
+   braces because Bridra reserves the Redis Cluster hash tag.
+4. Configure Redis persistence, replication, `noeviction`, memory capacity, TLS,
+   ACLs, backup, and monitoring before accepting production Jobs.
+5. Set `MaxPayloadBytes` and verify that Redis command and script limits fit the
+   largest accepted Job.
+
+Separate `RedisJobStore` instances sharing one namespace coordinate reservation
+through Lua-atomic state transitions. Delivery remains at least once. Stop all
+workers and account for ready, reserved, delayed, and failed Jobs before changing
+the namespace, Redis deployment, or payload contract. `RedisJobStore` does not
+close the supplied client.
+
 ## Adopting persistent Scheduler state
 
 Persistent scheduling is opt-in. Existing `SchedulerOptions` without a `Store` keep

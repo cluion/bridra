@@ -81,6 +81,11 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 	if err := Render(root, config); err != nil {
 		t.Fatalf("render: %v", err)
 	}
+	tidy := exec.Command("go", "mod", "tidy")
+	tidy.Dir = filepath.Join(root, "backend")
+	if output, err := tidy.CombinedOutput(); err != nil {
+		t.Fatalf("resolve generated Go consumer: %v\n%s", err, output)
+	}
 	command := exec.Command("go", "test", "./...")
 	command.Dir = filepath.Join(root, "backend")
 	output, err := command.CombinedOutput()

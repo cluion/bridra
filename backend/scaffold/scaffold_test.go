@@ -71,6 +71,11 @@ func TestGenerateAllScaffoldsMatchesGoldenAndCompiles(t *testing.T) {
 		t.Fatalf("scaffold tree does not match golden:\n%s", actual)
 	}
 
+	tidy := exec.Command("go", "mod", "tidy")
+	tidy.Dir = filepath.Join(root, "backend")
+	if output, err := tidy.CombinedOutput(); err != nil {
+		t.Fatalf("resolve generated consumer: %v\n%s", err, output)
+	}
 	command := exec.Command("go", "test", "./...")
 	command.Dir = filepath.Join(root, "backend")
 	output, err := command.CombinedOutput()

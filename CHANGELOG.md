@@ -5,6 +5,15 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 
 ## [Unreleased]
 
+### Added
+
+- Added `RedisJobStore` for shared multi-process and multi-host Queue delivery
+  through Redis, with Lua-atomic reservation, lease recovery, retry state, and
+  retained failed Jobs.
+- Added Redis Cluster-compatible namespaced keys, payload bounds, context-aware
+  failed Job operations, real Redis integration coverage, and the official
+  `go-redis/v9` client contract.
+
 ## [0.8.0] - 2026-07-30
 
 ### Added
