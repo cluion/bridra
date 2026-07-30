@@ -5,6 +5,8 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-07-30
+
 ### Added
 
 - Added a driver-neutral `SQLJobStore` for shared multi-process and multi-host
@@ -19,6 +21,18 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 - Added shared SQL scheduling equivalent to Laravel `onOneServer()`, using the
   same question-mark and PostgreSQL-style dollar placeholder support and a
   portable 255-byte Task-name bound.
+
+### Changed
+
+- Registered an automatic `0.7.0` to `0.8.0` upgrade because SQL persistence is
+  additive and opt-in. The public Dart API, Project Template version `2`, project
+  metadata schema `2`, and RPC protocol version `1` remain unchanged.
+
+### Support
+
+- The latest `0.8.x` release receives best-effort security fixes until the next
+  minor line is published. The `0.7.x` line is no longer supported after this
+  release.
 
 ## [0.7.0] - 2026-07-29
 

@@ -9,8 +9,8 @@ Run the read-only planner from a project root before changing dependencies:
 
 ```bash
 bridra upgrade
-bridra upgrade --plan --to 0.7.0
-bridra upgrade --plan --to 0.7.0 --json
+bridra upgrade --plan --to 0.8.0
+bridra upgrade --plan --to 0.8.0 --json
 ```
 
 When invoking the CLI through the backend dependency, use:
@@ -77,7 +77,7 @@ fails verification.
 | Identity | Current | Compatibility rule |
 | --- | ---: | --- |
 | Project metadata schema | 2 | Schema 1 remains readable by core project commands but requires a metadata migration. A newer schema requires a newer CLI. |
-| Framework SemVer | 0.7.0 | The project and selected target must match. An older version requires a complete registered migration path; downgrade plans are rejected. |
+| Framework SemVer | 0.8.0 | The project and selected target must match. An older version requires a complete registered migration path; downgrade plans are rejected. |
 | Project Template | 2 | Older templates require manual review. A newer template cannot be evaluated by an older CLI. |
 | RPC protocol | 1 | Go and Flutter runtimes must use the same protocol. Upgrade them together. |
 
@@ -181,7 +181,7 @@ the Go and Flutter dependencies together, add the version contract:
   "projectName": "your_app",
   "goModule": "example.com/your/app",
   "frameworkModule": "github.com/cluion/bridra/backend",
-  "frameworkVersion": "0.7.0",
+  "frameworkVersion": "0.8.0",
   "templateVersion": 2,
   "protocolVersion": 1
 }
@@ -206,25 +206,26 @@ Services, Models, configuration, UI, or native runner files.
 6. Run any platform builds required by the application before committing the
    upgrade.
 
-## Framework 0.6.1 to 0.7.0
+## Framework 0.7.0 to 0.8.0
 
-The `0.7.0` public Go API additively introduces opt-in persistent Queue and
-Scheduler stores. Existing in-memory Queue and process-local Scheduler
-configuration remains compatible. The public Dart API, Project Template version
-`2`, project metadata schema `2`, and RPC protocol version `1` do not change, so
-the migration is automatic.
+The `0.8.0` public Go API additively introduces opt-in SQL-backed Queue and
+Scheduler stores. Existing in-memory and file-backed configuration remains
+compatible. The public Dart API, Project Template version `2`, project metadata
+schema `2`, and RPC protocol version `1` do not change, so the migration is
+automatic.
 
-Projects adopt persistence explicitly by configuring `FileJobStore` or
-`FileSchedulerStore`. Their logs are append-only plaintext files owned by one
-Bridra process. Job and Task handlers must be idempotent because crash recovery
-is at least once. Keep the existing in-memory configuration when those storage
-and recovery constraints are not wanted.
+Projects adopt shared SQL persistence explicitly by configuring `SQLJobStore` or
+`SQLSchedulerStore` with an application-owned database pool. Run each Store's
+`Ensure` operation through deployment or migration orchestration before starting
+workers. Job and Task handlers must remain idempotent because lease recovery is
+at least once. Keep the existing in-memory or file-backed configuration when
+distributed coordination is not wanted.
 
 Update both framework dependencies, then run the full verification:
 
 ```bash
 cd backend
-go get github.com/cluion/bridra/backend@v0.7.0
+go get github.com/cluion/bridra/backend@v0.8.0
 cd ..
 fvm flutter pub upgrade bridra_flutter
 make generate
@@ -232,14 +233,25 @@ make verify
 ```
 
 After verification succeeds, update `.bridra/project.json` to framework version
-`0.7.0`. Roll back by restoring the previous Go and Flutter dependency versions,
+`0.8.0`. Roll back by restoring the previous Go and Flutter dependency versions,
 lockfiles, and project metadata. Stop persistent workers before rollback and
 retain their Store logs until pending work has been reconciled.
 
-## Framework 0.6.0 to 0.7.0
+## Framework 0.6.1 to 0.8.0
+
+The path contains the automatic `0.7.0` file-persistence step followed by the
+automatic `0.8.0` SQL-persistence step. Both releases are additive and opt-in.
+The public Dart API, Project Template version `2`, project metadata schema `2`,
+and RPC protocol version `1` remain unchanged.
+
+Update both framework dependencies to `0.8.0`, run `make generate` and
+`make verify`, then update `.bridra/project.json`. Follow the adoption and
+rollback guidance above for the Store selected by the application.
+
+## Framework 0.6.0 to 0.8.0
 
 The path contains the manual `0.6.0` to `0.6.1` generated-test repair followed
-by the automatic `0.6.1` to `0.7.0` dependency update.
+by the automatic file- and SQL-persistence updates through `0.8.0`.
 
 Projects created with the `0.6.0` CLI contain a stale `FakeBackend` in
 `test/widget_test.dart`. Before running `make verify`, add the optional
@@ -248,18 +260,18 @@ Projects created with the `0.6.0` CLI contain a stale `FakeBackend` in
 not overwrite this application-owned test file. Then follow the persistent
 runtime adoption and rollback guidance above.
 
-Update both framework dependencies to `0.7.0`, run `make generate` and
+Update both framework dependencies to `0.8.0`, run `make generate` and
 `make verify`, then update `.bridra/project.json`. Project Template version `2`,
 project metadata schema `2`, and RPC protocol version `1` remain unchanged.
 
-## Framework 0.5.0 to 0.7.0
+## Framework 0.5.0 to 0.8.0
 
 The migration path from `0.5.0` contains the automatic `0.6.0` framework step
-followed by the manual `0.6.1` generated-test repair and automatic `0.7.0`
-persistent runtime step. Typed server streaming, progress, bounded Sidecar
-backpressure, verified out-of-band file transfer, and persistent runtime stores
-are additive and opt-in. Existing unary methods retain their wire envelopes and
-behavior.
+followed by the manual `0.6.1` generated-test repair and automatic file- and
+SQL-persistence steps through `0.8.0`. Typed server streaming, progress, bounded
+Sidecar backpressure, verified out-of-band file transfer, and persistent runtime
+stores are additive and opt-in. Existing unary methods retain their wire
+envelopes and behavior.
 
 Update the Go and Flutter framework dependencies together. Run `make generate`
 when the application schema opts into streaming or `file` request/response
@@ -267,7 +279,7 @@ fields, then run the full verification:
 
 ```bash
 cd backend
-go get github.com/cluion/bridra/backend@v0.7.0
+go get github.com/cluion/bridra/backend@v0.8.0
 cd ..
 fvm flutter pub upgrade bridra_flutter
 make generate
@@ -275,7 +287,7 @@ make verify
 ```
 
 After verification succeeds, update `.bridra/project.json` to framework version
-`0.7.0`. Project Template version `2`, project metadata schema `2`, and RPC
+`0.8.0`. Project Template version `2`, project metadata schema `2`, and RPC
 protocol version `1` remain unchanged. Roll back by restoring the previous Go
 and Flutter dependency versions, lockfiles, and project metadata.
 

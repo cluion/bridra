@@ -89,6 +89,12 @@ var registeredUpgradeReleases = []upgradeRelease{
 		TemplateVersion:        2,
 		ProtocolVersion:        1,
 	},
+	{
+		FrameworkVersion:       "0.8.0",
+		ProjectMetadataVersion: 2,
+		TemplateVersion:        2,
+		ProtocolVersion:        1,
+	},
 }
 
 var registeredFrameworkMigrations = []frameworkMigration{
@@ -146,6 +152,13 @@ var registeredFrameworkMigrations = []frameworkMigration{
 		From:        "0.6.1",
 		To:          "0.7.0",
 		Description: "Update the Go and Flutter framework dependencies for opt-in persistent Queue and Scheduler stores.",
+		Automatic:   true,
+	},
+	{
+		ID:          "framework-0.7.0-to-0.8.0",
+		From:        "0.7.0",
+		To:          "0.8.0",
+		Description: "Update the Go and Flutter framework dependencies for opt-in SQL-backed Queue and Scheduler stores.",
 		Automatic:   true,
 	},
 }
