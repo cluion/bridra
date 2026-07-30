@@ -19,6 +19,7 @@ var (
 	ErrJobStoreOperationFailed    = errors.New("framework: job store operation failed")
 	ErrInvalidFileJobStoreOptions = errors.New("framework: file job store options are invalid")
 	ErrFileJobStoreCorrupt        = errors.New("framework: file job store log is corrupt")
+	ErrInvalidSQLJobStoreOptions  = errors.New("framework: SQL job store options are invalid")
 )
 
 type StoredJob struct {

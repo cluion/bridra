@@ -5,6 +5,15 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 
 ## [Unreleased]
 
+### Added
+
+- Added a driver-neutral `SQLJobStore` for shared multi-process and multi-host
+  Queue delivery through `database/sql`, with atomic lease reservation, expiry
+  recovery, retry state, and retained failed Jobs.
+- Added question-mark and PostgreSQL-style dollar placeholders, explicit schema
+  initialization, payload bounds, and context-aware failed Job inspection,
+  retry, and forget operations.
+
 ## [0.7.0] - 2026-07-29
 
 ### Added

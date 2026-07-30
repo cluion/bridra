@@ -18,6 +18,24 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: bridra
+          POSTGRES_PASSWORD: bridra
+          POSTGRES_DB: bridra_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bridra -d bridra_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      BRIDRA_TEST_POSTGRES_DSN: postgres://bridra:bridra@127.0.0.1:5432/bridra_test?sslmode=disable
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -26,7 +44,9 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version-file: backend/go.mod
-          cache-dependency-path: backend/go.mod
+          cache-dependency-path: |
+            backend/go.mod
+            backend/integration/sqljobstore/go.mod
 
       - name: Install Linux desktop dependencies
         run: |
@@ -87,7 +107,9 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version-file: backend/go.mod
-          cache-dependency-path: backend/go.mod
+          cache-dependency-path: |
+            backend/go.mod
+            backend/integration/sqljobstore/go.mod
 
       - name: Install FVM
         run: |
@@ -116,7 +138,9 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version-file: backend/go.mod
-          cache-dependency-path: backend/go.mod
+          cache-dependency-path: |
+            backend/go.mod
+            backend/integration/sqljobstore/go.mod
 
       - name: Install FVM
         run: choco install fvm --version=4.1.2 --yes

@@ -257,6 +257,14 @@ function Verify-Project {
             -Arguments @("test", "./framework", "-run", "^TestPublic")
         Invoke-Checked -FilePath "go" -Arguments @("test", "./...")
 
+        Push-Location (Join-Path $ProjectRoot "backend/integration/sqljobstore")
+        try {
+            Invoke-Checked -FilePath "go" -Arguments @("test", "./...")
+        }
+        finally {
+            Pop-Location
+        }
+
         $previousCgo = $env:CGO_ENABLED
         try {
             $env:CGO_ENABLED = "0"

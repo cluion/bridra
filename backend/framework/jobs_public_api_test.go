@@ -40,6 +40,7 @@ var (
 	_ framework.BootableServiceProvider   = (*framework.QueueServiceProvider)(nil)
 	_ framework.TerminableServiceProvider = (*framework.QueueServiceProvider)(nil)
 	_ framework.JobStore                  = (*framework.FileJobStore)(nil)
+	_ framework.JobStore                  = (*framework.SQLJobStore)(nil)
 )
 
 func TestPublicJobQueueProviderAPI(t *testing.T) {
@@ -239,6 +240,31 @@ func TestPublicPersistentFileJobQueueSurvivesProviderRestart(t *testing.T) {
 		time.Second,
 	); !errors.Is(err, framework.ErrJobStoreClosed) {
 		t.Fatalf("second provider did not close store: %v", err)
+	}
+}
+
+func TestPublicSQLJobStoreAPI(t *testing.T) {
+	options := framework.DefaultSQLJobStoreOptions()
+	if options.Table != "bridra_jobs" ||
+		options.PlaceholderStyle != framework.SQLPlaceholderQuestionMark ||
+		options.MaxPayloadBytes <= 0 {
+		t.Fatalf("default SQL job store options = %#v", options)
+	}
+	if _, err := framework.NewSQLJobStore(nil, options); !errors.Is(
+		err,
+		framework.ErrJobStoreUnavailable,
+	) {
+		t.Fatalf("nil SQL pool error = %v", err)
+	}
+	var store *framework.SQLJobStore
+	if store.Table() != "" {
+		t.Fatalf("nil SQL store table = %q", store.Table())
+	}
+	if _, err := store.FailedJobs(context.Background()); !errors.Is(
+		err,
+		framework.ErrJobStoreUnavailable,
+	) {
+		t.Fatalf("nil SQL failed jobs error = %v", err)
 	}
 }
 

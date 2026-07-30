@@ -311,7 +311,8 @@ delivery time, and retry state before returning. Workers reserve records with a
 lease, persist every attempt transition, and complete successful records. Bridra's
 `FileJobStore` implements this contract as a synchronized append-only event log.
 It replays complete events at startup and discards an incomplete final event left
-by an interrupted write.
+by an interrupted write. `SQLJobStore` stores the same state through `database/sql`
+and coordinates separate workers that share one database.
 
 Each Handler may declare a maximum attempt count and fixed retry backoff. Errors,
 timeouts, and recovered panics share one retry path. A successful later attempt
@@ -329,8 +330,18 @@ then close Stores that expose `Close`.
 
 `FileJobStore` is intentionally single-process and single-host. It bounds retained
 records and payload size but does not compact its log, encrypt payloads, coordinate
-multiple processes, or provide distributed workers. The `JobStore` boundary permits
-a future database or network implementation without changing typed dispatch.
+multiple processes, or provide distributed workers. `SQLJobStore` selects the
+oldest eligible record and claims it with a conditional update over its identifier,
+attempt count, delivery time, failure state, and lease. Only one contender can
+change that state, so competing workers retry selection without relying on
+process-local locks or long-running database transactions. Expired leases remain
+eligible for at-least-once recovery.
+
+`SQLJobStore` does not own or close the supplied connection pool. Applications run
+its idempotent schema initialization before starting workers and keep the Database
+Provider alive until the Queue finishes shutdown. Actual cross-host availability,
+retention, encryption, backup, and capacity remain properties of the selected SQL
+driver and deployment.
 
 ## Task scheduling
 

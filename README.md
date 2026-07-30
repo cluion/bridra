@@ -31,8 +31,8 @@ Bridra is licensed under the [MIT License](LICENSE), Copyright (c) 2026 Cluion.
 - Typed Config and dependency injection with singleton, transient, scoped, and
   aliased services
 - Validation, structured exceptions, route groups, policies, and lifecycle hooks
-- Synchronous Events, queued listeners, in-memory or durable local background
-  Jobs, and process-local or persistently coordinated scheduled Tasks
+- Synchronous Events, queued listeners, in-memory, durable local, or shared SQL
+  background Jobs, and process-local or persistently coordinated scheduled Tasks
 - `database/sql` lifecycle, transaction boundaries, and migration runner
 - Project creation, scaffolding, development supervision, builds, diagnostics,
   release metadata, and transactional upgrades through one CLI

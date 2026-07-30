@@ -1094,6 +1094,45 @@ process and Sidecar restarts. `FileJobStoreOptions.MaxJobs` bounds ready, reserv
 delayed, and retained failed Jobs; `MaxPayloadBytes` bounds each JSON payload.
 `Capacity` applies only to the in-memory queue.
 
+For multiple processes or hosts that share one SQL database, configure
+`SQLJobStore` after the application Database Provider is ready and before Queue
+workers start:
+
+```go
+storeOptions := framework.DefaultSQLJobStoreOptions()
+store, err := framework.NewSQLJobStore(database.Pool(), storeOptions)
+if err != nil {
+    return err
+}
+if err := store.Ensure(ctx); err != nil {
+    return err
+}
+
+queueOptions := framework.DefaultJobQueueOptions()
+queueOptions.Store = store
+queueProvider := framework.NewQueueServiceProvider(queueOptions)
+```
+
+`Ensure` is idempotent and creates the default `bridra_jobs` table. Run it during
+application migration or deployment before starting workers. PostgreSQL drivers
+use dollar placeholders:
+
+```go
+storeOptions.PlaceholderStyle = framework.SQLPlaceholderDollar
+```
+
+SQLite and MySQL-style drivers use the default question-mark placeholders.
+`SQLJobStoreOptions.Table` selects a validated application-owned table name and
+`MaxPayloadBytes` bounds each JSON payload. The shared database, rather than an
+in-process count, owns total queue capacity, retention, encryption, backup, and
+availability.
+
+Reservation uses a conditional SQL update, so separate workers can select the
+same candidate but only one can atomically claim its lease. The other workers
+retry selection. A shared PostgreSQL or MySQL deployment can therefore coordinate
+multiple hosts; a local SQLite file coordinates only processes that can safely
+access that same database.
+
 The dispatch context bounds only the enqueue operation; queued work receives a
 new background context for each attempt with the configured `JobTimeout`, so ending
 an RPC request does not cancel accepted work. A full bounded queue applies
@@ -1119,8 +1158,17 @@ err = store.RetryFailed(ctx, failed[0].Job.ID, time.Now())
 err = store.ForgetFailed(ctx, failed[0].Job.ID)
 ```
 
+SQL inspection performs I/O and therefore accepts a Context and returns an error:
+
+```go
+failed, err := sqlStore.FailedJobs(ctx)
+err = sqlStore.RetryFailed(ctx, failed[0].Job.ID, time.Now())
+err = sqlStore.ForgetFailed(ctx, failed[0].Job.ID)
+```
+
 Retry resets the attempt count and schedules the Job at the supplied time. Forget
-permanently removes the failed record. Failed Jobs count toward `MaxJobs`.
+permanently removes the failed record. `FileJobStore` failed Jobs count toward its
+`MaxJobs`; SQL retention is managed by the database operator.
 
 `QueueServiceProvider` implements `TerminableServiceProvider`. Shutdown rejects new
 Jobs and waits for active work. The in-memory queue drains accepted work and
@@ -1131,9 +1179,11 @@ shutdown, the Provider closes a configured Store that implements `Close`.
 `FileJobStore` is a local, append-only store for exactly one Bridra process at a
 time. Do not open the same path from multiple processes or hosts. The log is not
 automatically compacted, and payloads are plaintext despite restrictive file
-permissions, so place it in protected application data and monitor its size. Use a
-custom `JobStore` when multi-process delivery, database retention, encryption, or
-distributed workers are required.
+permissions, so place it in protected application data and monitor its size.
+
+`SQLJobStore` is stateless around an application-owned `*sql.DB`; Queue shutdown
+does not close that shared pool. Register the Queue after the Database Provider so
+reverse shutdown finishes Queue work before closing database connections.
 
 Persisted Handler names and JSON schemas are data contracts. Keep the name
 registered across deployments and evolve payload fields compatibly until all

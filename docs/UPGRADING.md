@@ -111,6 +111,25 @@ Reverting to an older release is safe only after stopping workers and accounting
 for all Jobs whose persisted Handler or JSON shape the older code cannot read.
 Never point two processes at the same `FileJobStore` path.
 
+Before configuring `SQLJobStore`:
+
+1. Complete the same stable Handler-name, compatible payload, idempotency,
+   timeout, and lease review required for file persistence.
+2. Run `SQLJobStore.Ensure` through a migration or deployment step before
+   starting workers.
+3. Use question-mark placeholders for SQLite/MySQL-style drivers and dollar
+   placeholders for PostgreSQL.
+4. Keep the application-owned database pool alive until every Queue worker has
+   stopped; `SQLJobStore` deliberately does not close it.
+5. Define database retention, capacity, encryption, backup, and monitoring
+   policies for ready, reserved, delayed, and failed Jobs.
+
+Separate `SQLJobStore` instances sharing one database coordinate reservation
+through conditional updates and can provide distributed workers. Delivery remains
+at least once, so moving from a file Store does not remove the idempotency
+requirement. Stop all workers and account for every persisted Job before changing
+the table, driver, placeholder style, or payload contract.
+
 ## Adopting persistent Scheduler state
 
 Persistent scheduling is opt-in. Existing `SchedulerOptions` without a `Store` keep
