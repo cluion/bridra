@@ -7,7 +7,7 @@
 [Upgrading](docs/UPGRADING.md) ·
 [Contributing](CONTRIBUTING.md)
 
-Bridra 0.7 combines Flutter UI with a Laravel-inspired Go
+Bridra 0.8 combines Flutter UI with a Laravel-inspired Go
 application pipeline. It provides one project model for Windows, macOS, Linux,
 Android, iOS, and Web while keeping application code explicit and testable.
 
@@ -22,6 +22,20 @@ Flutter UI -> typed gateway -> RPC transport
 
 Framework version `0.8.0` and RPC protocol version `1` evolve independently.
 Bridra is licensed under the [MIT License](LICENSE), Copyright (c) 2026 Cluion.
+
+## Design goal
+
+Bridra aims to be reusable application infrastructure, not a finished product
+or a layer of hidden framework magic. One typed contract should connect Flutter
+to the same explicit Go application pipeline on all six platforms. Laravel-style
+names provide familiar boundaries, while Go code, generated source, dependencies,
+storage choices, and lifecycle ownership remain visible and testable.
+
+The framework owns transport, Sidecar lifecycle, code generation, application
+primitives, development tooling, packaging contracts, upgrades, and release
+evidence. Each application continues to own its product UI, domain rules,
+database design, authentication policy, deployment, monitoring, signing, and
+distribution channels.
 
 ## What Bridra provides
 

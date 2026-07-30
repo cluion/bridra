@@ -32,6 +32,9 @@ approval. CI success alone is not publication authorization.
 ## Preconditions
 
 - Release from a clean, reviewed commit on the public repository.
+- Re-check the current official pub.dev automated-publishing, GitHub Actions,
+  and protected-environment instructions before changing or exercising the
+  publication workflow.
 - Confirm the canonical Git remote, normally `origin`, and the reviewed commit
   belong to `https://github.com/cluion/bridra`.
 - Use root `VERSION` as the release intent and keep
@@ -54,6 +57,12 @@ approval. CI success alone is not publication authorization.
 
 ## Prepare the release Pull Request
 
+Use one branch named `release-MAJOR.MINOR.PATCH`, one release preparation
+commit, and one Pull Request for each version. Before merge, correct a release
+preparation error by amending that same commit and pushing with
+`--force-with-lease`; do not create a sequence of speculative correction
+commits or Pull Requests.
+
 1. Choose the SemVer and decide independently whether the RPC protocol, Project
    Template, or project metadata schema changes.
 2. Synchronize the framework, CLI, Go module, Dart package, project metadata,
@@ -75,8 +84,11 @@ approval. CI success alone is not publication authorization.
 4. Replace `Unreleased` in both changelogs with the intended release date, then
    run `make release-check VERSION=0.8.0 FINAL=1`. The protected release workflow
    repeats this final check and refuses an unfinished changelog.
-5. Run the full local verification and attach `coverage/summary.md` plus the CLI
-   release manifest/checksums to the Pull Request.
+5. Run the full local verification and workflow lint. From the clean release
+   commit, require a zero-warning Dart publish dry run, build the CLI artifacts
+   twice, and confirm both builds have identical manifests and checksums. Attach
+   `coverage/summary.md` plus the CLI release manifest/checksums to the Pull
+   Request.
 6. Obtain maintainer review and repository-owner release authorization.
 
 The Verify workflow runs for Pull Requests and pushes to `main`, not every
@@ -132,7 +144,8 @@ For Bridra 0.8.0, create the annotated Go submodule tag only after the release
 Pull Request is merged and the repository owner gives final authorization:
 
 ```bash
-git tag -a backend/v0.8.0 -m "Bridra 0.8.0"
+git fetch origin main
+git tag -a backend/v0.8.0 <verified-main-sha> -m "Bridra 0.8.0"
 git push origin backend/v0.8.0
 ```
 
@@ -167,6 +180,12 @@ through the protected release environment. Keep
 `BRIDRA_PUBDEV_AUTOMATION_ENABLED` unset until pub.dev's tag pattern is
 configured as `backend/v{{version}}`.
 
+The `public-release` Environment approval remains a manual owner decision even
+when the authorized owner submits it through GitHub's pending-deployments API.
+Before approval, verify that the workflow ref, head SHA, environment, and
+reviewer match the intended tag and the exact verified `main` commit. API
+approval is not an administrative bypass.
+
 ## Post-release verification
 
 Verify installation without a repository checkout:
@@ -186,6 +205,10 @@ supported line, verify GitHub installation instructions from a clean
 environment, and announce any deprecation or migration window. Keep the release
 Pull Request and GitHub Release as the evidence record.
 
+Only after every public verification passes, delete the local and remote
+`release-MAJOR.MINOR.PATCH` branch. Finish on a clean local `main` that exactly
+matches `origin/main`.
+
 ## Failed or compromised release
 
 Never move a published tag or silently replace an archive. Stop further
@@ -194,6 +217,12 @@ compromised. Revoke affected credentials, publish or update a Security Advisory
 when appropriate, and correct the release with a new patch version. Dart package
 retraction/yanking and GitHub Release warnings reduce exposure but do not make a
 published artifact disappear; release notes must point users to the replacement.
+
+If the release Pull Request was already merged but no tag, Dart package, or
+GitHub Release is public, prepare one consolidated correction Pull Request and
+repeat the exact-main verification gate. Do not stack speculative correction
+commits or Pull Requests. If any artifact is already public, use a new patch
+version instead.
 
 ## Upgrade policy
 

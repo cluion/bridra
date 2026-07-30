@@ -8,7 +8,7 @@ Go module: `github.com/cluion/bridra/backend`
 
 License: [MIT](../LICENSE), Copyright (c) 2026 Cluion
 
-Bridra 0.7 is a six-platform framework starter with a typed
+Bridra 0.8 is a six-platform framework starter with a typed
 Flutter gateway and a Laravel-inspired Go application pipeline. Windows,
 macOS, and Linux bundle Go as a child-process sidecar; Android, iOS, and Web
 use the same backend through an HTTP RPC adapter.

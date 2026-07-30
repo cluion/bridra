@@ -1,6 +1,6 @@
 # Bridra architecture decisions
 
-Bridra 0.7 supports Windows, macOS, Linux, Android, iOS, and Web while keeping
+Bridra 0.8 supports Windows, macOS, Linux, Android, iOS, and Web while keeping
 one Go application pipeline and one typed Flutter API.
 
 ## Layers
