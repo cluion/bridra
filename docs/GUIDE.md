@@ -1258,6 +1258,37 @@ schedulerOptions.Store = schedulerStore
 schedulerProvider := framework.NewSchedulerServiceProvider(schedulerOptions)
 ```
 
+For multiple processes or hosts sharing one SQL database, configure
+`SQLSchedulerStore` after the Database Provider is ready:
+
+```go
+storeOptions := framework.DefaultSQLSchedulerStoreOptions()
+storeOptions.PlaceholderStyle = framework.SQLPlaceholderDollar // PostgreSQL
+
+schedulerStore, err := framework.NewSQLSchedulerStore(
+    database.Pool(),
+    storeOptions,
+)
+if err != nil {
+    return err
+}
+if err := schedulerStore.Ensure(ctx); err != nil {
+    return err
+}
+
+schedulerOptions := framework.DefaultSchedulerOptions()
+schedulerOptions.Store = schedulerStore
+schedulerProvider := framework.NewSchedulerServiceProvider(schedulerOptions)
+```
+
+`Ensure` idempotently creates `bridra_scheduled_tasks`; run it during migration or
+deployment before Scheduler Boot. SQLite and MySQL-style drivers use the default
+question-mark placeholders. `SQLSchedulerStore` does not own or close the supplied
+pool, so register the Scheduler after the Database Provider and let reverse shutdown
+stop Tasks before database connections close. SQL-persisted Task names are limited
+to 255 UTF-8 bytes so their primary key remains portable across the supported schema
+styles.
+
 Persistent scheduling stores each Task's next run, last scheduled and completed
 times, last error, and active lease. Startup keeps an existing next-run time instead
 of restarting the interval. When the process was down past that time, Bridra recovers
@@ -1277,11 +1308,17 @@ lease, matching Laravel's `onOneServer` behavior. Same-Task execution remains
 non-overlapping like Laravel's `withoutOverlapping`.
 
 The built-in `FileSchedulerStore` is for one Bridra process on one host. Do not open
-the same path from multiple processes; use a shared atomic `SchedulerStore`
-implementation for distributed coordination. `States` exposes local persisted state
-for diagnostics. The file is append-only, unencrypted, and not automatically
-compacted, so keep it in protected application data and monitor its size. Stable Task
-names are persistence keys; removed names retain state in the log.
+the same path from multiple processes. Use `SQLSchedulerStore` for distributed
+coordination equivalent to Laravel `onOneServer()`. Its conditional update allows
+only one contender to claim each occurrence, while an expired lease makes that same
+occurrence eligible again. `FileSchedulerStore.States` exposes local persisted state
+for diagnostics; SQL callers use `State` for a known Task name or their database
+operations tooling. Stable Task names remain persistence keys, and removed names
+retain state until the application or database operator explicitly removes it.
+
+The file Store is append-only, unencrypted, and not automatically compacted. The SQL
+Store delegates capacity, retention, encryption, backup, and availability to the
+database deployment.
 
 `SchedulerServiceProvider` starts during Application Boot. Shutdown stops pending
 timers and waits for running Tasks before the Queue drains, following reverse Provider

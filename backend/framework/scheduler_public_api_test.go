@@ -18,6 +18,7 @@ var (
 	_ framework.BootableServiceProvider   = (*framework.SchedulerServiceProvider)(nil)
 	_ framework.TerminableServiceProvider = (*framework.SchedulerServiceProvider)(nil)
 	_ framework.SchedulerStore            = (*framework.FileSchedulerStore)(nil)
+	_ framework.SchedulerStore            = (*framework.SQLSchedulerStore)(nil)
 )
 
 func TestPublicSchedulerRunsNamedTaskAndShutsDown(t *testing.T) {
@@ -220,6 +221,30 @@ func TestPublicPersistentSchedulerSurvivesProviderRestart(t *testing.T) {
 		"public.persistent",
 	); !errors.Is(err, framework.ErrSchedulerStoreClosed) {
 		t.Fatalf("second provider did not close store: %v", err)
+	}
+}
+
+func TestPublicSQLSchedulerStoreAPI(t *testing.T) {
+	options := framework.DefaultSQLSchedulerStoreOptions()
+	if options.Table != "bridra_scheduled_tasks" ||
+		options.PlaceholderStyle != framework.SQLPlaceholderQuestionMark {
+		t.Fatalf("default SQL scheduler store options = %#v", options)
+	}
+	if _, err := framework.NewSQLSchedulerStore(nil, options); !errors.Is(
+		err,
+		framework.ErrSchedulerStoreUnavailable,
+	) {
+		t.Fatalf("nil SQL pool error = %v", err)
+	}
+	var store *framework.SQLSchedulerStore
+	if store.Table() != "" {
+		t.Fatalf("nil SQL store table = %q", store.Table())
+	}
+	if _, err := store.State(context.Background(), "task"); !errors.Is(
+		err,
+		framework.ErrSchedulerStoreUnavailable,
+	) {
+		t.Fatalf("nil SQL state error = %v", err)
 	}
 }
 

@@ -13,6 +13,12 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 - Added question-mark and PostgreSQL-style dollar placeholders, explicit schema
   initialization, payload bounds, and context-aware failed Job inspection,
   retry, and forget operations.
+- Added a driver-neutral `SQLSchedulerStore` for distributed scheduled Task
+  coordination through `database/sql`, with atomic leases, expiry recovery, and
+  persisted next-run and completion state.
+- Added shared SQL scheduling equivalent to Laravel `onOneServer()`, using the
+  same question-mark and PostgreSQL-style dollar placeholder support and a
+  portable 255-byte Task-name bound.
 
 ## [0.7.0] - 2026-07-29
 

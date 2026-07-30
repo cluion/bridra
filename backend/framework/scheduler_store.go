@@ -17,6 +17,7 @@ var (
 	ErrScheduledTaskReservationInvalid  = errors.New("framework: scheduled task reservation is invalid")
 	ErrSchedulerStoreOperationFailed    = errors.New("framework: scheduler store operation failed")
 	ErrInvalidFileSchedulerStoreOptions = errors.New("framework: file scheduler store options are invalid")
+	ErrInvalidSQLSchedulerStoreOptions  = errors.New("framework: SQL scheduler store options are invalid")
 	ErrFileSchedulerStoreCorrupt        = errors.New("framework: file scheduler store log is corrupt")
 )
 

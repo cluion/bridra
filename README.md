@@ -32,7 +32,8 @@ Bridra is licensed under the [MIT License](LICENSE), Copyright (c) 2026 Cluion.
   aliased services
 - Validation, structured exceptions, route groups, policies, and lifecycle hooks
 - Synchronous Events, queued listeners, in-memory, durable local, or shared SQL
-  background Jobs, and process-local or persistently coordinated scheduled Tasks
+  background Jobs, and process-local, durable local, or shared SQL coordinated
+  scheduled Tasks
 - `database/sql` lifecycle, transaction boundaries, and migration runner
 - Project creation, scaffolding, development supervision, builds, diagnostics,
   release metadata, and transactional upgrades through one CLI

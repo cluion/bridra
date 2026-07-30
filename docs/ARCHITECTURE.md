@@ -375,9 +375,18 @@ that wait; an invocation already running continues under its Task timeout.
 
 The built-in `FileSchedulerStore` is a synchronized append-only state log for one
 process and host. It does not compact or encrypt state and cannot coordinate separate
-processes. The `SchedulerStore` reservation contract permits a shared database or
-network implementation to provide distributed one-run coordination without changing
-Task registration.
+processes. `SQLSchedulerStore` stores the same state in an application-owned
+`database/sql` pool. Separate processes or hosts select the same due occurrence but
+claim it through a conditional update over the Task name, next-run time, and current
+lease. Only one contender changes the record, providing Laravel-style
+`onOneServer()` coordination without a long-running transaction.
+
+`SQLSchedulerStore` supports question-mark placeholders for SQLite/MySQL-style
+drivers and dollar placeholders for PostgreSQL. Its schema initialization is
+idempotent, its portable primary key bounds Task names to 255 UTF-8 bytes, and it
+deliberately does not close the supplied pool. Database
+availability, retention, encryption, backup, and capacity remain deployment
+responsibilities.
 
 ## Transport selection
 

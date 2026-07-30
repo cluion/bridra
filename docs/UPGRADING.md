@@ -149,6 +149,26 @@ Before configuring `FileSchedulerStore`:
 processes require a shared `SchedulerStore` whose reserve and complete operations
 are atomic. Stop every Scheduler before reverting or replacing its Store.
 
+Before configuring `SQLSchedulerStore`:
+
+1. Complete the same stable Task-name, idempotency, timeout, lease, and missed-run
+   review required for file persistence. SQL-persisted Task names must be no more
+   than 255 UTF-8 bytes.
+2. Run `SQLSchedulerStore.Ensure` through a migration or deployment step before
+   Scheduler Boot.
+3. Use question-mark placeholders for SQLite/MySQL-style drivers and dollar
+   placeholders for PostgreSQL.
+4. Keep the application-owned database pool alive until every Scheduler has
+   stopped; `SQLSchedulerStore` deliberately does not close it.
+5. Define database retention, capacity, encryption, backup, availability, and
+   monitoring policies for scheduled Task state.
+
+Separate SQL Store instances sharing one database coordinate each occurrence
+through a conditional lease update, matching Laravel `onOneServer()` behavior.
+Execution remains at least once: a crash after side effects but before completion
+makes the occurrence eligible after lease expiry. Stop every Scheduler before
+changing the table, driver, placeholder style, or persisted Task-name contract.
+
 ## Project metadata schema 1 to 2
 
 Project Template v1 did not record framework, template, or protocol versions.

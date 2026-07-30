@@ -35,7 +35,7 @@ CLI_RELEASE_COMMIT ?= $(shell git describe --always --dirty --abbrev=12 --match 
 CLI_RELEASE_DATE ?= $(shell git show -s --format=%cI HEAD)
 COVERAGE_DIR := $(CURDIR)/coverage
 
-.PHONY: help setup doctor generate codegen-check license-check format backend-build backend-server-build backend-serve backend-format backend-test backend-public-api-test backend-sql-job-store-test backend-vet transport-benchmark \
+.PHONY: help setup doctor generate codegen-check license-check format backend-build backend-server-build backend-serve backend-format backend-test backend-public-api-test backend-sql-store-test backend-sql-job-store-test backend-vet transport-benchmark \
 	flutter-format flutter-package-test flutter-web-test flutter-test analyze verify coverage backend-coverage flutter-package-coverage flutter-app-coverage coverage-check linux-check linux-run linux-build \
 	linux-smoke macos-check macos-run macos-build macos-smoke windows-run \
 	windows-build windows-smoke windows-verify android-run android-build \
@@ -122,8 +122,10 @@ backend-test:
 backend-public-api-test:
 	cd backend && $(GO) test -race ./framework -run '^TestPublic'
 
-backend-sql-job-store-test:
+backend-sql-store-test:
 	cd backend/integration/sqljobstore && $(GO) test -race ./...
+
+backend-sql-job-store-test: backend-sql-store-test
 
 backend-vet:
 	cd backend && $(GO) vet ./...
@@ -181,7 +183,7 @@ cli-release:
 		--commit '$(CLI_RELEASE_COMMIT)' \
 		--build-date '$(CLI_RELEASE_DATE)'
 
-verify: license-check release-check doctor codegen-check backend-format backend-vet backend-public-api-test backend-test backend-sql-job-store-test flutter-format flutter-package-test flutter-web-test flutter-test analyze
+verify: license-check release-check doctor codegen-check backend-format backend-vet backend-public-api-test backend-test backend-sql-store-test flutter-format flutter-package-test flutter-web-test flutter-test analyze
 
 linux-check:
 	@test "$(HOST_OS)" = "Linux" || \
