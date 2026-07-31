@@ -5,6 +5,8 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-31
+
 ### Added
 
 - Added `RedisJobStore` for shared multi-process and multi-host Queue delivery
@@ -19,6 +21,18 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 - Added a Redis Cluster-compatible single-slot Scheduler namespace, 255-byte
   Task-name bounds, context and corruption handling, and real Redis contention
   coverage with 24 concurrent contenders.
+
+### Changed
+
+- Registered an automatic `0.8.0` to `0.9.0` upgrade because Redis persistence
+  is additive and opt-in. The public Dart API, Project Template version `2`,
+  project metadata schema `2`, and RPC protocol version `1` remain unchanged.
+
+### Support
+
+- The latest `0.9.x` release receives best-effort security fixes until the next
+  minor line is published. The `0.8.x` line is no longer supported after this
+  release.
 
 ## [0.8.0] - 2026-07-30
 

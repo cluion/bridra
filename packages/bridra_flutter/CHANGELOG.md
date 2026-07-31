@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.9.0 - 2026-07-31
+
+- Kept the public Dart API and RPC protocol unchanged while aligning the package
+  with Bridra 0.9.0's opt-in Redis-backed Queue and Scheduler stores.
+
 ## 0.8.0 - 2026-07-30
 
 - Kept the public Dart API and RPC protocol unchanged while aligning the package

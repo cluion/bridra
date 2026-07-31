@@ -23,7 +23,7 @@ packages:
       path: "packages/bridra_flutter"
       relative: true
     source: path
-    version: "0.8.0"
+    version: "0.9.0"
   characters:
     dependency: transitive
     description:
