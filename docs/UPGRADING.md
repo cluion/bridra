@@ -188,6 +188,24 @@ Execution remains at least once: a crash after side effects but before completio
 makes the occurrence eligible after lease expiry. Stop every Scheduler before
 changing the table, driver, placeholder style, or persisted Task-name contract.
 
+Before configuring `RedisSchedulerStore`:
+
+1. Complete the same stable Task-name, idempotency, timeout, lease, and missed-run
+   review required for file and SQL persistence. Redis-persisted Task names must
+   be no more than 255 UTF-8 bytes.
+2. Create and ping the application-owned `go-redis/v9` client before Scheduler
+   Boot, then keep it alive until every Scheduler has stopped.
+3. Choose one stable, application-specific namespace. Namespaces cannot contain
+   braces because Bridra reserves the Redis Cluster hash tag.
+4. Configure Redis persistence, replication, `noeviction`, memory capacity, TLS,
+   ACLs, backup, and monitoring before accepting production Tasks.
+
+Separate Redis Store instances sharing one namespace coordinate each occurrence
+through Lua-atomic lease transitions, matching Laravel `onOneServer()` behavior.
+Execution remains at least once. Stop every Scheduler before changing the
+namespace, Redis deployment, or persisted Task-name contract.
+`RedisSchedulerStore` does not close the supplied client.
+
 ## Project metadata schema 1 to 2
 
 Project Template v1 did not record framework, template, or protocol versions.

@@ -402,6 +402,19 @@ deliberately does not close the supplied pool. Database
 availability, retention, encryption, backup, and capacity remain deployment
 responsibilities.
 
+`RedisSchedulerStore` stores every Task record in one namespaced Redis hash. A Lua
+script checks the persisted next-run time and current lease before atomically
+assigning one reservation token, so separate processes or hosts sharing the
+namespace execute one occurrence. Expired leases can be replaced without replaying
+additional missed occurrences, and completion advances the same record only when
+the reservation token and scheduled time still match.
+
+The Scheduler key uses the configured namespace as a Redis Cluster hash tag.
+Namespaces cannot contain braces, and Task names are limited to 255 UTF-8 bytes.
+The Redis client remains application-owned and must outlive Scheduler shutdown.
+Persistence, replication, non-evicting memory policy, ACL, TLS, backup, monitoring,
+and capacity remain Redis deployment responsibilities.
+
 ## Transport selection
 
 `packages/bridra_flutter/lib/src/connector/backend_connector.dart` uses

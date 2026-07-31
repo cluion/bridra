@@ -1228,9 +1228,9 @@ permissions, so place it in protected application data and monitor its size.
 does not close that shared pool. Register the Queue after the Database Provider so
 reverse shutdown finishes Queue work before closing database connections.
 
-`RedisJobStore` is stateless around an application-owned `redis.Scripter`; Queue
-shutdown does not close that shared client. Register the Queue after the Redis
-resource provider so reverse shutdown finishes Queue work before closing Redis
+The Redis Stores are stateless around an application-owned `redis.Scripter`; Queue
+and Scheduler shutdown do not close that shared client. Register them after the
+Redis resource provider so reverse shutdown finishes work before closing Redis
 connections.
 
 Persisted Handler names and JSON schemas are data contracts. Keep the name
@@ -1337,6 +1337,33 @@ stop Tasks before database connections close. SQL-persisted Task names are limit
 to 255 UTF-8 bytes so their primary key remains portable across the supported schema
 styles.
 
+For multiple processes or hosts sharing Redis, configure `RedisSchedulerStore`
+after the application-owned Redis client is ready:
+
+```go
+storeOptions := framework.DefaultRedisSchedulerStoreOptions()
+storeOptions.Namespace = "orders:scheduler"
+
+schedulerStore, err := framework.NewRedisSchedulerStore(
+    redisClient,
+    storeOptions,
+)
+if err != nil {
+    return err
+}
+
+schedulerOptions := framework.DefaultSchedulerOptions()
+schedulerOptions.Store = schedulerStore
+schedulerProvider := framework.NewSchedulerServiceProvider(schedulerOptions)
+```
+
+`RedisSchedulerStore` uses one namespaced Redis hash and Lua-atomic reservation
+and completion transitions. All state stays in one Redis Cluster hash slot.
+Namespaces cannot contain braces, and Redis-persisted Task names are limited to
+255 UTF-8 bytes. Ping the client before Scheduler Boot, keep it alive until
+Scheduler shutdown finishes, then close it through the resource provider that
+created it. The Store deliberately does not close the shared client.
+
 Persistent scheduling stores each Task's next run, last scheduled and completed
 times, last error, and active lease. Startup keeps an existing next-run time instead
 of restarting the interval. When the process was down past that time, Bridra recovers
@@ -1356,17 +1383,19 @@ lease, matching Laravel's `onOneServer` behavior. Same-Task execution remains
 non-overlapping like Laravel's `withoutOverlapping`.
 
 The built-in `FileSchedulerStore` is for one Bridra process on one host. Do not open
-the same path from multiple processes. Use `SQLSchedulerStore` for distributed
-coordination equivalent to Laravel `onOneServer()`. Its conditional update allows
-only one contender to claim each occurrence, while an expired lease makes that same
-occurrence eligible again. `FileSchedulerStore.States` exposes local persisted state
-for diagnostics; SQL callers use `State` for a known Task name or their database
-operations tooling. Stable Task names remain persistence keys, and removed names
-retain state until the application or database operator explicitly removes it.
+the same path from multiple processes. Use `SQLSchedulerStore` or
+`RedisSchedulerStore` for distributed coordination equivalent to Laravel
+`onOneServer()`. Their atomic transitions allow only one contender to claim each
+occurrence, while an expired lease makes that same occurrence eligible again.
+`FileSchedulerStore.States` exposes local persisted state for diagnostics; SQL and
+Redis callers use `State` for a known Task name or their deployment operations
+tooling. Stable Task names remain persistence keys, and removed names retain state
+until the application or storage operator explicitly removes it.
 
-The file Store is append-only, unencrypted, and not automatically compacted. The SQL
-Store delegates capacity, retention, encryption, backup, and availability to the
-database deployment.
+The file Store is append-only, unencrypted, and not automatically compacted. SQL
+and Redis Stores delegate capacity, retention, encryption, backup, availability,
+and monitoring to their deployments. Redis additionally requires a non-evicting
+policy because an evicted Scheduler key loses persisted Task state.
 
 `SchedulerServiceProvider` starts during Application Boot. Shutdown stops pending
 timers and waits for running Tasks before the Queue drains, following reverse Provider

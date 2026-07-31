@@ -19,6 +19,7 @@ var (
 	_ framework.TerminableServiceProvider = (*framework.SchedulerServiceProvider)(nil)
 	_ framework.SchedulerStore            = (*framework.FileSchedulerStore)(nil)
 	_ framework.SchedulerStore            = (*framework.SQLSchedulerStore)(nil)
+	_ framework.SchedulerStore            = (*framework.RedisSchedulerStore)(nil)
 )
 
 func TestPublicSchedulerRunsNamedTaskAndShutsDown(t *testing.T) {
@@ -245,6 +246,29 @@ func TestPublicSQLSchedulerStoreAPI(t *testing.T) {
 		framework.ErrSchedulerStoreUnavailable,
 	) {
 		t.Fatalf("nil SQL state error = %v", err)
+	}
+}
+
+func TestPublicRedisSchedulerStoreAPI(t *testing.T) {
+	options := framework.DefaultRedisSchedulerStoreOptions()
+	if options.Namespace != "bridra:scheduler" {
+		t.Fatalf("default Redis scheduler store options = %#v", options)
+	}
+	if _, err := framework.NewRedisSchedulerStore(nil, options); !errors.Is(
+		err,
+		framework.ErrSchedulerStoreUnavailable,
+	) {
+		t.Fatalf("nil Redis client error = %v", err)
+	}
+	var store *framework.RedisSchedulerStore
+	if store.Namespace() != "" {
+		t.Fatalf("nil Redis store namespace = %q", store.Namespace())
+	}
+	if _, err := store.State(context.Background(), "task"); !errors.Is(
+		err,
+		framework.ErrSchedulerStoreUnavailable,
+	) {
+		t.Fatalf("nil Redis state error = %v", err)
 	}
 }
 

@@ -13,6 +13,12 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 - Added Redis Cluster-compatible namespaced keys, payload bounds, context-aware
   failed Job operations, real Redis integration coverage, and the official
   `go-redis/v9` client contract.
+- Added `RedisSchedulerStore` for shared multi-process and multi-host scheduled
+  Task coordination, with Lua-atomic leases, expiry recovery, persisted
+  completion state, and Laravel-style `onOneServer()` behavior.
+- Added a Redis Cluster-compatible single-slot Scheduler namespace, 255-byte
+  Task-name bounds, context and corruption handling, and real Redis contention
+  coverage with 24 concurrent contenders.
 
 ## [0.8.0] - 2026-07-30
 
