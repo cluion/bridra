@@ -1,6 +1,6 @@
 # Bridra architecture decisions
 
-Bridra 0.9 supports Windows, macOS, Linux, Android, iOS, and Web while keeping
+Bridra 0.10 supports Windows, macOS, Linux, Android, iOS, and Web while keeping
 one Go application pipeline and one typed Flutter API.
 
 ## Layers
@@ -32,7 +32,7 @@ Models, Services, Responses, Controllers, and route registration remain under
 `backend/app`. `packages/bridra_flutter` owns transport-neutral RPC, HTTP, and
 desktop Sidecar clients. The generated `BridraRpcApi` owns the application RPC
 contract; `lib/api/backend_gateway.dart` adds connection lifecycle and health
-caching. Both packages remain in one Git repository and use Bridra 0.9.0.
+caching. Both packages remain in one Git repository and use Bridra 0.10.0.
 
 ## Contract generation
 

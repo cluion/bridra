@@ -69,8 +69,8 @@ commits or Pull Requests.
    changelogs, and live documentation from one version:
 
    ```bash
-   make release-prepare VERSION=0.9.0
-   make release-check VERSION=0.9.0
+   make release-prepare VERSION=0.10.0
+   make release-check VERSION=0.10.0
    ```
 
    The prepare command never creates a tag, publishes a package, or creates a
@@ -82,7 +82,7 @@ commits or Pull Requests.
    verification rejects a new current version without a complete path from each
    older registered release.
 4. Replace `Unreleased` in both changelogs with the intended release date, then
-   run `make release-check VERSION=0.9.0 FINAL=1`. The protected release workflow
+   run `make release-check VERSION=0.10.0 FINAL=1`. The protected release workflow
    repeats this final check and refuses an unfinished changelog.
 5. Run the full local verification and workflow lint. From the clean release
    commit, require a zero-warning Dart publish dry run, build the CLI artifacts
@@ -99,9 +99,9 @@ tagging it.
 Windows maintainers use:
 
 ```powershell
-.\tool\windows.ps1 -Task release-prepare -Version 0.9.0
-.\tool\windows.ps1 -Task release-check -Version 0.9.0
-.\tool\windows.ps1 -Task release-check -Version 0.9.0 -Final
+.\tool\windows.ps1 -Task release-prepare -Version 0.10.0
+.\tool\windows.ps1 -Task release-check -Version 0.10.0
+.\tool\windows.ps1 -Task release-check -Version 0.10.0 -Final
 ```
 
 Security fixes under embargo use a private advisory and private fork until the
@@ -114,7 +114,7 @@ Request before the agreed disclosure time.
 make cli-release
 ```
 
-This produces the following under `build/bridra/cli/0.9.0/`:
+This produces the following under `build/bridra/cli/0.10.0/`:
 
 - macOS amd64 and arm64 `tar.gz` archives
 - Linux amd64 and arm64 `tar.gz` archives
@@ -126,7 +126,7 @@ The source commit and commit timestamp are embedded into each binary. Confirm
 the native archive before publishing:
 
 ```bash
-shasum -a 256 -c build/bridra/cli/0.9.0/SHA256SUMS
+shasum -a 256 -c build/bridra/cli/0.10.0/SHA256SUMS
 bridra version --json
 ```
 
@@ -140,13 +140,13 @@ must not be implied by these unsigned CLI archives.
 
 ## Tag and publish
 
-For Bridra 0.9.0, create the annotated Go submodule tag only after the release
+For Bridra 0.10.0, create the annotated Go submodule tag only after the release
 Pull Request is merged and the repository owner gives final authorization:
 
 ```bash
 git fetch origin main
-git tag -a backend/v0.9.0 <verified-main-sha> -m "Bridra 0.9.0"
-git push origin backend/v0.9.0
+git tag -a backend/v0.10.0 <verified-main-sha> -m "Bridra 0.10.0"
+git push origin backend/v0.10.0
 ```
 
 The protected GitHub workflow requires the tag to point at the current `main`
@@ -191,7 +191,7 @@ approval is not an administrative bypass.
 Verify installation without a repository checkout:
 
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.9.0
+go install github.com/cluion/bridra/backend/cmd/bridra@v0.10.0
 bridra version --json
 bridra create release_smoke --module example.com/acme/release-smoke
 ```
@@ -229,8 +229,8 @@ version instead.
 Users choose upgrades explicitly:
 
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.9.0
-bridra upgrade --plan --to 0.9.0
+go install github.com/cluion/bridra/backend/cmd/bridra@v0.10.0
+bridra upgrade --plan --to 0.10.0
 ```
 
 Bridra has no silent CLI auto-update. Breaking changes require release notes,
@@ -241,11 +241,14 @@ fails. Application-owned Controllers, Services, Models, configuration, generated
 contracts, and native runners are never overwritten as part of a core package
 upgrade. The `0.6.0` to `0.6.1` path remains manual because projects generated
 with `0.6.0` must repair an application-owned `FakeBackend` test that upgrades
-never overwrite. The `0.6.1` to `0.9.0` path is automatic through the additive,
-opt-in file-, SQL-, and Redis-backed Queue and Scheduler persistence releases.
-The `0.8.0` to `0.9.0` Redis persistence step is automatic on its own. The
-public Dart API, Project Template version `2`, project metadata schema `2`, and
-RPC protocol version `1` do not change.
+never overwrite. The `0.6.1` to `0.10.0` path is automatic through the additive,
+opt-in file-, SQL-, and Redis-backed persistence releases plus the `0.10.0`
+HTTP-security dependency step. The `0.9.0` to `0.10.0` dependency migration is
+automatic; adopting authentication, rate limiting, observability, and server
+limits in an existing application-owned HTTP entrypoint remains an explicit
+deployment decision. The public Dart API adds `RpcRateLimitedException` while
+Project Template version `2`, project metadata schema `2`, and RPC protocol
+version `1` remain unchanged.
 
 The project-facing compatibility matrix, deprecation window, manual migration
 workflow, and rollback contract are defined in [UPGRADING.md](UPGRADING.md).
