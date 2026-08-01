@@ -5,6 +5,19 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 
 ## [Unreleased]
 
+### Added
+
+- Added application-owned HTTP Bearer authentication with Principal propagation,
+  pluggable authenticators, stable 401/503 responses, and exact permission
+  policies for route authorization.
+
+### Changed
+
+- Updated the reference server and Project Template to protect HTTP RPC before
+  dispatch while preserving Sidecar envelope-token compatibility.
+- Updated `HttpRpcClient` to send its runtime token as a Bearer credential in
+  addition to the existing versioned RPC envelope metadata.
+
 ## [0.9.0] - 2026-07-31
 
 ### Added

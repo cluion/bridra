@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -40,7 +41,14 @@ func TestHTTPHandlerDispatchesRPCAndAllowsConfiguredOrigin(t *testing.T) {
 }
 
 func TestHTTPHandlerSupportsCORSPreflight(t *testing.T) {
-	handler := &HTTPHandler{Router: NewRouter(), AllowedOrigin: "http://localhost:3000"}
+	handler := &HTTPHandler{
+		Router: NewRouter(),
+		Authenticator: AuthenticatorFunc(func(context.Context, string) (Principal, error) {
+			t.Fatal("preflight called the authenticator")
+			return Principal{}, nil
+		}),
+		AllowedOrigin: "http://localhost:3000",
+	}
 	request := httptest.NewRequest(http.MethodOptions, "/rpc", nil)
 	request.Header.Set("Origin", "http://localhost:3000")
 	recorder := httptest.NewRecorder()
@@ -52,6 +60,183 @@ func TestHTTPHandlerSupportsCORSPreflight(t *testing.T) {
 	}
 	if methods := recorder.Header().Get("Access-Control-Allow-Methods"); methods != "POST, OPTIONS" {
 		t.Fatalf("allow methods = %q", methods)
+	}
+	if headers := recorder.Header().Get("Access-Control-Allow-Headers"); headers != "Authorization, Content-Type" {
+		t.Fatalf("allow headers = %q", headers)
+	}
+}
+
+func TestHTTPHandlerAuthenticatesBearerPrincipal(t *testing.T) {
+	principal, err := NewPrincipal("user-1", "reports.read")
+	if err != nil {
+		t.Fatalf("new principal: %v", err)
+	}
+	router := NewRouter()
+	router.HandleWithPolicies(
+		"reports.read",
+		func(ctx *Context) (any, error) {
+			authenticated, exists := PrincipalFromContext(ctx)
+			if !exists {
+				t.Fatal("controller did not receive principal")
+			}
+			return authenticated.Subject(), nil
+		},
+		RequirePermission("reports.read"),
+	)
+	var credential string
+	handler := &HTTPHandler{
+		Router: router,
+		Authenticator: AuthenticatorFunc(func(_ context.Context, provided string) (Principal, error) {
+			credential = provided
+			return principal, nil
+		}),
+	}
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/rpc",
+		strings.NewReader(`{"id":"1","method":"reports.read"}`),
+	)
+	request.Header.Set("Authorization", "Bearer access-token")
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK || credential != "access-token" {
+		t.Fatalf("status = %d, credential = %q, body = %s", recorder.Code, credential, recorder.Body.String())
+	}
+	if cacheControl := recorder.Header().Get("Cache-Control"); cacheControl != "no-store" {
+		t.Fatalf("cache control = %q", cacheControl)
+	}
+	var response Response
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Error != nil || response.Result != "user-1" {
+		t.Fatalf("response = %#v", response)
+	}
+}
+
+func TestHTTPHandlerRejectsInvalidBearerCredentials(t *testing.T) {
+	principal, err := NewPrincipal("user-1")
+	if err != nil {
+		t.Fatalf("new principal: %v", err)
+	}
+	authenticator := AuthenticatorFunc(func(_ context.Context, credential string) (Principal, error) {
+		if credential != "valid" {
+			return Principal{}, ErrAuthenticationFailed
+		}
+		return principal, nil
+	})
+	tests := []struct {
+		name          string
+		authorization string
+	}{
+		{name: "missing"},
+		{name: "wrong scheme", authorization: "Basic valid"},
+		{name: "missing token", authorization: "Bearer"},
+		{name: "invalid token", authorization: "Bearer invalid"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			handler := &HTTPHandler{Router: NewRouter(), Authenticator: authenticator}
+			request := httptest.NewRequest(http.MethodPost, "/rpc", strings.NewReader(`{}`))
+			request.Header.Set("Content-Type", "application/json")
+			if test.authorization != "" {
+				request.Header.Set("Authorization", test.authorization)
+			}
+			recorder := httptest.NewRecorder()
+
+			handler.ServeHTTP(recorder, request)
+
+			if recorder.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+			}
+			if challenge := recorder.Header().Get("WWW-Authenticate"); challenge != "Bearer" {
+				t.Fatalf("challenge = %q", challenge)
+			}
+			var response Response
+			if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if response.Error == nil || response.Error.Code != "unauthenticated" {
+				t.Fatalf("response = %#v", response)
+			}
+		})
+	}
+}
+
+func TestHTTPHandlerHidesAuthenticatorFailure(t *testing.T) {
+	var logs bytes.Buffer
+	handler := &HTTPHandler{
+		Router: NewRouter(),
+		Authenticator: AuthenticatorFunc(func(context.Context, string) (Principal, error) {
+			return Principal{}, errors.New("identity provider database password leaked")
+		}),
+		Errors: &logs,
+	}
+	request := httptest.NewRequest(http.MethodPost, "/rpc", strings.NewReader(`{}`))
+	request.Header.Set("Authorization", "Bearer token")
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	if strings.Contains(recorder.Body.String(), "database password") {
+		t.Fatalf("response leaked authenticator error: %s", recorder.Body.String())
+	}
+	if !strings.Contains(logs.String(), "database password") {
+		t.Fatalf("logs = %q", logs.String())
+	}
+}
+
+func TestHTTPHandlerKeepsPermissionDenialInRPCEnvelope(t *testing.T) {
+	principal, err := NewPrincipal("user-1")
+	if err != nil {
+		t.Fatalf("new principal: %v", err)
+	}
+	controllerCalled := false
+	router := NewRouter()
+	router.HandleWithPolicies(
+		"reports.read",
+		func(*Context) (any, error) {
+			controllerCalled = true
+			return "report", nil
+		},
+		RequirePermission("reports.read"),
+	)
+	handler := &HTTPHandler{
+		Router: router,
+		Authenticator: AuthenticatorFunc(func(context.Context, string) (Principal, error) {
+			return principal, nil
+		}),
+	}
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/rpc",
+		strings.NewReader(`{"id":"1","method":"reports.read"}`),
+	)
+	request.Header.Set("Authorization", "Bearer token")
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	var response Response
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Error == nil || response.Error.Code != "forbidden" {
+		t.Fatalf("response = %#v", response)
+	}
+	if controllerCalled {
+		t.Fatal("controller ran after permission denial")
 	}
 }
 

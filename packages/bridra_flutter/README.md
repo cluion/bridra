@@ -8,7 +8,8 @@ is the Flutter-facing runtime package for the Bridra framework.
 It provides:
 
 - the common RPC client contract and error types;
-- an HTTP RPC client for mobile, Web, and remote backends;
+- an HTTP RPC client that sends Bearer credentials for mobile, Web, and remote
+  backends;
 - a managed Go sidecar client for Windows, macOS, and Linux;
 - verified out-of-band file uploads and resumable downloads for HTTP and
   Desktop Sidecars;

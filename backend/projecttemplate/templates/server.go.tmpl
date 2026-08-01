@@ -30,6 +30,19 @@ func main() {
 		os.Exit(2)
 	}
 	defer fileTransfers.Close()
+	httpPrincipal, err := framework.NewPrincipal("bridra-http-client")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "server: HTTP principal: %v\n", err)
+		os.Exit(2)
+	}
+	httpAuthenticator, err := framework.NewStaticTokenAuthenticator(
+		*token,
+		httpPrincipal,
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "server: HTTP authenticator: %v\n", err)
+		os.Exit(2)
+	}
 	mux := http.NewServeMux()
 	mux.Handle("/rpc", &framework.HTTPHandler{
 		Router: app.NewRouterWithFileTransfers(
@@ -38,6 +51,7 @@ func main() {
 			"Go HTTP server",
 			fileTransfers,
 		),
+		Authenticator: httpAuthenticator,
 		AllowedOrigin: *origin,
 		Errors: os.Stderr,
 	})

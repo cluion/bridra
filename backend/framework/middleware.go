@@ -48,7 +48,9 @@ func RequireRequestID() Middleware {
 func Authenticate(expectedToken string) Middleware {
 	return func(next Handler) Handler {
 		return func(ctx *Context) (any, error) {
-			if expectedToken == "" || ctx.Request.Meta["token"] != expectedToken {
+			_, authenticated := PrincipalFromContext(ctx)
+			if !authenticated &&
+				(expectedToken == "" || ctx.Request.Meta["token"] != expectedToken) {
 				return nil, NewError("unauthorized", "The backend token is missing or invalid.")
 			}
 			return next(ctx)

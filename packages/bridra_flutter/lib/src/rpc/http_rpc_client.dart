@@ -62,8 +62,9 @@ class HttpRpcClient implements RpcClient {
     );
     final request =
         http.AbortableRequest('POST', endpoint, abortTrigger: abort.future)
-          ..headers.addAll(const {
+          ..headers.addAll({
             'accept': 'application/json',
+            'authorization': 'Bearer $_token',
             'content-type': 'application/json',
           })
           ..body = encodeRpcRequest(
@@ -152,8 +153,9 @@ class HttpRpcClient implements RpcClient {
     );
     final request =
         http.AbortableRequest('POST', endpoint, abortTrigger: abort.future)
-          ..headers.addAll(const {
+          ..headers.addAll({
             'accept': 'application/x-ndjson',
+            'authorization': 'Bearer $_token',
             'content-type': 'application/json',
           })
           ..body = encodeRpcRequest(

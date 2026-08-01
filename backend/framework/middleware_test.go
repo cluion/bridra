@@ -35,3 +35,28 @@ func TestLoggingIncludesRejectedRequests(t *testing.T) {
 		t.Fatalf("logs = %q", logs.String())
 	}
 }
+
+func TestAuthenticateAcceptsTrustedPrincipalOrSidecarToken(t *testing.T) {
+	principal, err := NewPrincipal("user-1")
+	if err != nil {
+		t.Fatalf("new principal: %v", err)
+	}
+	router := NewRouter()
+	router.Use(Authenticate("sidecar-secret"))
+	router.Handle("test", func(*Context) (any, error) { return "ok", nil })
+
+	fromSidecar := router.Dispatch(context.Background(), Request{
+		ID: "1", Method: "test", Meta: map[string]string{"token": "sidecar-secret"},
+	})
+	if fromSidecar.Error != nil || fromSidecar.Result != "ok" {
+		t.Fatalf("sidecar response = %#v", fromSidecar)
+	}
+
+	fromHTTPIdentity := router.Dispatch(
+		ContextWithPrincipal(context.Background(), principal),
+		Request{ID: "2", Method: "test"},
+	)
+	if fromHTTPIdentity.Error != nil || fromHTTPIdentity.Result != "ok" {
+		t.Fatalf("principal response = %#v", fromHTTPIdentity)
+	}
+}

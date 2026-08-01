@@ -574,9 +574,17 @@ must therefore be concurrency-safe.
 - iOS Profile and Release use `Info.plist` with default App Transport Security.
 - Web release configuration should use HTTPS and an exact allowed origin.
 
+The HTTP adapter accepts an application-owned `Authenticator`, extracts a Bearer
+credential before RPC decoding, and propagates the returned Principal through the
+same Router Context used by Controllers and method policies. `RequirePermission`
+performs exact application permission checks without coupling Controllers to HTTP.
+The generated server enables this boundary with the existing static development
+token; applications replace that adapter with their user/session identity provider.
+
 The default `dev-token` and a token compiled into Web assets are not production
-credentials. A production system needs TLS and user/session authentication,
-usually at the Go service or a trusted reverse proxy.
+credentials. A production system needs TLS, runtime user/session credentials, rate
+limits, audit evidence, and a complete threat model, usually at the Go service and
+its trusted reverse proxy.
 
 ## Lifecycle differences
 

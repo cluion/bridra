@@ -648,6 +648,67 @@ The development token is not production authentication. In particular, values
 compiled into a Web app are visible to users. Production deployments should use
 HTTPS and a real user/session authentication layer or trusted reverse proxy.
 
+## HTTP authentication and method permissions
+
+`HttpRpcClient` sends its token as an `Authorization: Bearer` credential. The
+generated server validates that credential before decoding or dispatching an RPC
+request, then adds an authenticated `Principal` to the request Context. Missing,
+malformed, or rejected credentials return HTTP `401`, a `WWW-Authenticate: Bearer`
+challenge, and the stable `unauthenticated` error code. Authentication-provider
+failures are logged server-side and return a generic HTTP `503` without exposing
+the provider error.
+
+The starter uses `NewStaticTokenAuthenticator` with the existing backend token so
+development and upgrades remain compatible. That adapter identifies one shared
+HTTP client and is not user authentication. A production service should set
+`HTTPHandler.Authenticator` to an `Authenticator` or `AuthenticatorFunc` that
+validates its own session/access token and returns a Principal with the permissions
+resolved by the application:
+
+```go
+authenticator := framework.AuthenticatorFunc(
+    func(ctx context.Context, bearer string) (framework.Principal, error) {
+        session, err := sessions.Verify(ctx, bearer)
+        if errors.Is(err, ErrSessionNotFound) {
+            return framework.Principal{}, framework.ErrAuthenticationFailed
+        }
+        if err != nil {
+            return framework.Principal{}, err
+        }
+        return framework.NewPrincipal(session.UserID, session.Permissions...)
+    },
+)
+
+handler := &framework.HTTPHandler{
+    Router:        router,
+    Authenticator: authenticator,
+    AllowedOrigin: "https://app.example.com",
+}
+```
+
+Use `RequirePermission` on a route or Route Group for exact permission checks:
+
+```go
+router.HandleWithPolicies(
+    "reports.read",
+    reports.Read,
+    framework.RequirePermission("reports.read"),
+)
+```
+
+A missing Principal produces the RPC error `unauthenticated`; an authenticated
+Principal without the permission produces `forbidden`. These are application RPC
+errors and therefore keep the existing successful HTTP transport envelope instead
+of changing it to HTTP `403`. `PrincipalFromContext` lets Controllers and other
+policies read the subject without parsing credentials again.
+
+The older `Authenticate` middleware still checks the request-envelope token when
+there is no Principal, preserving Sidecar compatibility. A trusted HTTP Principal
+satisfies that transport-authentication boundary, so a production user/session
+token does not also need to equal the Sidecar secret. Do not treat that local
+transport secret, the static HTTP adapter, rate limiting, audit logging, or a
+trusted proxy as interchangeable security controls.
+
 ## Go configuration sources
 
 Go configuration is loaded before the Application lifecycle. `ConfigLoader`

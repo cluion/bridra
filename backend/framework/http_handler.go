@@ -7,10 +7,13 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"reflect"
+	"strings"
 )
 
 type HTTPHandler struct {
 	Router        *Router
+	Authenticator Authenticator
 	AllowedOrigin string
 	Errors        io.Writer
 }
@@ -32,6 +35,34 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Allow", "POST, OPTIONS")
 		h.writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Use POST for RPC requests.")
 		return
+	}
+	if h.Authenticator != nil {
+		w.Header().Set("Cache-Control", "no-store")
+		if authenticatorIsNil(h.Authenticator) {
+			h.writeError(w, http.StatusInternalServerError, "configuration_error", "The HTTP authenticator is not configured.")
+			return
+		}
+		credential, valid := bearerCredential(r.Header.Values("Authorization"))
+		if !valid {
+			h.writeUnauthenticated(w)
+			return
+		}
+		principal, err := h.Authenticator.Authenticate(r.Context(), credential)
+		if err != nil {
+			if errors.Is(err, ErrAuthenticationFailed) {
+				h.writeUnauthenticated(w)
+				return
+			}
+			h.logf("http backend: authenticate request: %v\n", err)
+			h.writeError(w, http.StatusServiceUnavailable, "authentication_unavailable", "Authentication is temporarily unavailable.")
+			return
+		}
+		if !principal.valid() {
+			h.logf("http backend: authenticator returned an invalid principal\n")
+			h.writeError(w, http.StatusInternalServerError, "authentication_error", "Authentication could not complete.")
+			return
+		}
+		r = r.WithContext(ContextWithPrincipal(r.Context(), principal))
 	}
 
 	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
@@ -118,9 +149,35 @@ func (h *HTTPHandler) allowOrigin(w http.ResponseWriter, r *http.Request) bool {
 	} else {
 		return false
 	}
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
 	return true
+}
+
+func (h *HTTPHandler) writeUnauthenticated(w http.ResponseWriter) {
+	w.Header().Set("WWW-Authenticate", "Bearer")
+	h.writeError(w, http.StatusUnauthorized, "unauthenticated", "A valid Bearer token is required.")
+}
+
+func bearerCredential(values []string) (string, bool) {
+	if len(values) != 1 {
+		return "", false
+	}
+	parts := strings.Fields(values[0])
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || parts[1] == "" {
+		return "", false
+	}
+	return parts[1], true
+}
+
+func authenticatorIsNil(authenticator Authenticator) bool {
+	value := reflect.ValueOf(authenticator)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
+	}
 }
 
 func (h *HTTPHandler) writeError(w http.ResponseWriter, status int, code, message string) {

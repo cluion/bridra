@@ -49,21 +49,42 @@ func main() {
 		}
 		os.Exit(2)
 	}
+	backendToken := framework.ConfigValue(
+		application.Config(),
+		settings.BackendToken,
+	)
+	httpPrincipal, err := framework.NewPrincipal("bridra-http-client")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "server: HTTP principal: %v\n", err)
+		if shutdownErr := shutdownApplication(application); shutdownErr != nil {
+			fmt.Fprintf(os.Stderr, "server: application shutdown: %v\n", shutdownErr)
+		}
+		os.Exit(2)
+	}
+	httpAuthenticator, err := framework.NewStaticTokenAuthenticator(
+		backendToken,
+		httpPrincipal,
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "server: HTTP authenticator: %v\n", err)
+		if shutdownErr := shutdownApplication(application); shutdownErr != nil {
+			fmt.Fprintf(os.Stderr, "server: application shutdown: %v\n", shutdownErr)
+		}
+		os.Exit(2)
+	}
 
 	mux := http.NewServeMux()
 	mux.Handle("/rpc", &framework.HTTPHandler{
 		Router:        application.Router(),
+		Authenticator: httpAuthenticator,
 		AllowedOrigin: *allowedOrigin,
 		Errors:        os.Stderr,
 	})
 	mux.Handle("/rpc/files/", &framework.FileTransferHTTPHandler{
 		Store:         fileTransfers,
 		AllowedOrigin: *allowedOrigin,
-		Token: framework.ConfigValue(
-			application.Config(),
-			settings.BackendToken,
-		),
-		Errors: os.Stderr,
+		Token:         backendToken,
+		Errors:        os.Stderr,
 	})
 
 	server := &http.Server{

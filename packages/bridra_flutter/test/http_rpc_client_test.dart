@@ -19,6 +19,7 @@ void main() {
 
     final events = await client.stream('reports.build').toList();
 
+    expect(transport.authorization, 'Bearer remote-token');
     expect(transport.payload['method'], 'reports.build');
     expect((transport.payload['meta'] as Map)['stream'], '1');
     final progress = events[0] as RpcStreamProgress<RpcReply>;
@@ -161,6 +162,7 @@ void main() {
       token: 'remote-token',
       client: MockClient((request) async {
         expect(request.method, 'POST');
+        expect(request.headers['authorization'], 'Bearer remote-token');
         expect(request.headers['content-type'], 'application/json');
         final payload = Map<String, dynamic>.from(
           jsonDecode(request.body) as Map,
@@ -603,9 +605,11 @@ class StreamingResponseClient extends http.BaseClient {
   final List<Map<String, Object?>> Function(Object? id)? frames;
   final int statusCode;
   Map<String, dynamic> payload = {};
+  String? authorization;
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    authorization = request.headers['authorization'];
     payload = Map<String, dynamic>.from(
       jsonDecode(await request.finalize().bytesToString()) as Map,
     );
