@@ -27,6 +27,7 @@ func (handler *FileTransferHTTPHandler) ServeHTTP(
 	writer http.ResponseWriter,
 	request *http.Request,
 ) {
+	markHTTPObservationSurface(request.Context(), "file_transfer")
 	writer.Header().Set("Cache-Control", "no-store")
 	writer.Header().Set("X-Content-Type-Options", "nosniff")
 	if handler.Store == nil {
@@ -343,7 +344,7 @@ func allowFileTransferOrigin(
 	)
 	writer.Header().Set(
 		"Access-Control-Expose-Headers",
-		"Accept-Ranges, Content-Range, Upload-Complete, Upload-Expires-At, Upload-Length, Upload-Offset",
+		"Accept-Ranges, Content-Range, Upload-Complete, Upload-Expires-At, Upload-Length, Upload-Offset, X-Request-ID",
 	)
 	return true
 }
@@ -353,6 +354,18 @@ func (handler *FileTransferHTTPHandler) writeError(
 	status int,
 	message string,
 ) {
+	code := "file_transfer_error"
+	switch status {
+	case http.StatusUnauthorized:
+		code = "unauthenticated"
+	case http.StatusForbidden:
+		code = "origin_not_allowed"
+	case http.StatusNotFound:
+		code = "not_found"
+	case http.StatusRequestEntityTooLarge:
+		code = "payload_too_large"
+	}
+	markHTTPObservationError(writer, code)
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(status)
 	if err := json.NewEncoder(writer).Encode(map[string]string{"message": message}); err != nil {

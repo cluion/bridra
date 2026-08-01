@@ -4,6 +4,7 @@
 
 [Documentation](docs/GUIDE.md) ·
 [Architecture](docs/ARCHITECTURE.md) ·
+[HTTP security](docs/HTTP_SECURITY.md) ·
 [Upgrading](docs/UPGRADING.md) ·
 [Contributing](CONTRIBUTING.md)
 
@@ -49,6 +50,8 @@ distribution channels.
   stable unauthenticated/forbidden errors
 - Bounded per-Principal/IP HTTP rate limiting with a pluggable limiter interface
   and stable 429 retry responses
+- Server-generated HTTP Request IDs, structured redacted audit events, fixed
+  metrics, and tracing-compatible observer hooks
 - Synchronous Events, queued listeners, in-memory, durable local, shared SQL, or
   shared Redis background Jobs, and process-local, durable local, shared SQL, or
   shared Redis coordinated scheduled Tasks
@@ -144,6 +147,9 @@ non-regression floors.
   builds, configuration, and framework API examples
 - [Architecture](docs/ARCHITECTURE.md): package boundaries, lifecycle,
   transports, security, distribution, and verification decisions
+- [HTTP security and threat model](docs/HTTP_SECURITY.md): trust boundaries,
+  abuse cases, framework controls, residual risks, audit fields, and production
+  checklist
 - [Upgrading](docs/UPGRADING.md): planning, automatic apply, migrations,
   deprecation, and rollback
 - [Release process](docs/RELEASING.md): release authority, validation,

@@ -13,6 +13,9 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 - Added pluggable HTTP rate limiting with opaque Principal/IP keys, a bounded
   concurrency-safe in-memory token bucket, stable 429 responses, and
   `Retry-After` guidance.
+- Added server-generated HTTP Request IDs, structured redacted JSON audit events,
+  fixed-cardinality HTTP metrics, tracing-compatible observer hooks, and a
+  maintained HTTP threat model.
 
 ### Changed
 
@@ -22,6 +25,9 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
   addition to the existing versioned RPC envelope metadata.
 - Updated unary and streaming HTTP clients to expose 429 responses as
   `RpcRateLimitedException` with the optional server retry duration.
+- Hardened generated HTTP servers with fail-closed direct-server CORS defaults,
+  explicit header/read/write/idle limits, bounded headers, `no-store`, and
+  `nosniff` responses.
 
 ## [0.9.0] - 2026-07-31
 

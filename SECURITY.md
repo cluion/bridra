@@ -74,3 +74,7 @@ Application authentication, authorization rules, TLS termination, database
 credentials, deployment topology, signing keys, and store submission remain
 application/operator responsibilities. A framework behavior that makes those
 responsibilities unsafe or misleading is still in scope.
+
+See [HTTP security and threat model](docs/HTTP_SECURITY.md) for deployed HTTP
+trust boundaries, built-in controls, residual risks, audit fields, and the
+production checklist.

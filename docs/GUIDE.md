@@ -754,6 +754,60 @@ decoding. Invalid credential attempts therefore need a separate IP-based control
 at the trusted proxy or identity provider; changing an untrusted forwarded header
 must never bypass that control.
 
+### HTTP audit, metrics, and tracing
+
+The generated direct HTTP server wraps its complete mux with
+`HTTPObservationHandler`. The wrapper generates a fresh `X-Request-ID`, adds it
+to the request Context, preserves streaming flushes, and invokes an optional
+observer at request start and completion. `HTTPRequestIDFromContext` lets
+Controllers, Services, and application logs use the same correlation ID.
+
+The reference server enables `NewJSONHTTPObserver`. Its structured completion
+event includes the direct socket IP, RPC method, pseudonymized Principal, status,
+stable error code, duration, and response size. It never records the URL path,
+query, headers, request/response body, RPC params, credentials, upload token, or
+file capability. Protect and retain the resulting security logs according to the
+application's privacy and incident-response requirements.
+
+Applications can combine that audit event with fixed-cardinality metrics and a
+custom tracing adapter:
+
+```go
+audit, err := framework.NewJSONHTTPObserver(os.Stderr)
+if err != nil {
+    return err
+}
+metrics := framework.NewHTTPMetrics()
+observer := framework.NewHTTPObserverGroup(
+    audit,
+    metrics,
+    applicationTracingObserver,
+)
+
+server := &http.Server{
+    Handler: &framework.HTTPObservationHandler{
+        Handler:  mux,
+        Observer: observer,
+        Errors:   os.Stderr,
+    },
+}
+```
+
+`HTTPMetrics.Snapshot` exposes active/total requests, success, RPC/client/server
+errors, cancellations, 401/forbidden/429 counters, and total/maximum duration.
+It deliberately has no Principal, IP, path, or method labels, avoiding an
+attacker-controlled cardinality boundary. The application owns exporting the
+snapshot and authenticating any metrics endpoint.
+
+A custom `HTTPObserver` may start a vendor tracing span in `BeginHTTP`, return
+the span Context, and finish it from `EndHTTP`. Observer panics are contained and
+logged, but a blocking hook can still occupy the request goroutine; remote export
+therefore belongs behind an application-owned bounded queue.
+
+The complete trust boundaries, threat inventory, residual risks, audit schema,
+recommended alerts, and deployment checklist are maintained in
+[HTTP security and threat model](HTTP_SECURITY.md).
+
 ## Go configuration sources
 
 Go configuration is loaded before the Application lifecycle. `ConfigLoader`

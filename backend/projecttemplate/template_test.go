@@ -146,6 +146,21 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 		metadata.TemplateVersion != 2 || metadata.ProtocolVersion != 1 {
 		t.Fatalf("generated project metadata = %#v", metadata)
 	}
+	serverSource, err := os.ReadFile(filepath.Join(root, "backend", "cmd", "server", "main.go"))
+	if err != nil {
+		t.Fatalf("read generated server: %v", err)
+	}
+	for _, expected := range []string{
+		`flag.String("cors-origin", "",`,
+		"framework.NewJSONHTTPObserver(os.Stderr)",
+		"&framework.HTTPObservationHandler{",
+		"ReadHeaderTimeout: 5 * time.Second",
+		"MaxHeaderBytes:    64 << 10",
+	} {
+		if !strings.Contains(string(serverSource), expected) {
+			t.Fatalf("generated server does not contain %q:\n%s", expected, serverSource)
+		}
+	}
 	mainDart, err := os.ReadFile(filepath.Join(root, "lib", "main.dart"))
 	if err != nil {
 		t.Fatalf("read generated main.dart: %v", err)

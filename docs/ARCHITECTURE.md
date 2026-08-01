@@ -574,6 +574,16 @@ must therefore be concurrency-safe.
 - iOS Profile and Release use `Info.plist` with default App Transport Security.
 - Web release configuration should use HTTPS and an exact allowed origin.
 
+The complete server mux sits behind `HTTPObservationHandler`. That boundary
+generates a server-owned 128-bit request ID, returns it as `X-Request-ID`, and
+propagates it through Context. Its begin/end observer lifecycle supports tracing,
+fixed-cardinality metrics, and structured audit without changing the Router or
+transport contract. The reference JSON observer records direct client IP,
+surface, RPC method, a hashed Principal, status/error outcome, duration, and
+response bytes. It never records request paths, headers, bodies, params, tokens,
+or file capabilities. Observer panics are contained; blocking exporters remain
+an application concern.
+
 The HTTP adapter accepts an application-owned `Authenticator`, extracts a Bearer
 credential before RPC decoding, and propagates the returned Principal through the
 same Router Context used by Controllers and method policies. `RequirePermission`
@@ -592,7 +602,14 @@ exists.
 The default `dev-token` and a token compiled into Web assets are not production
 credentials. A production system needs TLS, runtime user/session credentials, rate
 limits, audit evidence, and a complete threat model, usually at the Go service and
-its trusted reverse proxy.
+its trusted reverse proxy. The generated direct server denies browser origins
+until explicitly configured and sets header, read, write, idle, and maximum-header
+limits. The repository's `bridra dev` and Make defaults retain wildcard CORS only
+for local development.
+
+The maintained [HTTP security and threat model](HTTP_SECURITY.md) records the
+trust boundaries, threat/control inventory, residual deployment duties, safe
+audit fields, alerting targets, and production checklist.
 
 ## Lifecycle differences
 

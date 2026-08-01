@@ -3,17 +3,19 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
+	"time"
 
-	"{{.GoModule}}/app"
 	"{{.BridraGoModule}}/framework"
+	"{{.GoModule}}/app"
 )
 
 func main() {
 	listen := flag.String("listen", "127.0.0.1:8080", "HTTP listen address")
 	token := flag.String("token", "", "RPC token; defaults to BRIDRA_BACKEND_TOKEN")
-	origin := flag.String("cors-origin", "*", "allowed browser origin")
+	origin := flag.String("cors-origin", "", "allowed browser origin; use * for local development")
 	flag.Parse()
 	if *token == "" {
 		*token = os.Getenv("BRIDRA_BACKEND_TOKEN")
@@ -50,6 +52,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "server: HTTP rate limiter: %v\n", err)
 		os.Exit(2)
 	}
+	httpObserver, err := framework.NewJSONHTTPObserver(os.Stderr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "server: HTTP observer: %v\n", err)
+		os.Exit(2)
+	}
 	mux := http.NewServeMux()
 	mux.Handle("/rpc", &framework.HTTPHandler{
 		Router: app.NewRouterWithFileTransfers(
@@ -61,16 +68,30 @@ func main() {
 		Authenticator: httpAuthenticator,
 		RateLimiter:   httpRateLimiter,
 		AllowedOrigin: *origin,
-		Errors: os.Stderr,
+		Errors:        os.Stderr,
 	})
 	mux.Handle("/rpc/files/", &framework.FileTransferHTTPHandler{
-		Store: fileTransfers,
+		Store:         fileTransfers,
 		AllowedOrigin: *origin,
-		Token: *token,
-		Errors: os.Stderr,
+		Token:         *token,
+		Errors:        os.Stderr,
 	})
 	fmt.Fprintf(os.Stderr, "server: listening on http://%s/rpc\n", *listen)
-	if err := http.ListenAndServe(*listen, mux); err != nil {
+	server := &http.Server{
+		Addr: *listen,
+		Handler: &framework.HTTPObservationHandler{
+			Handler:  mux,
+			Observer: httpObserver,
+			Errors:   os.Stderr,
+		},
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Minute,
+		WriteTimeout:      15 * time.Minute,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    64 << 10,
+		ErrorLog:          log.New(os.Stderr, "server: ", 0),
+	}
+	if err := server.ListenAndServe(); err != nil {
 		fmt.Fprintf(os.Stderr, "server: %v\n", err)
 		os.Exit(1)
 	}

@@ -31,6 +31,12 @@ func TestHTTPHandlerDispatchesRPCAndAllowsConfiguredOrigin(t *testing.T) {
 	if origin := recorder.Header().Get("Access-Control-Allow-Origin"); origin != "*" {
 		t.Fatalf("allow origin = %q", origin)
 	}
+	if cacheControl := recorder.Header().Get("Cache-Control"); cacheControl != "no-store" {
+		t.Fatalf("cache control = %q", cacheControl)
+	}
+	if contentTypeOptions := recorder.Header().Get("X-Content-Type-Options"); contentTypeOptions != "nosniff" {
+		t.Fatalf("content type options = %q", contentTypeOptions)
+	}
 	var response Response
 	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
 		t.Fatalf("decode response: %v", err)
@@ -68,7 +74,7 @@ func TestHTTPHandlerSupportsCORSPreflight(t *testing.T) {
 	if headers := recorder.Header().Get("Access-Control-Allow-Headers"); headers != "Authorization, Content-Type" {
 		t.Fatalf("allow headers = %q", headers)
 	}
-	if headers := recorder.Header().Get("Access-Control-Expose-Headers"); headers != "Retry-After, WWW-Authenticate" {
+	if headers := recorder.Header().Get("Access-Control-Expose-Headers"); headers != "Retry-After, WWW-Authenticate, X-Request-ID" {
 		t.Fatalf("expose headers = %q", headers)
 	}
 }

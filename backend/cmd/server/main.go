@@ -82,6 +82,14 @@ func main() {
 		}
 		os.Exit(2)
 	}
+	httpObserver, err := framework.NewJSONHTTPObserver(os.Stderr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "server: HTTP observer: %v\n", err)
+		if shutdownErr := shutdownApplication(application); shutdownErr != nil {
+			fmt.Fprintf(os.Stderr, "server: application shutdown: %v\n", shutdownErr)
+		}
+		os.Exit(2)
+	}
 
 	mux := http.NewServeMux()
 	mux.Handle("/rpc", &framework.HTTPHandler{
@@ -99,12 +107,17 @@ func main() {
 	})
 
 	server := &http.Server{
-		Addr:              *listenAddress,
-		Handler:           mux,
+		Addr: *listenAddress,
+		Handler: &framework.HTTPObservationHandler{
+			Handler:  mux,
+			Observer: httpObserver,
+			Errors:   os.Stderr,
+		},
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Minute,
 		WriteTimeout:      15 * time.Minute,
 		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    64 << 10,
 		ErrorLog:          log.New(os.Stderr, "server: ", 0),
 	}
 	listener, err := net.Listen("tcp", *listenAddress)

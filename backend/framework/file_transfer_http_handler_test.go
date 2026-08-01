@@ -506,4 +506,7 @@ func TestFileTransferHTTPHandlerSupportsPreflightAndRequiresStore(t *testing.T) 
 	if got := recorder.Header().Get("Access-Control-Allow-Methods"); got != "GET, HEAD, POST, PATCH, OPTIONS" {
 		t.Fatalf("allowed methods = %q", got)
 	}
+	if got := recorder.Header().Get("Access-Control-Expose-Headers"); !strings.Contains(got, "X-Request-ID") {
+		t.Fatalf("exposed headers = %q", got)
+	}
 }

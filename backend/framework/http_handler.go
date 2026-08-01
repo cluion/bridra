@@ -23,6 +23,9 @@ type HTTPHandler struct {
 }
 
 func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	markHTTPObservationSurface(r.Context(), "rpc")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	if h.Router == nil {
 		h.writeError(w, http.StatusInternalServerError, "configuration_error", "The HTTP backend is not configured.")
 		return
@@ -39,9 +42,6 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Allow", "POST, OPTIONS")
 		h.writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Use POST for RPC requests.")
 		return
-	}
-	if h.Authenticator != nil || h.RateLimiter != nil {
-		w.Header().Set("Cache-Control", "no-store")
 	}
 	if h.Authenticator != nil {
 		if authenticatorIsNil(h.Authenticator) {
@@ -69,6 +69,7 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		r = r.WithContext(ContextWithPrincipal(r.Context(), principal))
+		markHTTPObservationPrincipal(r.Context(), principal.Subject())
 	}
 	if h.RateLimiter != nil {
 		if rateLimiterIsNil(h.RateLimiter) {
@@ -124,12 +125,17 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusBadRequest, "invalid_json", "The request must contain one JSON object.")
 		return
 	}
+	markHTTPObservationRPCMethod(r.Context(), request.Method)
 
 	if request.Meta[streamRequestMeta] == "1" {
 		h.writeStream(w, r, request)
 		return
 	}
-	h.writeJSON(w, http.StatusOK, h.Router.Dispatch(r.Context(), request))
+	response := h.Router.Dispatch(r.Context(), request)
+	if response.Error != nil {
+		markHTTPObservationError(w, response.Error.Code)
+	}
+	h.writeJSON(w, http.StatusOK, response)
 }
 
 func (h *HTTPHandler) writeStream(
@@ -156,6 +162,9 @@ func (h *HTTPHandler) writeStream(
 		r.Context(),
 		request,
 		func(response Response) error {
+			if response.Error != nil {
+				markHTTPObservationError(w, response.Error.Code)
+			}
 			if err := encoder.Encode(response); err != nil {
 				return err
 			}
@@ -186,7 +195,7 @@ func (h *HTTPHandler) allowOrigin(w http.ResponseWriter, r *http.Request) bool {
 	}
 	w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-	w.Header().Set("Access-Control-Expose-Headers", "Retry-After, WWW-Authenticate")
+	w.Header().Set("Access-Control-Expose-Headers", "Retry-After, WWW-Authenticate, X-Request-ID")
 	return true
 }
 
@@ -238,6 +247,7 @@ func retryAfterSeconds(retryAfter time.Duration) string {
 }
 
 func (h *HTTPHandler) writeError(w http.ResponseWriter, status int, code, message string) {
+	markHTTPObservationError(w, code)
 	h.writeJSON(w, status, Response{Error: NewError(code, message)})
 }
 
