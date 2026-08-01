@@ -5,6 +5,8 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-01
+
 ### Added
 
 - Added application-owned HTTP Bearer authentication with Principal propagation,
@@ -28,6 +30,19 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 - Hardened generated HTTP servers with fail-closed direct-server CORS defaults,
   explicit header/read/write/idle limits, bounded headers, `no-store`, and
   `nosniff` responses.
+- Registered an automatic `0.9.0` to `0.10.0` dependency and metadata upgrade.
+  Existing application-owned HTTP entrypoints remain compatible and unchanged;
+  adopting the new authentication, rate-limiting, observability, and server
+  hardening controls is explicit.
+- Kept Project Template version `2`, project metadata schema `2`, and RPC
+  protocol version `1`. The release adds public Go HTTP security APIs and the
+  public Dart `RpcRateLimitedException` without changing RPC envelopes.
+
+### Support
+
+- The latest `0.10.x` release receives best-effort security fixes until the next
+  minor line is published. The `0.9.x` line is no longer supported after this
+  release.
 
 ## [0.9.0] - 2026-07-31
 

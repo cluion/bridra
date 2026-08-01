@@ -101,6 +101,12 @@ var registeredUpgradeReleases = []upgradeRelease{
 		TemplateVersion:        2,
 		ProtocolVersion:        1,
 	},
+	{
+		FrameworkVersion:       "0.10.0",
+		ProjectMetadataVersion: 2,
+		TemplateVersion:        2,
+		ProtocolVersion:        1,
+	},
 }
 
 var registeredFrameworkMigrations = []frameworkMigration{
@@ -172,6 +178,13 @@ var registeredFrameworkMigrations = []frameworkMigration{
 		From:        "0.8.0",
 		To:          "0.9.0",
 		Description: "Update the Go and Flutter framework dependencies for opt-in Redis-backed Queue and Scheduler stores.",
+		Automatic:   true,
+	},
+	{
+		ID:          "framework-0.9.0-to-0.10.0",
+		From:        "0.9.0",
+		To:          "0.10.0",
+		Description: "Update the Go and Flutter framework dependencies for opt-in HTTP authentication, rate limiting, and observability.",
 		Automatic:   true,
 	},
 }

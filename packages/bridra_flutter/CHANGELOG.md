@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.10.0 - 2026-08-01
+
 - Updated `HttpRpcClient` unary and streaming requests to send the configured
   token as an HTTP Bearer credential while retaining RPC envelope compatibility.
 - Added `RpcRateLimitedException` so HTTP clients expose the server's optional

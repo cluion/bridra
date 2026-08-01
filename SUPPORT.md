@@ -1,7 +1,7 @@
 # Bridra support
 
-Bridra 0.9 is the current pre-1.0 framework line and is maintained on a
-best-effort basis until the next minor line is published. Bridra 0.8 and older
+Bridra 0.10 is the current pre-1.0 framework line and is maintained on a
+best-effort basis until the next minor line is published. Bridra 0.9 and older
 lines are no longer supported. There is no production support SLA or LTS
 version.
 
