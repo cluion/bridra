@@ -709,6 +709,51 @@ token does not also need to equal the Sidecar secret. Do not treat that local
 transport secret, the static HTTP adapter, rate limiting, audit logging, or a
 trusted proxy as interchangeable security controls.
 
+### HTTP rate limiting
+
+The reference server also enables `MemoryRateLimiter`. Its default token bucket
+allows a burst of 600 requests and replenishes that budget over one minute, with
+at most 10,000 active identity keys. Exhausted requests return HTTP `429`, the
+stable `rate_limited` error code, and a whole-second `Retry-After` header. One
+streaming RPC consumes one token when its HTTP request begins; progress frames do
+not consume additional tokens. `HttpRpcClient` maps unary and streaming 429
+responses to `RpcRateLimitedException`; its nullable `retryAfter` contains the
+server duration when the header is a valid non-negative number of seconds.
+
+The default key is an opaque SHA-256 identity derived from the authenticated
+Principal subject. Without a Principal it falls back to the direct socket IP from
+`RemoteAddr`. It deliberately ignores `Forwarded` and `X-Forwarded-For`, because
+accepting those headers without a trusted-proxy boundary would let clients choose
+their own rate-limit identity. A deployment behind a trusted proxy may provide an
+explicit `HTTPHandler.RateLimitKey` function after validating its proxy chain.
+
+```go
+options := framework.DefaultMemoryRateLimiterOptions()
+options.Requests = 120
+options.Window = time.Minute
+
+limiter, err := framework.NewMemoryRateLimiter(options)
+if err != nil {
+    return err
+}
+
+handler := &framework.HTTPHandler{
+    Router:        router,
+    Authenticator: authenticator,
+    RateLimiter:   limiter,
+}
+```
+
+The memory limiter is process-local and bounds its key map to avoid identity-key
+memory exhaustion. At capacity, a new identity is denied until an inactive key can
+expire. Multi-process or multi-host deployments implement the same `RateLimiter`
+interface with an application-owned shared store such as Redis.
+
+Rate limiting runs after successful HTTP authentication and before request-body
+decoding. Invalid credential attempts therefore need a separate IP-based control
+at the trusted proxy or identity provider; changing an untrusted forwarded header
+must never bypass that control.
+
 ## Go configuration sources
 
 Go configuration is loaded before the Application lifecycle. `ConfigLoader`

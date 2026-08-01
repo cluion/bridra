@@ -72,11 +72,22 @@ func main() {
 		}
 		os.Exit(2)
 	}
+	httpRateLimiter, err := framework.NewMemoryRateLimiter(
+		framework.DefaultMemoryRateLimiterOptions(),
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "server: HTTP rate limiter: %v\n", err)
+		if shutdownErr := shutdownApplication(application); shutdownErr != nil {
+			fmt.Fprintf(os.Stderr, "server: application shutdown: %v\n", shutdownErr)
+		}
+		os.Exit(2)
+	}
 
 	mux := http.NewServeMux()
 	mux.Handle("/rpc", &framework.HTTPHandler{
 		Router:        application.Router(),
 		Authenticator: httpAuthenticator,
+		RateLimiter:   httpRateLimiter,
 		AllowedOrigin: *allowedOrigin,
 		Errors:        os.Stderr,
 	})

@@ -47,6 +47,8 @@ distribution channels.
 - Validation, structured exceptions, route groups, policies, and lifecycle hooks
 - HTTP Bearer authentication, request Principals, and permission policies with
   stable unauthenticated/forbidden errors
+- Bounded per-Principal/IP HTTP rate limiting with a pluggable limiter interface
+  and stable 429 retry responses
 - Synchronous Events, queued listeners, in-memory, durable local, shared SQL, or
   shared Redis background Jobs, and process-local, durable local, shared SQL, or
   shared Redis coordinated scheduled Tasks

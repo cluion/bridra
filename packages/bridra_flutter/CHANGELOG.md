@@ -4,6 +4,8 @@
 
 - Updated `HttpRpcClient` unary and streaming requests to send the configured
   token as an HTTP Bearer credential while retaining RPC envelope compatibility.
+- Added `RpcRateLimitedException` so HTTP clients expose the server's optional
+  `Retry-After` duration for 429 responses.
 
 ## 0.9.0 - 2026-07-31
 

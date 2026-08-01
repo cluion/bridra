@@ -103,6 +103,11 @@ class HttpRpcClient implements RpcClient {
       }
     }
 
+    if (response.statusCode == 429) {
+      throw RpcRateLimitedException(
+        retryAfter: _parseRetryAfter(response.headers['retry-after']),
+      );
+    }
     if (response.statusCode != 200) {
       throw BackendTransportException(
         'The Go HTTP backend returned status ${response.statusCode}.',
@@ -172,6 +177,11 @@ class HttpRpcClient implements RpcClient {
         (_) => throw abortError!,
       );
       final response = await Future.any([responseFuture, abortFuture]);
+      if (response.statusCode == 429) {
+        throw RpcRateLimitedException(
+          retryAfter: _parseRetryAfter(response.headers['retry-after']),
+        );
+      }
       if (response.statusCode != 200) {
         throw BackendTransportException(
           'The Go HTTP backend returned status ${response.statusCode}.',
@@ -239,6 +249,13 @@ class HttpRpcClient implements RpcClient {
         abort.complete();
       }
     }
+  }
+
+  Duration? _parseRetryAfter(String? value) {
+    if (value == null) return null;
+    final seconds = int.tryParse(value.trim());
+    if (seconds == null || seconds < 0) return null;
+    return Duration(seconds: seconds);
   }
 
   @override

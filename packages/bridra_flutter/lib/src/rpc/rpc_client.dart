@@ -257,6 +257,13 @@ class BackendTransportException extends BackendConnectionException {
   final Object? cause;
 }
 
+class RpcRateLimitedException extends BackendConnectionException {
+  const RpcRateLimitedException({this.retryAfter})
+    : super('The backend rate limit was exceeded.');
+
+  final Duration? retryAfter;
+}
+
 class BackendProtocolException extends BackendConnectionException {
   const BackendProtocolException(super.message, {this.cause});
 

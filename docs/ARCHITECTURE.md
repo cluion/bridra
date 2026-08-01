@@ -581,6 +581,14 @@ performs exact application permission checks without coupling Controllers to HTT
 The generated server enables this boundary with the existing static development
 token; applications replace that adapter with their user/session identity provider.
 
+After authentication, the HTTP adapter asks its application-owned `RateLimiter`
+for one decision before decoding the RPC body. The default process-local token
+bucket uses opaque Principal/IP keys, has a bounded identity map, ignores untrusted
+forwarding headers, and returns `429` with `Retry-After`. Multi-instance services
+replace it with a shared-store implementation; invalid-credential throttling stays
+at the trusted proxy or identity provider because it occurs before a Principal
+exists.
+
 The default `dev-token` and a token compiled into Web assets are not production
 credentials. A production system needs TLS, runtime user/session credentials, rate
 limits, audit evidence, and a complete threat model, usually at the Go service and

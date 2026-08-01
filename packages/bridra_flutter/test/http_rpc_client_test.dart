@@ -66,6 +66,22 @@ void main() {
       statusClient.stream('reports.build').toList(),
       throwsA(isA<BackendTransportException>()),
     );
+    final limitedClient = HttpRpcClient(
+      endpoint: Uri.parse('https://backend.example/rpc'),
+      token: 'remote-token',
+      client: StreamingResponseClient(statusCode: 429, retryAfter: '3'),
+    );
+    addTearDown(limitedClient.close);
+    await expectLater(
+      limitedClient.stream('reports.build').toList(),
+      throwsA(
+        isA<RpcRateLimitedException>().having(
+          (error) => error.retryAfter,
+          'retryAfter',
+          const Duration(seconds: 3),
+        ),
+      ),
+    );
 
     final sequenceClient = HttpRpcClient(
       endpoint: Uri.parse('https://backend.example/rpc'),
@@ -231,6 +247,25 @@ void main() {
     await expectLater(
       client.call('system.health'),
       throwsA(isA<BackendTransportException>()),
+    );
+
+    final limitedClient = HttpRpcClient(
+      endpoint: Uri.parse('https://backend.example/rpc'),
+      token: 'remote-token',
+      client: MockClient(
+        (_) async => http.Response('', 429, headers: {'retry-after': '7'}),
+      ),
+    );
+    addTearDown(limitedClient.close);
+    await expectLater(
+      limitedClient.call('system.health'),
+      throwsA(
+        isA<RpcRateLimitedException>().having(
+          (error) => error.retryAfter,
+          'retryAfter',
+          const Duration(seconds: 7),
+        ),
+      ),
     );
   });
 
@@ -600,10 +635,15 @@ class AbortObservingClient extends http.BaseClient {
 }
 
 class StreamingResponseClient extends http.BaseClient {
-  StreamingResponseClient({this.frames, this.statusCode = 200});
+  StreamingResponseClient({
+    this.frames,
+    this.statusCode = 200,
+    this.retryAfter,
+  });
 
   final List<Map<String, Object?>> Function(Object? id)? frames;
   final int statusCode;
+  final String? retryAfter;
   Map<String, dynamic> payload = {};
   String? authorization;
 
@@ -644,7 +684,10 @@ class StreamingResponseClient extends http.BaseClient {
     return http.StreamedResponse(
       Stream.value(utf8.encode('$body\n')),
       statusCode,
-      headers: const {'content-type': 'application/x-ndjson'},
+      headers: {
+        'content-type': 'application/x-ndjson',
+        'retry-after': ?retryAfter,
+      },
     );
   }
 }

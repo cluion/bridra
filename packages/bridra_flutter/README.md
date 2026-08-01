@@ -10,6 +10,7 @@ It provides:
 - the common RPC client contract and error types;
 - an HTTP RPC client that sends Bearer credentials for mobile, Web, and remote
   backends;
+- typed HTTP 429 handling with optional `Retry-After` duration;
 - a managed Go sidecar client for Windows, macOS, and Linux;
 - verified out-of-band file uploads and resumable downloads for HTTP and
   Desktop Sidecars;

@@ -43,6 +43,13 @@ func main() {
 		fmt.Fprintf(os.Stderr, "server: HTTP authenticator: %v\n", err)
 		os.Exit(2)
 	}
+	httpRateLimiter, err := framework.NewMemoryRateLimiter(
+		framework.DefaultMemoryRateLimiterOptions(),
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "server: HTTP rate limiter: %v\n", err)
+		os.Exit(2)
+	}
 	mux := http.NewServeMux()
 	mux.Handle("/rpc", &framework.HTTPHandler{
 		Router: app.NewRouterWithFileTransfers(
@@ -52,6 +59,7 @@ func main() {
 			fileTransfers,
 		),
 		Authenticator: httpAuthenticator,
+		RateLimiter:   httpRateLimiter,
 		AllowedOrigin: *origin,
 		Errors: os.Stderr,
 	})

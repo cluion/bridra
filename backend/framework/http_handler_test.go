@@ -47,6 +47,10 @@ func TestHTTPHandlerSupportsCORSPreflight(t *testing.T) {
 			t.Fatal("preflight called the authenticator")
 			return Principal{}, nil
 		}),
+		RateLimiter: RateLimiterFunc(func(context.Context, string) (RateLimitDecision, error) {
+			t.Fatal("preflight called the rate limiter")
+			return RateLimitDecision{}, nil
+		}),
 		AllowedOrigin: "http://localhost:3000",
 	}
 	request := httptest.NewRequest(http.MethodOptions, "/rpc", nil)
@@ -63,6 +67,9 @@ func TestHTTPHandlerSupportsCORSPreflight(t *testing.T) {
 	}
 	if headers := recorder.Header().Get("Access-Control-Allow-Headers"); headers != "Authorization, Content-Type" {
 		t.Fatalf("allow headers = %q", headers)
+	}
+	if headers := recorder.Header().Get("Access-Control-Expose-Headers"); headers != "Retry-After, WWW-Authenticate" {
+		t.Fatalf("expose headers = %q", headers)
 	}
 }
 
@@ -237,6 +244,146 @@ func TestHTTPHandlerKeepsPermissionDenialInRPCEnvelope(t *testing.T) {
 	}
 	if controllerCalled {
 		t.Fatal("controller ran after permission denial")
+	}
+}
+
+func TestHTTPHandlerRateLimitsAuthenticatedPrincipals(t *testing.T) {
+	alice, err := NewPrincipal("alice")
+	if err != nil {
+		t.Fatalf("new Alice principal: %v", err)
+	}
+	bob, err := NewPrincipal("bob")
+	if err != nil {
+		t.Fatalf("new Bob principal: %v", err)
+	}
+	limiter, err := NewMemoryRateLimiter(MemoryRateLimiterOptions{
+		Requests: 1,
+		Window:   time.Minute,
+		MaxKeys:  2,
+	})
+	if err != nil {
+		t.Fatalf("new rate limiter: %v", err)
+	}
+	fixed := time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC)
+	limiter.now = func() time.Time { return fixed }
+	router := NewRouter()
+	router.Handle("echo", func(*Context) (any, error) { return "ok", nil })
+	handler := &HTTPHandler{
+		Router: router,
+		Authenticator: AuthenticatorFunc(func(_ context.Context, credential string) (Principal, error) {
+			if credential == "alice-token" {
+				return alice, nil
+			}
+			return bob, nil
+		}),
+		RateLimiter: limiter,
+	}
+
+	request := func(token string) *http.Request {
+		value := httptest.NewRequest(http.MethodPost, "/rpc", strings.NewReader(`{"id":"1","method":"echo"}`))
+		value.Header.Set("Authorization", "Bearer "+token)
+		value.Header.Set("Content-Type", "application/json")
+		return value
+	}
+	first := httptest.NewRecorder()
+	handler.ServeHTTP(first, request("alice-token"))
+	if first.Code != http.StatusOK {
+		t.Fatalf("first Alice status = %d, body = %s", first.Code, first.Body.String())
+	}
+	denied := httptest.NewRecorder()
+	handler.ServeHTTP(denied, request("alice-token"))
+	if denied.Code != http.StatusTooManyRequests {
+		t.Fatalf("denied status = %d, body = %s", denied.Code, denied.Body.String())
+	}
+	if retryAfter := denied.Header().Get("Retry-After"); retryAfter != "60" {
+		t.Fatalf("retry after = %q", retryAfter)
+	}
+	var response Response
+	if err := json.NewDecoder(denied.Body).Decode(&response); err != nil {
+		t.Fatalf("decode denied response: %v", err)
+	}
+	if response.Error == nil || response.Error.Code != "rate_limited" {
+		t.Fatalf("denied response = %#v", response)
+	}
+	bobRequest := httptest.NewRecorder()
+	handler.ServeHTTP(bobRequest, request("bob-token"))
+	if bobRequest.Code != http.StatusOK {
+		t.Fatalf("Bob status = %d, body = %s", bobRequest.Code, bobRequest.Body.String())
+	}
+}
+
+func TestHTTPHandlerRateLimitsRemoteIPWithoutTrustingForwardedHeaders(t *testing.T) {
+	limiter, err := NewMemoryRateLimiter(MemoryRateLimiterOptions{
+		Requests: 1,
+		Window:   time.Minute,
+		MaxKeys:  2,
+	})
+	if err != nil {
+		t.Fatalf("new rate limiter: %v", err)
+	}
+	fixed := time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC)
+	limiter.now = func() time.Time { return fixed }
+	router := NewRouter()
+	router.Handle("echo", func(*Context) (any, error) { return "ok", nil })
+	handler := &HTTPHandler{Router: router, RateLimiter: limiter}
+	request := func(remoteAddress, forwardedFor string) *http.Request {
+		value := httptest.NewRequest(http.MethodPost, "/rpc", strings.NewReader(`{"id":"1","method":"echo"}`))
+		value.RemoteAddr = remoteAddress
+		value.Header.Set("Content-Type", "application/json")
+		value.Header.Set("X-Forwarded-For", forwardedFor)
+		return value
+	}
+
+	first := httptest.NewRecorder()
+	handler.ServeHTTP(first, request("192.0.2.10:1234", "198.51.100.1"))
+	spoofed := httptest.NewRecorder()
+	handler.ServeHTTP(spoofed, request("192.0.2.10:5678", "198.51.100.2"))
+	differentIP := httptest.NewRecorder()
+	handler.ServeHTTP(differentIP, request("192.0.2.11:1234", "198.51.100.1"))
+
+	if first.Code != http.StatusOK || spoofed.Code != http.StatusTooManyRequests || differentIP.Code != http.StatusOK {
+		t.Fatalf("statuses = %d, %d, %d", first.Code, spoofed.Code, differentIP.Code)
+	}
+}
+
+func TestHTTPHandlerHidesRateLimiterFailure(t *testing.T) {
+	var logs bytes.Buffer
+	handler := &HTTPHandler{
+		Router: NewRouter(),
+		RateLimiter: RateLimiterFunc(func(context.Context, string) (RateLimitDecision, error) {
+			return RateLimitDecision{}, errors.New("Redis password leaked")
+		}),
+		Errors: &logs,
+	}
+	request := httptest.NewRequest(http.MethodPost, "/rpc", strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	if strings.Contains(recorder.Body.String(), "Redis password") {
+		t.Fatalf("response leaked rate limiter error: %s", recorder.Body.String())
+	}
+	if !strings.Contains(logs.String(), "Redis password") {
+		t.Fatalf("logs = %q", logs.String())
+	}
+}
+
+func TestRetryAfterSecondsRoundsUpAndHasSafeMinimum(t *testing.T) {
+	tests := map[time.Duration]string{
+		0:                       "1",
+		time.Nanosecond:         "1",
+		time.Second:             "1",
+		time.Second + 1:         "2",
+		1500 * time.Millisecond: "2",
+	}
+	for duration, expected := range tests {
+		if actual := retryAfterSeconds(duration); actual != expected {
+			t.Fatalf("retry after %s = %q, want %q", duration, actual, expected)
+		}
 	}
 }
 

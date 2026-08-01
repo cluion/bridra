@@ -8,12 +8,16 @@ import (
 	"mime"
 	"net/http"
 	"reflect"
+	"strconv"
 	"strings"
+	"time"
 )
 
 type HTTPHandler struct {
 	Router        *Router
 	Authenticator Authenticator
+	RateLimiter   RateLimiter
+	RateLimitKey  HTTPRateLimitKeyFunc
 	AllowedOrigin string
 	Errors        io.Writer
 }
@@ -36,8 +40,10 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Use POST for RPC requests.")
 		return
 	}
-	if h.Authenticator != nil {
+	if h.Authenticator != nil || h.RateLimiter != nil {
 		w.Header().Set("Cache-Control", "no-store")
+	}
+	if h.Authenticator != nil {
 		if authenticatorIsNil(h.Authenticator) {
 			h.writeError(w, http.StatusInternalServerError, "configuration_error", "The HTTP authenticator is not configured.")
 			return
@@ -63,6 +69,35 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		r = r.WithContext(ContextWithPrincipal(r.Context(), principal))
+	}
+	if h.RateLimiter != nil {
+		if rateLimiterIsNil(h.RateLimiter) {
+			h.writeError(w, http.StatusInternalServerError, "configuration_error", "The HTTP rate limiter is not configured.")
+			return
+		}
+		principal, _ := PrincipalFromContext(r.Context())
+		keyFunc := h.RateLimitKey
+		if keyFunc == nil {
+			keyFunc = DefaultHTTPRateLimitKey
+		}
+		key, err := keyFunc(r, principal)
+		key = strings.TrimSpace(key)
+		if err != nil || key == "" || len(key) > maxRateLimitKeyBytes {
+			h.logf("http backend: resolve rate limit key: %v\n", err)
+			h.writeError(w, http.StatusInternalServerError, "rate_limit_error", "The request rate limit could not be evaluated.")
+			return
+		}
+		decision, err := h.RateLimiter.Allow(r.Context(), key)
+		if err != nil {
+			h.logf("http backend: evaluate rate limit: %v\n", err)
+			h.writeError(w, http.StatusServiceUnavailable, "rate_limit_unavailable", "Rate limiting is temporarily unavailable.")
+			return
+		}
+		if !decision.Allowed {
+			w.Header().Set("Retry-After", retryAfterSeconds(decision.RetryAfter))
+			h.writeError(w, http.StatusTooManyRequests, "rate_limited", "Too many requests were sent. Retry later.")
+			return
+		}
 	}
 
 	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
@@ -151,6 +186,7 @@ func (h *HTTPHandler) allowOrigin(w http.ResponseWriter, r *http.Request) bool {
 	}
 	w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Expose-Headers", "Retry-After, WWW-Authenticate")
 	return true
 }
 
@@ -178,6 +214,27 @@ func authenticatorIsNil(authenticator Authenticator) bool {
 	default:
 		return false
 	}
+}
+
+func rateLimiterIsNil(limiter RateLimiter) bool {
+	value := reflect.ValueOf(limiter)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
+	}
+}
+
+func retryAfterSeconds(retryAfter time.Duration) string {
+	seconds := int64(retryAfter / time.Second)
+	if retryAfter%time.Second != 0 {
+		seconds++
+	}
+	if seconds < 1 {
+		seconds = 1
+	}
+	return strconv.FormatInt(seconds, 10)
 }
 
 func (h *HTTPHandler) writeError(w http.ResponseWriter, status int, code, message string) {
