@@ -47,7 +47,8 @@ committed non-regression floors.
 
 `make runtime-stress` is the slower opt-in Runtime suite. It actively fuzzes
 Sidecar and HTTP RPC input, repeats race-enabled lifecycle and persistence
-checks, and exercises repeated Sidecar crash recovery. See
+checks, exercises repeated Sidecar crash recovery, and enforces bounded
+goroutine, heap, RSS, file-descriptor, and orphan-process growth. See
 [docs/RUNTIME_STRESS.md](docs/RUNTIME_STRESS.md) for tuning and CI policy.
 
 ## Change boundaries

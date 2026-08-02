@@ -2,7 +2,8 @@
 
 Bridra keeps long-running Runtime checks separate from `make verify`. The normal
 gate stays fast enough for every Pull Request, while `make runtime-stress`
-repeatedly exercises concurrency, lifecycle, persistence, and crash recovery.
+repeatedly exercises concurrency, lifecycle, persistence, crash recovery, and
+bounded resource stability.
 
 ## What it covers
 
@@ -15,6 +16,11 @@ repeatedly exercises concurrency, lifecycle, persistence, and crash recovery.
   work, drain, and stop.
 - Existing Sidecar concurrency, cancellation, backpressure, and real
   parent-death tests run repeatedly.
+- Go lifecycle resource snapshots force garbage collection around a warmed
+  baseline and fail on excessive retained heap, goroutine, or open-file growth.
+- A Linux `/proc` test drives a real Sidecar through concurrent request load and
+  crash/restart cycles, then fails on excessive RSS or file-descriptor growth
+  and any remaining orphan process.
 - SQLite always runs; PostgreSQL and Redis lifecycle and 24-contender tests run
   when their integration-test environment variables are configured.
 - The Flutter Sidecar client repeatedly crashes fake processes, verifies that
@@ -44,6 +50,27 @@ Run only the fuzz targets with:
 make runtime-fuzz RUNTIME_FUZZ_TIME=30s
 ```
 
+Run only the resource stability gate with:
+
+```bash
+make runtime-resources
+```
+
+The committed growth limits are four goroutines, 8 MiB of retained Go heap,
+four file descriptors, and 32 MiB of Linux process RSS. Tune them only for an
+explicit diagnostic run:
+
+```bash
+make runtime-resources \
+  RUNTIME_STRESS_CYCLES=200 \
+  RUNTIME_RESOURCE_MAX_HEAP_GROWTH_MIB=12 \
+  RUNTIME_RESOURCE_MAX_RSS_GROWTH_MIB=40
+```
+
+Go heap and goroutine checks run on every host. File-descriptor, real-process
+RSS, and orphan-process contracts use Linux `/proc` and are enforced by the
+hosted Runtime Stress workflow.
+
 ## CI policy
 
 `.github/workflows/runtime-stress.yml` runs every Monday at 03:37 UTC and can
@@ -60,8 +87,10 @@ validation. These semantics come from GitHub's
 
 ## Limits
 
-This suite is deterministic repetition and mutation testing, not a production
-load generator. It does not establish a throughput SLA, detect every memory
-leak, emulate weak networks, or replace physical Android/iOS and distribution
-testing. Production-specific capacity, endurance, profiling, and alerting
-remain application and operator responsibilities.
+This suite is deterministic repetition, mutation, and bounded resource
+stability testing, not a production load generator. Its warmed before/after
+thresholds catch sustained regressions but cannot prove that every leak is
+absent. It does not establish a throughput SLA, emulate weak networks, or
+replace physical Android/iOS and distribution testing. Production-specific
+capacity, long-duration endurance, profiling, and alerting remain application
+and operator responsibilities.

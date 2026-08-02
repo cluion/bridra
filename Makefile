@@ -37,13 +37,17 @@ COVERAGE_DIR := $(CURDIR)/coverage
 RUNTIME_FUZZ_TIME ?= 15s
 RUNTIME_STRESS_CYCLES ?= 50
 RUNTIME_STRESS_REPEATS ?= 5
+RUNTIME_RESOURCE_MAX_GOROUTINE_GROWTH ?= 4
+RUNTIME_RESOURCE_MAX_HEAP_GROWTH_MIB ?= 8
+RUNTIME_RESOURCE_MAX_FD_GROWTH ?= 4
+RUNTIME_RESOURCE_MAX_RSS_GROWTH_MIB ?= 32
 
 .PHONY: help setup doctor generate codegen-check license-check format backend-build backend-server-build backend-serve backend-format backend-test backend-public-api-test backend-sql-store-test backend-sql-job-store-test backend-vet transport-benchmark \
 	flutter-format flutter-package-test flutter-web-test flutter-test analyze verify coverage backend-coverage flutter-package-coverage flutter-app-coverage coverage-check linux-check linux-run linux-build \
 	linux-smoke macos-check macos-run macos-build macos-smoke windows-run \
 	windows-build windows-smoke windows-verify android-run android-build \
 	ios-run ios-build ios-simulator-build web-run web-build remote-release-check \
-	release-prepare release-check cli-release runtime-fuzz runtime-stress run
+	release-prepare release-check cli-release runtime-fuzz runtime-resources runtime-stress run
 
 help:
 	@echo "make setup        Install the pinned Flutter SDK and project dependencies"
@@ -53,6 +57,7 @@ help:
 	@echo "make verify       Run format checks, Go tests, Flutter tests, and analysis"
 	@echo "make coverage     Generate reports and enforce coverage non-regression floors"
 	@echo "make runtime-fuzz Fuzz Sidecar and HTTP RPC parsing"
+	@echo "make runtime-resources Check Runtime resource growth and orphan processes"
 	@echo "make runtime-stress Repeat Runtime lifecycle, concurrency, and recovery checks"
 	@echo "make transport-benchmark Measure JSON, binary-pipe, and managed-file transport costs"
 	@echo "make run          Run the starter on the current desktop platform"
@@ -142,7 +147,11 @@ runtime-fuzz:
 	cd backend && $(GO) test ./framework -run '^$$' -fuzz '^FuzzSidecarServerInput$$' -fuzztime='$(RUNTIME_FUZZ_TIME)'
 	cd backend && $(GO) test ./framework -run '^$$' -fuzz '^FuzzHTTPRPCInput$$' -fuzztime='$(RUNTIME_FUZZ_TIME)'
 
-runtime-stress: runtime-fuzz
+runtime-resources: backend-build
+	cd backend && BRIDRA_STRESS=1 BRIDRA_STRESS_CYCLES='$(RUNTIME_STRESS_CYCLES)' BRIDRA_RESOURCE_MAX_GOROUTINE_GROWTH='$(RUNTIME_RESOURCE_MAX_GOROUTINE_GROWTH)' BRIDRA_RESOURCE_MAX_HEAP_GROWTH_MIB='$(RUNTIME_RESOURCE_MAX_HEAP_GROWTH_MIB)' BRIDRA_RESOURCE_MAX_FD_GROWTH='$(RUNTIME_RESOURCE_MAX_FD_GROWTH)' $(GO) test -race -v ./framework -run '^TestRuntimeResourceStability$$' -count=1 -timeout=10m
+	BRIDRA_SIDECAR_PATH=$(SIDECAR) BRIDRA_RESOURCE_STRESS=1 BRIDRA_STRESS_CYCLES='$(RUNTIME_STRESS_CYCLES)' BRIDRA_RESOURCE_MAX_RSS_GROWTH_MIB='$(RUNTIME_RESOURCE_MAX_RSS_GROWTH_MIB)' BRIDRA_RESOURCE_MAX_FD_GROWTH='$(RUNTIME_RESOURCE_MAX_FD_GROWTH)' $(FLUTTER) test test/runtime_resource_stress_test.dart --plain-name 'real Sidecar resources stay bounded across load and restart cycles'
+
+runtime-stress: runtime-fuzz runtime-resources
 	cd backend && BRIDRA_STRESS=1 BRIDRA_STRESS_CYCLES='$(RUNTIME_STRESS_CYCLES)' $(GO) test -race ./framework -run '^TestRuntimeStress' -count=1 -timeout=10m
 	cd backend && $(GO) test -race ./framework -run '^(TestServerDispatchesRequestsConcurrentlyAndDrains|TestServerBoundsConcurrentRequests|TestServerCancellationReachesActiveAndPendingRequests|TestServerRejectsRequestsBeyondPendingLimit|TestServerStreamWindowAppliesBackpressureUntilAcknowledged|TestServerCancelsBackpressuredStreamsWhenInputCloses|TestParentProcessContextCancelsWhenParentExits)$$' -count='$(RUNTIME_STRESS_REPEATS)' -timeout=10m
 	cd backend/integration/sqljobstore && $(GO) test -race ./... -run '^(TestSQLiteStoresCoordinateReservationAndLifecycle|TestSQLiteSchedulerStoresCoordinateReservationAndLifecycle|TestPostgreSQLStoresCoordinateReservationAndLifecycle|TestPostgreSQLSchedulerStoresCoordinateReservationAndLifecycle)$$' -count='$(RUNTIME_STRESS_REPEATS)' -timeout=10m

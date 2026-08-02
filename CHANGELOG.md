@@ -18,6 +18,8 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
   while preserving stable RPC errors and containing reporter failures.
 - Added immutable Dart Sidecar diagnostics with bounded restart, health,
   process, pending-work, and safe error-type history.
+- Added bounded Runtime resource stability checks for goroutines, retained Go
+  heap, Linux process RSS, file descriptors, and orphaned Sidecars.
 
 ## [0.10.0] - 2026-08-01
 

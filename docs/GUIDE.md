@@ -245,8 +245,9 @@ make runtime-stress
 ```
 
 It combines native Go fuzzing with repeated race-enabled lifecycle,
-concurrency, shared-store contention, and Sidecar crash-recovery checks. The
-defaults and scheduled CI policy are documented in
+concurrency, shared-store contention, Sidecar crash recovery, and bounded
+goroutine, heap, RSS, file-descriptor, and orphan-process checks. The defaults
+and scheduled CI policy are documented in
 [Runtime stress verification](RUNTIME_STRESS.md).
 
 Individual build targets still accept `FLUTTER=flutter DART=dart` overrides for

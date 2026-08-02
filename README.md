@@ -142,7 +142,8 @@ make runtime-stress
 tests, external public APIs, real Sidecar and HTTP round trips, Chrome, Flutter
 tests, and static analysis. `make coverage` enforces the committed
 non-regression floors. `make runtime-stress` runs the slower fuzz, repeated
-lifecycle, concurrency, persistence, and Sidecar recovery suite.
+lifecycle, concurrency, persistence, Sidecar recovery, and bounded resource
+stability suite.
 
 ## Documentation
 
@@ -154,7 +155,7 @@ lifecycle, concurrency, persistence, and Sidecar recovery suite.
   abuse cases, framework controls, residual risks, audit fields, and production
   checklist
 - [Runtime stress verification](docs/RUNTIME_STRESS.md): fuzzing, repeated
-  lifecycle and persistence checks, scheduled CI, and test limits
+  lifecycle, persistence, resource stability, scheduled CI, and test limits
 - [Runtime diagnostics](docs/RUNTIME_DIAGNOSTICS.md): redacted support bundles,
   Sidecar lifecycle snapshots, and application-owned crash reporting
 - [Upgrading](docs/UPGRADING.md): planning, automatic apply, migrations,

@@ -82,7 +82,7 @@ jobs:
       - name: Install project Flutter SDK
         run: fvm install
 
-      - name: Stress Runtime lifecycle and transports
+      - name: Stress Runtime resources, lifecycle, and transports
         run: |
           make runtime-stress \
             RUNTIME_FUZZ_TIME="$RUNTIME_FUZZ_TIME" \
