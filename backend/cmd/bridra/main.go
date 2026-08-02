@@ -45,6 +45,7 @@ func newApplication(system doctorSystem) *application {
 		buildCommand{system: defaultBuildSystem()},
 		generateCommand{},
 		doctorCommand{system: system},
+		newDiagnoseCommand(system),
 	}
 	commands := make(map[string]command, len(registered))
 	order := make([]string, 0, len(registered))

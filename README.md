@@ -56,8 +56,8 @@ distribution channels.
   shared Redis background Jobs, and process-local, durable local, shared SQL, or
   shared Redis coordinated scheduled Tasks
 - `database/sql` lifecycle, transaction boundaries, and migration runner
-- Project creation, scaffolding, development supervision, builds, diagnostics,
-  release metadata, and transactional upgrades through one CLI
+- Project creation, scaffolding, development supervision, builds, redacted
+  support diagnostics, release metadata, and transactional upgrades through one CLI
 - Single-instance desktop ownership with later-launch activation forwarding
 - Parent-bound desktop Sidecars that shut down when their Flutter owner exits
 - Typed server streams with progress events, cancellation, and bounded
@@ -118,6 +118,7 @@ bridra make request CreateUser
 bridra generate
 bridra dev
 bridra build linux
+bridra diagnose
 bridra upgrade --plan
 bridra upgrade --apply
 ```
@@ -154,6 +155,8 @@ lifecycle, concurrency, persistence, and Sidecar recovery suite.
   checklist
 - [Runtime stress verification](docs/RUNTIME_STRESS.md): fuzzing, repeated
   lifecycle and persistence checks, scheduled CI, and test limits
+- [Runtime diagnostics](docs/RUNTIME_DIAGNOSTICS.md): redacted support bundles,
+  Sidecar lifecycle snapshots, and application-owned crash reporting
 - [Upgrading](docs/UPGRADING.md): planning, automatic apply, migrations,
   deprecation, and rollback
 - [Release process](docs/RELEASING.md): release authority, validation,

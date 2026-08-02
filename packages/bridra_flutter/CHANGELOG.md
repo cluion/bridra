@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added immutable `SidecarDiagnostics` snapshots with bounded process,
+  restart, health-check, pending-work, and error-type events suitable for
+  redacted support bundles.
+
 ## 0.10.0 - 2026-08-01
 
 - Updated `HttpRpcClient` unary and streaming requests to send the configured

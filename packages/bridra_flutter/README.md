@@ -144,3 +144,13 @@ Desktop-only code may import the explicit sidecar library:
 
 The default policy uses three restart attempts. Set
 `SidecarRestartPolicy.disabled()` only when the application owns recovery.
+
+Read an immutable, redacted lifecycle snapshot for support diagnostics:
+
+    final diagnostics = client.diagnostics();
+    final json = jsonEncode(diagnostics.toJson());
+
+The snapshot contains state, bounded counters, process exits, restart attempts,
+replacement health checks, recovery, and error type names. It never contains
+the executable path, token, RPC method, request data, responses, or log text.
+See the repository's Runtime diagnostics guide before persisting or sharing it.

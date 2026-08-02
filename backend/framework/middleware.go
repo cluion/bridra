@@ -21,17 +21,7 @@ func Traced(name string, middleware Middleware) Middleware {
 }
 
 func Recovery() Middleware {
-	return func(next Handler) Handler {
-		return func(ctx *Context) (result any, err error) {
-			defer func() {
-				if recovered := recover(); recovered != nil {
-					result = nil
-					err = NewError("internal_error", "The Go backend recovered from a panic.")
-				}
-			}()
-			return next(ctx)
-		}
-	}
+	return RecoveryWithReporter(nil)
 }
 
 func RequireRequestID() Middleware {

@@ -159,6 +159,12 @@ read the same CLI/framework version contract. Human-readable and schema-versione
 JSON output expose the framework/template/protocol versions, source commit, build date,
 toolchain target, module install path, and Dart compatibility constraint.
 
+`bridra diagnose` writes a new local support ZIP with schema-versioned CLI,
+toolchain, host, and project version-contract data. The archive never reads
+environment variables, logs, source, project identity, or absolute paths. An
+optional Sidecar snapshot crosses the Dart/CLI boundary only after strict size,
+field, enum, counter, timestamp, and event-count validation.
+
 `backend/cmd/bridra-release` cross-compiles static amd64/arm64 binaries for macOS,
 Linux, and Windows. It removes host paths and VCS stamping, injects explicit
 release metadata, writes deterministic `tar.gz`/`zip` archives, and emits one
@@ -276,6 +282,12 @@ global middleware -> route-group middleware -> group policy -> method policy -> 
 Policies return normal framework errors and never call the Controller after a
 rejection. Global recovery and logging middleware remain outside the route pipeline,
 so they also observe policy failures and unknown methods.
+
+`RecoveryWithReporter` preserves the stable recovered-panic RPC response while
+passing a copied stack and request correlation metadata to an application-owned
+`CrashReporter`. Reporter panics are contained. The framework does not choose a
+telemetry vendor, upload reports, or place detailed panic data in diagnostic
+bundles.
 
 ## Event dispatching
 

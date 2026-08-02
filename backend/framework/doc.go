@@ -5,5 +5,5 @@
 // task scheduling with local-file, shared-SQL, or shared-Redis coordination, SQL
 // database lifecycle and transaction boundaries, versioned schema migrations, grouped
 // RPC routing, middleware, method policies, typed validation rules, exception rendering,
-// and transport adapters.
+// recovered-panic reporting, and transport adapters.
 package framework

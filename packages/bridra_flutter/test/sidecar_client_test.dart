@@ -9,6 +9,53 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test(
+    'diagnostics expose bounded state without credentials or paths',
+    () async {
+      final process = FakeSidecarProcess();
+      final client = await _startClient(process);
+      addTearDown(client.close);
+
+      final pending = client.call('private.operation');
+      final request = await process.nextRequest();
+      final active = client.diagnostics();
+      expect(active.state, SidecarRuntimeState.running);
+      expect(active.pendingCalls, 1);
+      expect(active.activeStreams, 0);
+      expect(active.processStarts, 1);
+      expect(active.successfulRestarts, 0);
+      expect(
+        active.recentEvents.single.type,
+        SidecarDiagnosticEventType.processStarted,
+      );
+      expect(
+        () => active.recentEvents.add(
+          SidecarDiagnosticEvent(
+            timestamp: DateTime.now(),
+            type: SidecarDiagnosticEventType.closed,
+          ),
+        ),
+        throwsUnsupportedError,
+      );
+
+      process.respond({
+        'id': request['id'],
+        'result': 'ok',
+        'meta': <String, Object?>{},
+      });
+      await pending;
+      final encoded = jsonEncode(client.diagnostics().toJson());
+      expect(encoded, isNot(contains('test-token')));
+      expect(encoded, isNot(contains('/fake/sidecar')));
+      expect(encoded, isNot(contains('private.operation')));
+
+      await client.close();
+      final closed = client.diagnostics();
+      expect(closed.state, SidecarRuntimeState.closed);
+      expect(closed.recentEvents.last.type, SidecarDiagnosticEventType.closed);
+    },
+  );
+
+  test(
     'streams typed progress and data with acknowledgements after consumption',
     () async {
       final process = FakeSidecarProcess();
@@ -475,6 +522,24 @@ void main() {
     expect((await recovered).result, 'recovered');
     expect(starter.callCount, 2);
     expect(replacement.receivedRequestCount, 2);
+    final diagnostics = client.diagnostics();
+    expect(diagnostics.state, SidecarRuntimeState.running);
+    expect(diagnostics.processStarts, 2);
+    expect(diagnostics.successfulRestarts, 1);
+    expect(diagnostics.failedRestartAttempts, 0);
+    expect(diagnostics.lastExitCode, 17);
+    expect(
+      diagnostics.recentEvents.map((event) => event.type),
+      containsAllInOrder([
+        SidecarDiagnosticEventType.processExited,
+        SidecarDiagnosticEventType.sessionFailure,
+        SidecarDiagnosticEventType.restartAttempt,
+        SidecarDiagnosticEventType.processStarted,
+        SidecarDiagnosticEventType.healthCheckPassed,
+        SidecarDiagnosticEventType.restarted,
+      ]),
+    );
+    expect(jsonEncode(diagnostics.toJson()), isNot(contains('test-token')));
     expect(
       logs,
       contains('The Go sidecar restarted successfully (attempt 1/3).'),
@@ -897,6 +962,10 @@ void main() {
 
       expect(starter.callCount, cycles + 1);
       expect(logs.join('\n'), isNot(contains('test-token')));
+      final diagnostics = client.diagnostics();
+      expect(diagnostics.processStarts, cycles + 1);
+      expect(diagnostics.successfulRestarts, cycles);
+      expect(diagnostics.recentEvents, hasLength(50));
     },
     skip: Platform.environment['BRIDRA_STRESS'] == '1'
         ? false

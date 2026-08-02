@@ -37,6 +37,7 @@ func TestHelpListsRegisteredCommands(t *testing.T) {
 				"release",
 				"generate",
 				"doctor",
+				"diagnose",
 				"make",
 				"dev",
 				"build",
@@ -65,6 +66,7 @@ func TestHelpDescribesSpecificCommand(t *testing.T) {
 		{command: "upgrade", usage: "bridra upgrade [--plan | --apply] [--to version]"},
 		{command: "release", usage: "bridra release prepare <version> [--root path]"},
 		{command: "doctor", usage: "bridra doctor [--root path] [--strict]"},
+		{command: "diagnose", usage: "bridra diagnose [--root path] [--output path] [--runtime path]"},
 		{command: "dev", usage: "bridra dev [options]"},
 		{command: "build", usage: "bridra build <target> [options]"},
 	} {

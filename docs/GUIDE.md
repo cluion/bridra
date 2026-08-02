@@ -253,6 +253,23 @@ Individual build targets still accept `FLUTTER=flutter DART=dart` overrides for
 special environments. The complete `make verify` flow intentionally includes
 `bridra doctor` and therefore enforces the repository's FVM policy.
 
+## Create a diagnostic support bundle
+
+```bash
+bridra diagnose
+```
+
+This creates a new redacted ZIP under `build/diagnostics/` with toolchain,
+host, and project version-contract information. It does not include environment
+variables, credentials, requests, logs, source files, project identity, or
+absolute paths.
+
+Desktop applications can export `SidecarClient.diagnostics().toJson()` and pass
+that file through `--runtime`; the CLI strictly validates the bounded schema
+before including lifecycle counters, restart events, health checks, and error
+types. See [Runtime diagnostics and crash reporting](RUNTIME_DIAGNOSTICS.md) for
+the export example, privacy boundary, and `CrashReporter` integration.
+
 ## Community and governance
 
 Bridra uses committed policies and repository templates to keep maintenance and

@@ -97,6 +97,96 @@ typedef SidecarProcessStarter =
 
 enum _SidecarState { running, restarting, closing, closed, failed }
 
+enum SidecarRuntimeState { running, restarting, closing, closed, failed }
+
+enum SidecarDiagnosticEventType {
+  processStarted,
+  processExited,
+  sessionFailure,
+  restartAttempt,
+  healthCheckPassed,
+  restartFailed,
+  restarted,
+  restartExhausted,
+  closing,
+  closed,
+}
+
+class SidecarDiagnosticEvent {
+  const SidecarDiagnosticEvent({
+    required this.timestamp,
+    required this.type,
+    this.attempt,
+    this.exitCode,
+    this.errorType,
+  });
+
+  final DateTime timestamp;
+  final SidecarDiagnosticEventType type;
+  final int? attempt;
+  final int? exitCode;
+  final String? errorType;
+
+  Map<String, Object?> toJson() => {
+    'timestamp': timestamp.toUtc().toIso8601String(),
+    'type': _diagnosticEventTypeName(type),
+    if (attempt != null) 'attempt': attempt,
+    if (exitCode != null) 'exitCode': exitCode,
+    if (errorType != null) 'errorType': errorType,
+  };
+}
+
+class SidecarDiagnostics {
+  const SidecarDiagnostics({
+    required this.state,
+    required this.pendingCalls,
+    required this.activeStreams,
+    required this.processStarts,
+    required this.successfulRestarts,
+    required this.failedRestartAttempts,
+    required this.recentEvents,
+    this.lastExitCode,
+    this.failureType,
+  });
+
+  final SidecarRuntimeState state;
+  final int pendingCalls;
+  final int activeStreams;
+  final int processStarts;
+  final int successfulRestarts;
+  final int failedRestartAttempts;
+  final int? lastExitCode;
+  final String? failureType;
+  final List<SidecarDiagnosticEvent> recentEvents;
+
+  Map<String, Object?> toJson() => {
+    'schemaVersion': 1,
+    'state': state.name,
+    'pendingCalls': pendingCalls,
+    'activeStreams': activeStreams,
+    'processStarts': processStarts,
+    'successfulRestarts': successfulRestarts,
+    'failedRestartAttempts': failedRestartAttempts,
+    if (lastExitCode != null) 'lastExitCode': lastExitCode,
+    if (failureType != null) 'failureType': failureType,
+    'events': recentEvents.map((event) => event.toJson()).toList(),
+  };
+}
+
+String _diagnosticEventTypeName(SidecarDiagnosticEventType type) =>
+    switch (type) {
+      SidecarDiagnosticEventType.processStarted => 'process_started',
+      SidecarDiagnosticEventType.processExited => 'process_exited',
+      SidecarDiagnosticEventType.sessionFailure => 'session_failure',
+      SidecarDiagnosticEventType.restartAttempt => 'restart_attempt',
+      SidecarDiagnosticEventType.healthCheckPassed => 'health_check_passed',
+      SidecarDiagnosticEventType.restartFailed => 'restart_failed',
+      SidecarDiagnosticEventType.restarted => 'restarted',
+      SidecarDiagnosticEventType.restartExhausted => 'restart_exhausted',
+      SidecarDiagnosticEventType.closing => 'closing',
+      SidecarDiagnosticEventType.closed => 'closed',
+    };
+
 class SidecarClient implements RpcClient {
   SidecarClient._({
     required SidecarProcess process,
@@ -118,6 +208,7 @@ class SidecarClient implements RpcClient {
   final void Function(String line)? _onLog;
   final Map<String, _PendingSidecarCall> _pending = {};
   final Map<String, _PendingSidecarStream> _streams = {};
+  final List<SidecarDiagnosticEvent> _diagnosticEvents = [];
   final _closingSignal = Completer<void>();
   _SidecarSession? _session;
   Future<void> _writeQueue = Future.value();
@@ -127,6 +218,12 @@ class SidecarClient implements RpcClient {
   Object? _terminalError;
   var _nextID = 0;
   var _state = _SidecarState.running;
+  var _processStarts = 0;
+  var _successfulRestarts = 0;
+  var _failedRestartAttempts = 0;
+  int? _lastExitCode;
+
+  static const _maximumDiagnosticEvents = 50;
 
   static Future<SidecarClient> start({
     required String executablePath,
@@ -156,6 +253,27 @@ class SidecarClient implements RpcClient {
       onLog: onLog,
     );
   }
+
+  SidecarDiagnostics diagnostics() => SidecarDiagnostics(
+    state: switch (_state) {
+      _SidecarState.running => SidecarRuntimeState.running,
+      _SidecarState.restarting => SidecarRuntimeState.restarting,
+      _SidecarState.closing => SidecarRuntimeState.closing,
+      _SidecarState.closed => SidecarRuntimeState.closed,
+      _SidecarState.failed => SidecarRuntimeState.failed,
+    },
+    pendingCalls: _pending.length,
+    activeStreams: _streams.length,
+    processStarts: _processStarts,
+    successfulRestarts: _successfulRestarts,
+    failedRestartAttempts: _failedRestartAttempts,
+    lastExitCode: _lastExitCode,
+    failureType:
+        _state == _SidecarState.failed || _state == _SidecarState.restarting
+        ? _terminalError?.runtimeType.toString()
+        : null,
+    recentEvents: List.unmodifiable(_diagnosticEvents),
+  );
 
   @override
   Future<RpcReply> call(
@@ -543,6 +661,7 @@ class SidecarClient implements RpcClient {
 
     final wasRunning = _state == _SidecarState.running;
     _state = _SidecarState.closing;
+    _recordDiagnostic(SidecarDiagnosticEventType.closing);
     _terminalError = const BackendClosedException();
     _failPending(_terminalError!, StackTrace.current);
     if (!_closingSignal.isCompleted) {
@@ -579,9 +698,12 @@ class SidecarClient implements RpcClient {
       await _stopSession(replacement, graceful: false);
     }
     _state = _SidecarState.closed;
+    _recordDiagnostic(SidecarDiagnosticEventType.closed);
   }
 
   void _attachSession(SidecarProcess process) {
+    _processStarts++;
+    _recordDiagnostic(SidecarDiagnosticEventType.processStarted);
     final session = _SidecarSession(process);
     _session = session;
     session.stdoutSubscription = process.stdout
@@ -880,6 +1002,11 @@ class SidecarClient implements RpcClient {
   void _handleExit(_SidecarSession session, int exitCode) {
     session.exited = true;
     if (!identical(_session, session)) return;
+    _lastExitCode = exitCode;
+    _recordDiagnostic(
+      SidecarDiagnosticEventType.processExited,
+      exitCode: exitCode,
+    );
     if (_state == _SidecarState.closing ||
         _state == _SidecarState.closed ||
         _state == _SidecarState.failed) {
@@ -905,6 +1032,8 @@ class SidecarClient implements RpcClient {
     if (_state != _SidecarState.running || !identical(_session, session)) {
       return;
     }
+
+    _recordDiagnostic(SidecarDiagnosticEventType.sessionFailure, error: error);
 
     _terminalError = error;
     _failPending(error, stackTrace);
@@ -937,6 +1066,10 @@ class SidecarClient implements RpcClient {
 
     for (var attempt = 1; attempt <= _restartPolicy.maxAttempts; attempt++) {
       final delay = _restartPolicy.delayForAttempt(attempt);
+      _recordDiagnostic(
+        SidecarDiagnosticEventType.restartAttempt,
+        attempt: attempt,
+      );
       _emitLog(
         'Restarting the Go sidecar in ${delay.inMilliseconds} ms '
         '(attempt $attempt/${_restartPolicy.maxAttempts}).',
@@ -968,6 +1101,11 @@ class SidecarClient implements RpcClient {
 
         _terminalError = null;
         _state = _SidecarState.running;
+        _successfulRestarts++;
+        _recordDiagnostic(
+          SidecarDiagnosticEventType.restarted,
+          attempt: attempt,
+        );
         final ready = _restartReady;
         if (ready != null && !ready.isCompleted) {
           ready.complete();
@@ -979,6 +1117,12 @@ class SidecarClient implements RpcClient {
         return;
       } on Object catch (error, stackTrace) {
         lastError = error;
+        _failedRestartAttempts++;
+        _recordDiagnostic(
+          SidecarDiagnosticEventType.restartFailed,
+          attempt: attempt,
+          error: error,
+        );
         _emitLog(
           'Go sidecar restart attempt '
           '$attempt/${_restartPolicy.maxAttempts} failed: $error',
@@ -1015,6 +1159,10 @@ class SidecarClient implements RpcClient {
     );
     _terminalError = exhausted;
     _state = _SidecarState.failed;
+    _recordDiagnostic(
+      SidecarDiagnosticEventType.restartExhausted,
+      error: error,
+    );
     _failPending(exhausted, stackTrace);
     final ready = _restartReady;
     if (ready != null && !ready.isCompleted) {
@@ -1059,6 +1207,7 @@ class SidecarClient implements RpcClient {
           'The restarted Go sidecar returned an unhealthy status.',
         );
       }
+      _recordDiagnostic(SidecarDiagnosticEventType.healthCheckPassed);
     } on BackendConnectionException {
       rethrow;
     } on Object catch (error) {
@@ -1164,6 +1313,26 @@ class SidecarClient implements RpcClient {
       _onLog?.call(safeLine);
     } on Object {
       // Logging must never break the RPC transport.
+    }
+  }
+
+  void _recordDiagnostic(
+    SidecarDiagnosticEventType type, {
+    int? attempt,
+    int? exitCode,
+    Object? error,
+  }) {
+    _diagnosticEvents.add(
+      SidecarDiagnosticEvent(
+        timestamp: DateTime.now().toUtc(),
+        type: type,
+        attempt: attempt,
+        exitCode: exitCode,
+        errorType: error?.runtimeType.toString(),
+      ),
+    );
+    if (_diagnosticEvents.length > _maximumDiagnosticEvents) {
+      _diagnosticEvents.removeAt(0);
     }
   }
 

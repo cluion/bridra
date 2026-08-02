@@ -12,6 +12,12 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 - Added an opt-in Runtime stress target and weekly/manual CI workflow for
   repeated race-enabled Queue, Scheduler, persistence, concurrency,
   backpressure, parent-death, and Sidecar crash-recovery verification.
+- Added `bridra diagnose` for new redacted support bundles with optional,
+  strictly validated Sidecar lifecycle snapshots.
+- Added application-owned recovered-panic reporting through `CrashReporter`,
+  while preserving stable RPC errors and containing reporter failures.
+- Added immutable Dart Sidecar diagnostics with bounded restart, health,
+  process, pending-work, and safe error-type history.
 
 ## [0.10.0] - 2026-08-01
 
