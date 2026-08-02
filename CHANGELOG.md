@@ -3,7 +3,7 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
-## [Unreleased]
+## [0.10.1] - 2026-08-02
 
 ### Fixed
 
@@ -12,6 +12,13 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
   schema, and generated Go/Dart contracts together, while automatic framework
   migrations preserve application-owned protocol versions. Upgrade JSON schema
   `4` exposes the baseline as `target.templateProtocolVersion`.
+
+### Changed
+
+- Registered the automatic `0.10.0` to `0.10.1` dependency migration. Project
+  Template version `2`, project metadata schema `2`, and template protocol
+  baseline `1` remain unchanged; the application's verified protocol is
+  preserved.
 
 ### Added
 
