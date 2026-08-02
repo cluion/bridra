@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10.1 - 2026-08-02
 
 - Added immutable `SidecarDiagnostics` snapshots with bounded process,
   restart, health-check, pending-work, and error-type events suitable for

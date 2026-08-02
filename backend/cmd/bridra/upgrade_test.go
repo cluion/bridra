@@ -939,6 +939,19 @@ func TestCurrentUpgradeCatalogIncludesAutomaticHTTPSecurityRelease(t *testing.T)
 	}
 }
 
+func TestCurrentUpgradeCatalogIncludesAutomaticProtocolPlannerPatch(t *testing.T) {
+	path, available, err := currentUpgradeCatalog().migrationPath("0.10.0", "0.10.1")
+	if err != nil {
+		t.Fatalf("resolve protocol planner patch migration: %v", err)
+	}
+	if !available || len(path) != 1 {
+		t.Fatalf("protocol planner patch path = %#v, available = %t", path, available)
+	}
+	if path[0].ID != "framework-0.10.0-to-0.10.1" || !path[0].Automatic {
+		t.Fatalf("protocol planner patch migration = %#v", path[0])
+	}
+}
+
 func TestCurrentUpgradeCatalogPlansHTTPSecurityForCustomApplicationProtocol(t *testing.T) {
 	root := makeUpgradeProjectRoot(t, currentProjectMetadata("0.9.0", 2, 3))
 	var stdout bytes.Buffer

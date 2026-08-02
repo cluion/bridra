@@ -9,8 +9,8 @@ Run the read-only planner from a project root before changing dependencies:
 
 ```bash
 bridra upgrade
-bridra upgrade --plan --to 0.10.0
-bridra upgrade --plan --to 0.10.0 --json
+bridra upgrade --plan --to 0.10.1
+bridra upgrade --plan --to 0.10.1 --json
 ```
 
 When invoking the CLI through the backend dependency, use:
@@ -79,7 +79,7 @@ adding the necessary path fails verification.
 | Identity | Current | Compatibility rule |
 | --- | ---: | --- |
 | Project metadata schema | 2 | Schema 1 remains readable by core project commands but requires a metadata migration. A newer schema requires a newer CLI. |
-| Framework SemVer | 0.10.0 | The project and selected target must match. An older version requires a complete registered migration path; downgrade plans are rejected. |
+| Framework SemVer | 0.10.1 | The project and selected target must match. An older version requires a complete registered migration path; downgrade plans are rejected. |
 | Project Template | 2 | Older templates require manual review. A newer template cannot be evaluated by an older CLI. |
 | Application RPC protocol | Application-owned | `.bridra/project.json`, `schema/bridra.json`, and generated Go/Dart contracts must agree exactly. It may be newer than the selected release's Project Template baseline. |
 
@@ -232,7 +232,7 @@ the Go and Flutter dependencies together, add the version contract:
   "projectName": "your_app",
   "goModule": "example.com/your/app",
   "frameworkModule": "github.com/cluion/bridra/backend",
-  "frameworkVersion": "0.10.0",
+  "frameworkVersion": "0.10.1",
   "templateVersion": 2,
   "protocolVersion": 1
 }
@@ -259,6 +259,39 @@ the default for an unchanged generated Template 2 project.
 6. Run any platform builds required by the application before committing the
    upgrade.
 
+## Framework 0.10.0 to 0.10.1
+
+The `0.10.1` patch fixes the upgrade planner so a consistent application-owned
+RPC protocol may be newer than the selected Project Template baseline. Upgrade
+JSON schema `4` reports `project.protocolVersion` separately from
+`target.templateProtocolVersion`, and automatic framework migrations preserve
+the application protocol instead of overwriting it with the template default.
+
+The release also adds the redacted `bridra diagnose` support bundle,
+application-owned recovered-panic reporting, immutable Dart Sidecar diagnostics,
+and opt-in Runtime fuzz, stress, resource-growth, and orphan-process checks.
+These APIs and verification tools are additive. Project Template version `2`,
+project metadata schema `2`, and template protocol baseline `1` remain unchanged.
+Existing applications retain their own internally consistent protocol value.
+
+The dependency and metadata migration is automatic. Update both framework
+dependencies, then run the full verification:
+
+```bash
+cd backend
+go get github.com/cluion/bridra/backend@v0.10.1
+cd ..
+fvm flutter pub upgrade bridra_flutter
+make verify
+```
+
+After verification succeeds, update `.bridra/project.json` to framework version
+`0.10.1` without changing its application protocol. Roll back by removing any
+new diagnostic API usage, restoring the `0.10.0` dependencies and lockfiles,
+and restoring the previous framework metadata. No generated RPC contract or
+application protocol rollback is required unless the application changed its
+own schema independently.
+
 ## Framework 0.9.0 to 0.10.0
 
 The `0.10.0` public Go API additively introduces HTTP authentication and
@@ -269,8 +302,8 @@ Bearer credential while retaining the protocol-versioned RPC envelope token.
 
 The dependency and metadata migration is automatic because existing
 `HTTPHandler` configuration remains source compatible and the new controls are
-opt-in. Project Template version `2`, project metadata schema `2`, and RPC
-protocol version `1` remain unchanged. Bridra never overwrites an existing
+opt-in. Project Template version `2`, project metadata schema `2`, and template
+protocol baseline `1` remain unchanged. Bridra never overwrites an existing
 application-owned `backend/cmd/server/main.go`.
 
 To adopt the production controls, review [HTTP security and threat
@@ -348,37 +381,41 @@ previous Go and Flutter dependency versions, lockfiles, and project metadata.
 Stop persistent workers before rollback and retain their Store tables until
 pending work has been reconciled.
 
-## Framework 0.7.0 to 0.10.0
+## Framework 0.7.0 to 0.10.1
 
 The path contains the automatic `0.8.0` SQL-persistence, `0.9.0`
-Redis-persistence, and `0.10.0` HTTP-security dependency steps. The persistence
-and HTTP server controls are additive and opt-in. Project Template version `2`,
-project metadata schema `2`, and RPC protocol version `1` remain unchanged; the
-public Dart API gains `RpcRateLimitedException`.
+Redis-persistence, `0.10.0` HTTP-security, and `0.10.1` diagnostics and
+upgrade-planner dependency steps. The persistence and HTTP server controls are
+additive and opt-in. Project Template version `2`, project metadata schema `2`,
+and template protocol baseline `1` remain unchanged. The public Dart API gains
+`RpcRateLimitedException` and `SidecarDiagnostics`; the application's verified
+protocol is preserved.
 
-Update both framework dependencies to `0.10.0`, run `make generate` and
+Update both framework dependencies to `0.10.1`, run `make generate` and
 `make verify`, then update `.bridra/project.json`. Follow the adoption and
 rollback guidance above for the Store and HTTP controls selected by the
 application.
 
-## Framework 0.6.1 to 0.10.0
+## Framework 0.6.1 to 0.10.1
 
 The path contains the automatic `0.7.0` file-persistence, `0.8.0`
-SQL-persistence, `0.9.0` Redis-persistence, and `0.10.0` HTTP-security dependency
-steps. They are additive and opt-in. Project Template version `2`, project
-metadata schema `2`, and RPC protocol version `1` remain unchanged; the public
-Dart API gains `RpcRateLimitedException`.
+SQL-persistence, `0.9.0` Redis-persistence, `0.10.0` HTTP-security, and `0.10.1`
+diagnostics and upgrade-planner dependency steps. They are additive and opt-in.
+Project Template version `2`, project metadata schema `2`, and template protocol
+baseline `1` remain unchanged. The public Dart API gains
+`RpcRateLimitedException` and `SidecarDiagnostics`; the application's verified
+protocol is preserved.
 
-Update both framework dependencies to `0.10.0`, run `make generate` and
+Update both framework dependencies to `0.10.1`, run `make generate` and
 `make verify`, then update `.bridra/project.json`. Follow the adoption and
 rollback guidance above for the Store and HTTP controls selected by the
 application.
 
-## Framework 0.6.0 to 0.10.0
+## Framework 0.6.0 to 0.10.1
 
 The path contains the manual `0.6.0` to `0.6.1` generated-test repair followed
-by the automatic file-, SQL-, Redis-persistence, and HTTP-security dependency
-updates through `0.10.0`.
+by the automatic file-, SQL-, Redis-persistence, `0.10.0` HTTP-security, and
+`0.10.1` diagnostics and upgrade-planner dependency updates.
 
 Projects created with the `0.6.0` CLI contain a stale `FakeBackend` in
 `test/widget_test.dart`. Before running `make verify`, add the optional
@@ -387,19 +424,21 @@ Projects created with the `0.6.0` CLI contain a stale `FakeBackend` in
 not overwrite this application-owned test file. Then follow the persistent
 runtime and HTTP-security adoption and rollback guidance above.
 
-Update both framework dependencies to `0.10.0`, run `make generate` and
+Update both framework dependencies to `0.10.1`, run `make generate` and
 `make verify`, then update `.bridra/project.json`. Project Template version `2`,
-project metadata schema `2`, and RPC protocol version `1` remain unchanged; the
-public Dart API gains `RpcRateLimitedException`.
+project metadata schema `2`, and template protocol baseline `1` remain
+unchanged. The public Dart API gains `RpcRateLimitedException` and
+`SidecarDiagnostics`; the application's verified protocol is preserved.
 
-## Framework 0.5.0 to 0.10.0
+## Framework 0.5.0 to 0.10.1
 
 The migration path from `0.5.0` contains the automatic `0.6.0` framework step
 followed by the manual `0.6.1` generated-test repair and automatic file-, SQL-,
-Redis-persistence, and HTTP-security dependency steps through `0.10.0`. Typed
-server streaming, progress, bounded Sidecar backpressure, verified out-of-band
-file transfer, persistent runtime stores, and the new HTTP controls are additive
-and opt-in. Existing unary methods retain their wire envelopes and behavior.
+Redis-persistence, `0.10.0` HTTP-security, and `0.10.1` diagnostics and
+upgrade-planner dependency steps. Typed server streaming, progress, bounded
+Sidecar backpressure, verified out-of-band file transfer, persistent runtime
+stores, HTTP controls, and diagnostics are additive and opt-in. Existing unary
+methods retain their wire envelopes and behavior.
 
 Update the Go and Flutter framework dependencies together. Run `make generate`
 when the application schema opts into streaming or `file` request/response
@@ -407,7 +446,7 @@ fields, then run the full verification:
 
 ```bash
 cd backend
-go get github.com/cluion/bridra/backend@v0.10.0
+go get github.com/cluion/bridra/backend@v0.10.1
 cd ..
 fvm flutter pub upgrade bridra_flutter
 make generate
@@ -415,11 +454,13 @@ make verify
 ```
 
 After verification succeeds, update `.bridra/project.json` to framework version
-`0.10.0`. Project Template version `2`, project metadata schema `2`, and RPC
-protocol version `1` remain unchanged; the public Dart API gains
-`RpcRateLimitedException`. Roll back by restoring the previous Go and Flutter
-dependency versions, lockfiles, project metadata, and any application-owned
-HTTP integration that uses `0.10.0` APIs.
+`0.10.1`. Project Template version `2`, project metadata schema `2`, and template
+protocol baseline `1` remain unchanged. The public Dart API gains
+`RpcRateLimitedException` and `SidecarDiagnostics`; the application's verified
+protocol is preserved. Roll back by removing application-owned HTTP integration
+that uses `0.10.0` APIs and diagnostic integration that uses `0.10.1` APIs, then
+restore the previous Go and Flutter dependencies, lockfiles, and project
+metadata.
 
 ## Framework 0.4.0 to 0.5.0
 

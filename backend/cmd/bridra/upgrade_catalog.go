@@ -107,6 +107,12 @@ var registeredUpgradeReleases = []upgradeRelease{
 		TemplateVersion:         2,
 		TemplateProtocolVersion: 1,
 	},
+	{
+		FrameworkVersion:        "0.10.1",
+		ProjectMetadataVersion:  2,
+		TemplateVersion:         2,
+		TemplateProtocolVersion: 1,
+	},
 }
 
 var registeredFrameworkMigrations = []frameworkMigration{
@@ -185,6 +191,13 @@ var registeredFrameworkMigrations = []frameworkMigration{
 		From:        "0.9.0",
 		To:          "0.10.0",
 		Description: "Update the Go and Flutter framework dependencies for opt-in HTTP authentication, rate limiting, and observability.",
+		Automatic:   true,
+	},
+	{
+		ID:          "framework-0.10.0-to-0.10.1",
+		From:        "0.10.0",
+		To:          "0.10.1",
+		Description: "Update the Go and Flutter framework dependencies for runtime diagnostics and application-owned RPC protocol upgrade planning.",
 		Automatic:   true,
 	},
 }
