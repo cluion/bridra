@@ -5,6 +5,14 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 
 ## [Unreleased]
 
+### Added
+
+- Added native Go fuzz targets for malformed Sidecar and HTTP RPC input, with
+  response-validity and credential-redaction invariants.
+- Added an opt-in Runtime stress target and weekly/manual CI workflow for
+  repeated race-enabled Queue, Scheduler, persistence, concurrency,
+  backpressure, parent-death, and Sidecar crash-recovery verification.
+
 ## [0.10.0] - 2026-08-01
 
 ### Added

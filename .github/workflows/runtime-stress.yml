@@ -1,0 +1,99 @@
+name: Runtime Stress
+
+on:
+  schedule:
+    - cron: "37 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      fuzz_time:
+        description: Active fuzzing time per target
+        required: true
+        default: 30s
+      cycles:
+        description: Queue, Scheduler, and Sidecar lifecycle cycles
+        required: true
+        default: "100"
+      repeats:
+        description: Repetitions for existing concurrency and store tests
+        required: true
+        default: "10"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runtime-stress-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  runtime-stress:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: bridra
+          POSTGRES_PASSWORD: bridra
+          POSTGRES_DB: bridra_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bridra -d bridra_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:8.8.1-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      BRIDRA_TEST_POSTGRES_DSN: postgres://bridra:bridra@127.0.0.1:5432/bridra_test?sslmode=disable
+      BRIDRA_TEST_REDIS_ADDR: 127.0.0.1:6379
+      RUNTIME_FUZZ_TIME: ${{ inputs.fuzz_time || '30s' }}
+      RUNTIME_STRESS_CYCLES: ${{ inputs.cycles || '100' }}
+      RUNTIME_STRESS_REPEATS: ${{ inputs.repeats || '10' }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: |
+            backend/go.mod
+            backend/integration/sqljobstore/go.mod
+
+      - name: Install FVM
+        run: |
+          curl -fsSL https://fvm.app/install.sh -o /tmp/fvm-install.sh
+          bash /tmp/fvm-install.sh 4.1.2
+          echo "$HOME/fvm/bin" >> "$GITHUB_PATH"
+
+      - name: Install project Flutter SDK
+        run: fvm install
+
+      - name: Stress Runtime lifecycle and transports
+        run: |
+          make runtime-stress \
+            RUNTIME_FUZZ_TIME="$RUNTIME_FUZZ_TIME" \
+            RUNTIME_STRESS_CYCLES="$RUNTIME_STRESS_CYCLES" \
+            RUNTIME_STRESS_REPEATS="$RUNTIME_STRESS_REPEATS"
+
+      - name: Upload failing fuzz corpus
+        if: ${{ failure() && hashFiles('backend/framework/testdata/fuzz/**') != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: runtime-fuzz-failures
+          if-no-files-found: error
+          retention-days: 14
+          path: backend/framework/testdata/fuzz/

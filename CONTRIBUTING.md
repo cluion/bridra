@@ -7,7 +7,7 @@ changes that preserve its explicit Go/Flutter boundaries and generated contract.
 
 Bridra is licensed under the [MIT License](LICENSE), Copyright (c) 2026 Cluion.
 The license permits use, modification, distribution, sublicensing, and commercial
-use subject to preserving its copyright and permission notice. Bridra 0.6 is a
+use subject to preserving its copyright and permission notice. Bridra 0.10 is a
 pre-1.0 line: public APIs may evolve through documented SemVer releases and there
 is no LTS or production SLA.
 
@@ -37,12 +37,18 @@ make setup
 make doctor
 make verify
 make coverage
+make runtime-stress
 ```
 
 `make verify` includes license-copy consistency, generated-file checks,
 external-package Go public API tests, race tests, real Sidecar/HTTP integration,
 Chrome, widget tests, formatting, vet, and analysis. `make coverage` enforces the
 committed non-regression floors.
+
+`make runtime-stress` is the slower opt-in Runtime suite. It actively fuzzes
+Sidecar and HTTP RPC input, repeats race-enabled lifecycle and persistence
+checks, and exercises repeated Sidecar crash recovery. See
+[docs/RUNTIME_STRESS.md](docs/RUNTIME_STRESS.md) for tuning and CI policy.
 
 ## Change boundaries
 

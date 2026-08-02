@@ -237,6 +237,18 @@ framework/tooling surfaces plus the Flutter runtime and combined app/runtime,
 then writes `coverage/summary.md`. CI includes the same table in its job summary
 and retains the raw profiles as a workflow artifact.
 
+Run the slower Runtime resilience suite before changes to Sidecar lifecycle,
+RPC parsing, Queue, Scheduler, or persistent Stores:
+
+```bash
+make runtime-stress
+```
+
+It combines native Go fuzzing with repeated race-enabled lifecycle,
+concurrency, shared-store contention, and Sidecar crash-recovery checks. The
+defaults and scheduled CI policy are documented in
+[Runtime stress verification](RUNTIME_STRESS.md).
+
 Individual build targets still accept `FLUTTER=flutter DART=dart` overrides for
 special environments. The complete `make verify` flow intentionally includes
 `bridra doctor` and therefore enforces the repository's FVM policy.

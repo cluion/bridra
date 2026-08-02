@@ -134,12 +134,14 @@ make setup
 make doctor
 make verify
 make coverage
+make runtime-stress
 ```
 
 `make verify` checks generated contracts, Go formatting and vet, race-enabled
 tests, external public APIs, real Sidecar and HTTP round trips, Chrome, Flutter
 tests, and static analysis. `make coverage` enforces the committed
-non-regression floors.
+non-regression floors. `make runtime-stress` runs the slower fuzz, repeated
+lifecycle, concurrency, persistence, and Sidecar recovery suite.
 
 ## Documentation
 
@@ -150,6 +152,8 @@ non-regression floors.
 - [HTTP security and threat model](docs/HTTP_SECURITY.md): trust boundaries,
   abuse cases, framework controls, residual risks, audit fields, and production
   checklist
+- [Runtime stress verification](docs/RUNTIME_STRESS.md): fuzzing, repeated
+  lifecycle and persistence checks, scheduled CI, and test limits
 - [Upgrading](docs/UPGRADING.md): planning, automatic apply, migrations,
   deprecation, and rollback
 - [Release process](docs/RELEASING.md): release authority, validation,

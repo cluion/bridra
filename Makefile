@@ -34,13 +34,16 @@ CLI_RELEASE_OUTPUT ?= $(CURDIR)/build/bridra/cli
 CLI_RELEASE_COMMIT ?= $(shell git describe --always --dirty --abbrev=12 --match '__bridra_no_matching_tag__')
 CLI_RELEASE_DATE ?= $(shell git show -s --format=%cI HEAD)
 COVERAGE_DIR := $(CURDIR)/coverage
+RUNTIME_FUZZ_TIME ?= 15s
+RUNTIME_STRESS_CYCLES ?= 50
+RUNTIME_STRESS_REPEATS ?= 5
 
 .PHONY: help setup doctor generate codegen-check license-check format backend-build backend-server-build backend-serve backend-format backend-test backend-public-api-test backend-sql-store-test backend-sql-job-store-test backend-vet transport-benchmark \
 	flutter-format flutter-package-test flutter-web-test flutter-test analyze verify coverage backend-coverage flutter-package-coverage flutter-app-coverage coverage-check linux-check linux-run linux-build \
 	linux-smoke macos-check macos-run macos-build macos-smoke windows-run \
 	windows-build windows-smoke windows-verify android-run android-build \
 	ios-run ios-build ios-simulator-build web-run web-build remote-release-check \
-	release-prepare release-check cli-release run
+	release-prepare release-check cli-release runtime-fuzz runtime-stress run
 
 help:
 	@echo "make setup        Install the pinned Flutter SDK and project dependencies"
@@ -49,6 +52,8 @@ help:
 	@echo "make license-check Verify publishable packages carry the root MIT license"
 	@echo "make verify       Run format checks, Go tests, Flutter tests, and analysis"
 	@echo "make coverage     Generate reports and enforce coverage non-regression floors"
+	@echo "make runtime-fuzz Fuzz Sidecar and HTTP RPC parsing"
+	@echo "make runtime-stress Repeat Runtime lifecycle, concurrency, and recovery checks"
 	@echo "make transport-benchmark Measure JSON, binary-pipe, and managed-file transport costs"
 	@echo "make run          Run the starter on the current desktop platform"
 	@echo "make macos-run    Run the starter on macOS"
@@ -132,6 +137,17 @@ backend-vet:
 
 transport-benchmark:
 	cd backend && $(GO) test ./framework -run '^$$' -bench '^BenchmarkTransport' -benchmem -benchtime=200ms -count=3
+
+runtime-fuzz:
+	cd backend && $(GO) test ./framework -run '^$$' -fuzz '^FuzzSidecarServerInput$$' -fuzztime='$(RUNTIME_FUZZ_TIME)'
+	cd backend && $(GO) test ./framework -run '^$$' -fuzz '^FuzzHTTPRPCInput$$' -fuzztime='$(RUNTIME_FUZZ_TIME)'
+
+runtime-stress: runtime-fuzz
+	cd backend && BRIDRA_STRESS=1 BRIDRA_STRESS_CYCLES='$(RUNTIME_STRESS_CYCLES)' $(GO) test -race ./framework -run '^TestRuntimeStress' -count=1 -timeout=10m
+	cd backend && $(GO) test -race ./framework -run '^(TestServerDispatchesRequestsConcurrentlyAndDrains|TestServerBoundsConcurrentRequests|TestServerCancellationReachesActiveAndPendingRequests|TestServerRejectsRequestsBeyondPendingLimit|TestServerStreamWindowAppliesBackpressureUntilAcknowledged|TestServerCancelsBackpressuredStreamsWhenInputCloses|TestParentProcessContextCancelsWhenParentExits)$$' -count='$(RUNTIME_STRESS_REPEATS)' -timeout=10m
+	cd backend/integration/sqljobstore && $(GO) test -race ./... -run '^(TestSQLiteStoresCoordinateReservationAndLifecycle|TestSQLiteSchedulerStoresCoordinateReservationAndLifecycle|TestPostgreSQLStoresCoordinateReservationAndLifecycle|TestPostgreSQLSchedulerStoresCoordinateReservationAndLifecycle)$$' -count='$(RUNTIME_STRESS_REPEATS)' -timeout=10m
+	cd backend && $(GO) test -race ./integration/redisjobstore -run '^(TestRedisStoresCoordinateReservationAndLifecycle|TestRedisSchedulerStoresCoordinateReservationAndLifecycle)$$' -count='$(RUNTIME_STRESS_REPEATS)' -timeout=10m
+	cd $(BRIDRA_FLUTTER_PACKAGE) && BRIDRA_STRESS=1 BRIDRA_STRESS_CYCLES='$(RUNTIME_STRESS_CYCLES)' $(FLUTTER) test test/sidecar_client_test.dart --plain-name 'stress repeatedly crashes and recovers without replay'
 
 flutter-format:
 	$(DART) format --output=none --set-exit-if-changed lib test $(BRIDRA_FLUTTER_PACKAGE)/lib $(BRIDRA_FLUTTER_PACKAGE)/test

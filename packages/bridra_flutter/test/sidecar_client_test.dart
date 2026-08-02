@@ -838,6 +838,70 @@ void main() {
     );
     expect(starts, 0);
   });
+
+  test(
+    'stress repeatedly crashes and recovers without replay',
+    () async {
+      final cycles =
+          int.tryParse(Platform.environment['BRIDRA_STRESS_CYCLES'] ?? '') ??
+          50;
+      expect(cycles, inInclusiveRange(1, 1000));
+      final processes = List.generate(cycles + 1, (_) => FakeSidecarProcess());
+      final starter = FakeSidecarStarter(processes);
+      final logs = <String>[];
+      final client = await SidecarClient.start(
+        executablePath: '/fake/sidecar',
+        token: 'test-token',
+        onLog: logs.add,
+        restartPolicy: const SidecarRestartPolicy(
+          maxAttempts: 1,
+          initialDelay: Duration.zero,
+          maxDelay: Duration.zero,
+        ),
+        processStarter: starter.start,
+      );
+      addTearDown(client.close);
+
+      for (var cycle = 0; cycle < cycles; cycle++) {
+        final current = processes[cycle];
+        final inFlight = client.call('unsafe-$cycle');
+        final unsafeRequest = await current.nextRequest();
+        expect(unsafeRequest['method'], 'unsafe-$cycle');
+        final inFlightExpectation = expectLater(
+          inFlight,
+          throwsA(isA<SidecarExitedException>()),
+        );
+        await current.exit(100 + cycle % 10);
+        await inFlightExpectation;
+
+        final replacement = processes[cycle + 1];
+        final recovered = client.call('recover-$cycle');
+        final healthRequest = await replacement.nextRequest();
+        expect(healthRequest['method'], 'system.health');
+        replacement.respond({
+          'id': healthRequest['id'],
+          'result': {'status': 'ok'},
+          'meta': <String, Object?>{},
+        });
+        final recoveryRequest = await replacement.nextRequest();
+        expect(recoveryRequest['method'], 'recover-$cycle');
+        replacement.respond({
+          'id': recoveryRequest['id'],
+          'result': cycle,
+          'meta': <String, Object?>{},
+        });
+
+        expect((await recovered).result, cycle);
+        expect(replacement.receivedRequestCount, 2);
+      }
+
+      expect(starter.callCount, cycles + 1);
+      expect(logs.join('\n'), isNot(contains('test-token')));
+    },
+    skip: Platform.environment['BRIDRA_STRESS'] == '1'
+        ? false
+        : 'Set BRIDRA_STRESS=1 to run Runtime stress tests.',
+  );
 }
 
 Future<SidecarClient> _startClient(
