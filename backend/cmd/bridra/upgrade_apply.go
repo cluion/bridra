@@ -275,7 +275,6 @@ func prepareUpgradeFiles(
 	updatedMetadata.SchemaVersion = target.ProjectMetadataVersion
 	updatedMetadata.FrameworkVersion = target.FrameworkVersion
 	updatedMetadata.TemplateVersion = target.TemplateVersion
-	updatedMetadata.ProtocolVersion = target.ProtocolVersion
 	metadataJSON, err := json.MarshalIndent(updatedMetadata, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("encode .bridra/project.json: %w", err)

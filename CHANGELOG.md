@@ -5,6 +5,14 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `bridra upgrade` treating the Project Template protocol baseline as an
+  application protocol ceiling. The planner now verifies application metadata,
+  schema, and generated Go/Dart contracts together, while automatic framework
+  migrations preserve application-owned protocol versions. Upgrade JSON schema
+  `4` exposes the baseline as `target.templateProtocolVersion`.
+
 ### Added
 
 - Added native Go fuzz targets for malformed Sidecar and HTTP RPC input, with

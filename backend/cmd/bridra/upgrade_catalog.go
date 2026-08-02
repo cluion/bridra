@@ -15,10 +15,10 @@ type upgradeCatalog struct {
 }
 
 type upgradeRelease struct {
-	FrameworkVersion       string
-	ProjectMetadataVersion int
-	TemplateVersion        int
-	ProtocolVersion        int
+	FrameworkVersion        string
+	ProjectMetadataVersion  int
+	TemplateVersion         int
+	TemplateProtocolVersion int
 }
 
 type frameworkMigration struct {
@@ -36,76 +36,76 @@ type migrationPredecessor struct {
 
 var registeredUpgradeReleases = []upgradeRelease{
 	{
-		FrameworkVersion:       "0.1.0",
-		ProjectMetadataVersion: 2,
-		TemplateVersion:        2,
-		ProtocolVersion:        1,
+		FrameworkVersion:        "0.1.0",
+		ProjectMetadataVersion:  2,
+		TemplateVersion:         2,
+		TemplateProtocolVersion: 1,
 	},
 	{
-		FrameworkVersion:       "0.1.1",
-		ProjectMetadataVersion: 2,
-		TemplateVersion:        2,
-		ProtocolVersion:        1,
+		FrameworkVersion:        "0.1.1",
+		ProjectMetadataVersion:  2,
+		TemplateVersion:         2,
+		TemplateProtocolVersion: 1,
 	},
 	{
-		FrameworkVersion:       "0.2.0",
-		ProjectMetadataVersion: 2,
-		TemplateVersion:        2,
-		ProtocolVersion:        1,
+		FrameworkVersion:        "0.2.0",
+		ProjectMetadataVersion:  2,
+		TemplateVersion:         2,
+		TemplateProtocolVersion: 1,
 	},
 	{
-		FrameworkVersion:       "0.3.0",
-		ProjectMetadataVersion: 2,
-		TemplateVersion:        2,
-		ProtocolVersion:        1,
+		FrameworkVersion:        "0.3.0",
+		ProjectMetadataVersion:  2,
+		TemplateVersion:         2,
+		TemplateProtocolVersion: 1,
 	},
 	{
-		FrameworkVersion:       "0.4.0",
-		ProjectMetadataVersion: 2,
-		TemplateVersion:        2,
-		ProtocolVersion:        1,
+		FrameworkVersion:        "0.4.0",
+		ProjectMetadataVersion:  2,
+		TemplateVersion:         2,
+		TemplateProtocolVersion: 1,
 	},
 	{
-		FrameworkVersion:       "0.5.0",
-		ProjectMetadataVersion: 2,
-		TemplateVersion:        2,
-		ProtocolVersion:        1,
+		FrameworkVersion:        "0.5.0",
+		ProjectMetadataVersion:  2,
+		TemplateVersion:         2,
+		TemplateProtocolVersion: 1,
 	},
 	{
-		FrameworkVersion:       "0.6.0",
-		ProjectMetadataVersion: 2,
-		TemplateVersion:        2,
-		ProtocolVersion:        1,
+		FrameworkVersion:        "0.6.0",
+		ProjectMetadataVersion:  2,
+		TemplateVersion:         2,
+		TemplateProtocolVersion: 1,
 	},
 	{
-		FrameworkVersion:       "0.6.1",
-		ProjectMetadataVersion: 2,
-		TemplateVersion:        2,
-		ProtocolVersion:        1,
+		FrameworkVersion:        "0.6.1",
+		ProjectMetadataVersion:  2,
+		TemplateVersion:         2,
+		TemplateProtocolVersion: 1,
 	},
 	{
-		FrameworkVersion:       "0.7.0",
-		ProjectMetadataVersion: 2,
-		TemplateVersion:        2,
-		ProtocolVersion:        1,
+		FrameworkVersion:        "0.7.0",
+		ProjectMetadataVersion:  2,
+		TemplateVersion:         2,
+		TemplateProtocolVersion: 1,
 	},
 	{
-		FrameworkVersion:       "0.8.0",
-		ProjectMetadataVersion: 2,
-		TemplateVersion:        2,
-		ProtocolVersion:        1,
+		FrameworkVersion:        "0.8.0",
+		ProjectMetadataVersion:  2,
+		TemplateVersion:         2,
+		TemplateProtocolVersion: 1,
 	},
 	{
-		FrameworkVersion:       "0.9.0",
-		ProjectMetadataVersion: 2,
-		TemplateVersion:        2,
-		ProtocolVersion:        1,
+		FrameworkVersion:        "0.9.0",
+		ProjectMetadataVersion:  2,
+		TemplateVersion:         2,
+		TemplateProtocolVersion: 1,
 	},
 	{
-		FrameworkVersion:       "0.10.0",
-		ProjectMetadataVersion: 2,
-		TemplateVersion:        2,
-		ProtocolVersion:        1,
+		FrameworkVersion:        "0.10.0",
+		ProjectMetadataVersion:  2,
+		TemplateVersion:         2,
+		TemplateProtocolVersion: 1,
 	},
 }
 
@@ -201,10 +201,10 @@ func currentUpgradeCatalog() upgradeCatalog {
 	}
 	if !foundCurrent {
 		releases = append(releases, upgradeRelease{
-			FrameworkVersion:       metadata.FrameworkVersion,
-			ProjectMetadataVersion: releaseinfo.ProjectMetadataVersion,
-			TemplateVersion:        metadata.TemplateVersion,
-			ProtocolVersion:        metadata.ProtocolVersion,
+			FrameworkVersion:        metadata.FrameworkVersion,
+			ProjectMetadataVersion:  releaseinfo.ProjectMetadataVersion,
+			TemplateVersion:         metadata.TemplateVersion,
+			TemplateProtocolVersion: metadata.ProtocolVersion,
 		})
 	}
 	return upgradeCatalog{
@@ -224,11 +224,11 @@ func (catalog upgradeCatalog) target(version string) (upgradeTarget, error) {
 			continue
 		}
 		return upgradeTarget{
-			CLIVersion:             catalog.CLIVersion,
-			ProjectMetadataVersion: release.ProjectMetadataVersion,
-			FrameworkVersion:       release.FrameworkVersion,
-			TemplateVersion:        release.TemplateVersion,
-			ProtocolVersion:        release.ProtocolVersion,
+			CLIVersion:              catalog.CLIVersion,
+			ProjectMetadataVersion:  release.ProjectMetadataVersion,
+			FrameworkVersion:        release.FrameworkVersion,
+			TemplateVersion:         release.TemplateVersion,
+			TemplateProtocolVersion: release.TemplateProtocolVersion,
 		}, nil
 	}
 	return upgradeTarget{}, fmt.Errorf(

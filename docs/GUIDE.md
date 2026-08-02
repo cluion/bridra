@@ -167,7 +167,11 @@ migration, deprecation, and rollback rules are documented in
 [RELEASING.md](RELEASING.md). The `0.9.0` to `0.10.0` dependency transition is
 automatic because the HTTP security APIs are additive and opt-in. Existing
 application-owned server entrypoints are not overwritten; adopt the production
-controls deliberately using [HTTP_SECURITY.md](HTTP_SECURITY.md). Projects
+controls deliberately using [HTTP_SECURITY.md](HTTP_SECURITY.md). The upgrade
+planner validates each application's metadata, schema, and generated Go/Dart
+contract together. An application protocol newer than the target Project
+Template baseline remains valid and is preserved by framework-only migrations.
+Projects
 upgrading from earlier releases must still complete any manual steps already in
 their ordered migration path.
 

@@ -8,12 +8,23 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
+	"github.com/cluion/bridra/backend/codegen"
 	"github.com/cluion/bridra/backend/internal/releaseinfo"
 )
 
-const upgradeReportSchemaVersion = 3
+const upgradeReportSchemaVersion = 4
+
+var generatedGoProtocolPattern = regexp.MustCompile(
+	`(?m)^const ProtocolVersion = ([1-9][0-9]*)\r?$`,
+)
+
+var generatedDartProtocolPattern = regexp.MustCompile(
+	`(?m)^const supportedBackendProtocolVersion = ([1-9][0-9]*);\r?$`,
+)
 
 var (
 	errUpgradeRequired    = errors.New("upgrade migration required")
@@ -37,11 +48,11 @@ type upgradeCommand struct {
 }
 
 type upgradeTarget struct {
-	CLIVersion             string `json:"cliVersion"`
-	ProjectMetadataVersion int    `json:"projectMetadataVersion"`
-	FrameworkVersion       string `json:"frameworkVersion"`
-	TemplateVersion        int    `json:"templateVersion"`
-	ProtocolVersion        int    `json:"protocolVersion"`
+	CLIVersion              string `json:"cliVersion"`
+	ProjectMetadataVersion  int    `json:"projectMetadataVersion"`
+	FrameworkVersion        string `json:"frameworkVersion"`
+	TemplateVersion         int    `json:"templateVersion"`
+	TemplateProtocolVersion int    `json:"templateProtocolVersion"`
 }
 
 type upgradeProject struct {
@@ -164,7 +175,7 @@ func (item upgradeCommand) run(arguments []string, stdout, stderr io.Writer) err
 	if err != nil {
 		return fmt.Errorf("upgrade: %w", err)
 	}
-	report, err := evaluateUpgrade(metadata, target, catalog)
+	report, err := evaluateUpgrade(*root, metadata, target, catalog)
 	if err != nil {
 		return fmt.Errorf("upgrade: evaluate compatibility: %w", err)
 	}
@@ -217,6 +228,7 @@ func upgradeReportError(report upgradeReport) error {
 }
 
 func evaluateUpgrade(
+	root string,
 	metadata projectMetadata,
 	target upgradeTarget,
 	catalog upgradeCatalog,
@@ -261,7 +273,7 @@ func evaluateUpgrade(
 				target.ProjectMetadataVersion,
 				target.FrameworkVersion,
 				target.TemplateVersion,
-				target.ProtocolVersion,
+				target.TemplateProtocolVersion,
 			),
 		})
 		report.addStep(upgradePlanStep{
@@ -273,8 +285,18 @@ func evaluateUpgrade(
 				"Inspect the installed Go and Flutter dependencies, then record framework %s, template %d, and protocol %d in .bridra/project.json.",
 				target.FrameworkVersion,
 				target.TemplateVersion,
-				target.ProtocolVersion,
+				target.TemplateProtocolVersion,
 			),
+		})
+		report.finalize()
+		return report, nil
+	}
+	if err := verifyApplicationRPCContract(root, metadata); err != nil {
+		report.PlanAvailable = false
+		report.markUnsupported(upgradeDiagnostic{
+			Level: "unsupported", Code: "application_rpc_contract_inconsistent",
+			Message: fmt.Sprintf("Application RPC contract is inconsistent: %v", err),
+			Action:  "Regenerate the typed RPC contract, make metadata match schema/bridra.json, and run `make verify` before planning the framework upgrade again.",
 		})
 		report.finalize()
 		return report, nil
@@ -344,22 +366,78 @@ func evaluateUpgrade(
 		"Review docs/UPGRADING.md and apply template migrations manually; Bridra will not overwrite application-owned files.",
 		"project_template",
 	)
-	compareIntegerContract(
-		&report,
-		"protocol",
-		metadata.ProtocolVersion,
-		target.ProtocolVersion,
-		"Upgrade the Go and Flutter framework dependencies together before regenerating the typed RPC contract.",
-		"rpc_protocol",
-	)
+	if metadata.ProtocolVersion != target.TemplateProtocolVersion {
+		report.Diagnostics = append(report.Diagnostics, upgradeDiagnostic{
+			Level: "ok", Code: "application_protocol_custom",
+			Message: fmt.Sprintf(
+				"Application RPC protocol %d is internally consistent; the target template baseline is %d and does not constrain application-owned contracts.",
+				metadata.ProtocolVersion,
+				target.TemplateProtocolVersion,
+			),
+		})
+	}
 	if len(report.Diagnostics) == 0 {
 		report.Diagnostics = append(report.Diagnostics, upgradeDiagnostic{
 			Level: "ok", Code: "contract_current",
-			Message: "Project metadata and the installed CLI use the same framework, template, and protocol contract.",
+			Message: "Project metadata matches the framework and template target, and the application RPC contract is internally consistent.",
 		})
 	}
 	report.finalize()
 	return report, nil
+}
+
+func verifyApplicationRPCContract(root string, metadata projectMetadata) error {
+	schema, err := codegen.LoadSchema(filepath.Join(root, "schema", "bridra.json"))
+	if err != nil {
+		return err
+	}
+	goVersion, err := loadGeneratedProtocolVersion(
+		filepath.Join(root, filepath.FromSlash(codegen.GoProtocolPath)),
+		"Go",
+		generatedGoProtocolPattern,
+	)
+	if err != nil {
+		return err
+	}
+	dartVersion, err := loadGeneratedProtocolVersion(
+		filepath.Join(root, filepath.FromSlash(codegen.DartClientPath)),
+		"Dart",
+		generatedDartProtocolPattern,
+	)
+	if err != nil {
+		return err
+	}
+	if metadata.ProtocolVersion != schema.ProtocolVersion ||
+		metadata.ProtocolVersion != goVersion ||
+		metadata.ProtocolVersion != dartVersion {
+		return fmt.Errorf(
+			"protocol versions disagree: metadata %d, schema %d, Go %d, Dart %d",
+			metadata.ProtocolVersion,
+			schema.ProtocolVersion,
+			goVersion,
+			dartVersion,
+		)
+	}
+	return nil
+}
+
+func loadGeneratedProtocolVersion(path, language string, pattern *regexp.Regexp) (int, error) {
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return 0, fmt.Errorf("read generated %s protocol: %w", language, err)
+	}
+	matches := pattern.FindAllSubmatch(contents, -1)
+	if len(matches) != 1 {
+		return 0, fmt.Errorf(
+			"generated %s contract must contain exactly one protocol version",
+			language,
+		)
+	}
+	version, err := strconv.Atoi(string(matches[0][1]))
+	if err != nil {
+		return 0, fmt.Errorf("parse generated %s protocol: %w", language, err)
+	}
+	return version, nil
 }
 
 func loadUpgradeProjectMetadata(root string) (projectMetadata, error) {
@@ -508,11 +586,11 @@ func writeUpgradeReport(output io.Writer, report upgradeReport) {
 	)
 	fmt.Fprintf(
 		output,
-		"CLI target: metadata %d, framework %s, template %d, protocol %d\n",
+		"CLI target: metadata %d, framework %s, template %d, template protocol baseline %d\n",
 		report.Target.ProjectMetadataVersion,
 		report.Target.FrameworkVersion,
 		report.Target.TemplateVersion,
-		report.Target.ProtocolVersion,
+		report.Target.TemplateProtocolVersion,
 	)
 	if len(report.Steps) == 0 {
 		fmt.Fprintln(output, "Steps: none")

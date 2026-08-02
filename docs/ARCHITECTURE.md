@@ -92,9 +92,11 @@ the read-only upgrade diagnosis before migrating its metadata.
 
 `upgrade` defaults to a read-only plan and retains `--check` as a compatibility
 alias. Its versioned release catalog maps each framework release to metadata,
-Project Template, and RPC protocol contracts. A deterministic migration graph
-resolves every ordered patch and minor hop to `--to`; unknown targets, downgrades,
-and missing hops are rejected.
+Project Template, and template RPC protocol baselines. The application protocol
+is separately verified across project metadata, `schema/bridra.json`, and the
+generated Go/Dart protocol identities; it is not bounded by the template
+baseline. A deterministic migration graph resolves every ordered patch and
+minor hop to `--to`; unknown targets, downgrades, and missing hops are rejected.
 
 `upgrade --apply` accepts only a complete path whose steps are all marked
 automatic. It validates manifest identity, snapshots the Go/Dart
@@ -102,8 +104,10 @@ manifests and lockfiles plus project metadata, updates the final target
 atomically, resolves both package managers, and runs full project verification.
 Every managed file is restored on failure, including removal of newly created
 lockfiles. Manual steps and application source rewriting remain outside the
-automatic boundary. The complete compatibility, deprecation, migration, and
-rollback policy lives in `UPGRADING.md`.
+automatic boundary. Framework-only migrations preserve the application RPC
+protocol. Any release that needs RPC regeneration must make that requirement an
+explicit manual migration. The complete compatibility, deprecation, migration,
+and rollback policy lives in `UPGRADING.md`.
 
 `make` reads a separate versioned scaffold manifest. It renders and formats every
 file in memory, rejects the complete operation on a default collision, then stages

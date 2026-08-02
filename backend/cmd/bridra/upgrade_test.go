@@ -13,12 +13,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cluion/bridra/backend/codegen"
 	"github.com/cluion/bridra/backend/framework"
 	"github.com/cluion/bridra/backend/internal/releaseinfo"
 )
 
 func TestUpgradeCheckReportsCurrentContractWithoutWriting(t *testing.T) {
-	root := makeProjectRoot(t, currentProjectMetadata(
+	root := makeUpgradeProjectRoot(t, currentProjectMetadata(
 		releaseinfo.Version,
 		releaseinfo.ProjectTemplateVersion,
 		framework.ProtocolVersion,
@@ -54,7 +55,7 @@ func TestUpgradeCheckReportsCurrentContractWithoutWriting(t *testing.T) {
 }
 
 func TestUpgradeCheckExplainsLegacyNMinusOneMetadataWithoutWriting(t *testing.T) {
-	root := makeProjectRoot(t, validProjectMetadata)
+	root := makeUpgradeProjectRoot(t, validProjectMetadata)
 	applicationPath := filepath.Join(root, "backend", "app", "owned.go")
 	applicationContents := []byte("package app\n\nconst Owned = true\n")
 	if err := os.WriteFile(applicationPath, applicationContents, 0o644); err != nil {
@@ -102,16 +103,6 @@ func TestUpgradeCheckReportsOlderAndNewerContracts(t *testing.T) {
 			wantCode: "framework_migration_path_missing",
 		},
 		{
-			name: "newer protocol",
-			metadata: currentProjectMetadata(
-				releaseinfo.Version,
-				releaseinfo.ProjectTemplateVersion,
-				framework.ProtocolVersion+1,
-			),
-			wantError: errUpgradeUnsupported, wantStatus: upgradeUnsupported,
-			wantCode: "protocol_newer_than_cli",
-		},
-		{
 			name: "newer metadata schema",
 			metadata: `{
   "schemaVersion": 3,
@@ -130,7 +121,7 @@ func TestUpgradeCheckReportsOlderAndNewerContracts(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			root := makeProjectRoot(t, test.metadata)
+			root := makeUpgradeProjectRoot(t, test.metadata)
 			var stdout bytes.Buffer
 			err := testUpgradeCommand().run(
 				[]string{"--check", "--json", "--root", root},
@@ -151,8 +142,89 @@ func TestUpgradeCheckReportsOlderAndNewerContracts(t *testing.T) {
 	}
 }
 
+func TestUpgradeCheckAcceptsCurrentCustomApplicationProtocol(t *testing.T) {
+	root := makeUpgradeProjectRoot(t, currentProjectMetadata(
+		releaseinfo.Version,
+		releaseinfo.ProjectTemplateVersion,
+		3,
+	))
+	var stdout bytes.Buffer
+	if err := testUpgradeCommand().run(
+		[]string{"--plan", "--json", "--root", root},
+		&stdout,
+		&bytes.Buffer{},
+	); err != nil {
+		t.Fatalf("upgrade custom application protocol: %v", err)
+	}
+	var report upgradeReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode report: %v", err)
+	}
+	if report.SchemaVersion != upgradeReportSchemaVersion ||
+		report.Status != upgradeCurrent || !report.PlanAvailable ||
+		report.Project.ProtocolVersion != 3 ||
+		report.Target.TemplateProtocolVersion != framework.ProtocolVersion ||
+		!hasUpgradeDiagnostic(report, "application_protocol_custom") {
+		t.Fatalf("report = %#v", report)
+	}
+	var raw struct {
+		Target map[string]json.RawMessage `json:"target"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &raw); err != nil {
+		t.Fatalf("decode raw report: %v", err)
+	}
+	if _, exists := raw.Target["protocolVersion"]; exists {
+		t.Fatalf("target retained ambiguous protocolVersion: %s", stdout.String())
+	}
+	if _, exists := raw.Target["templateProtocolVersion"]; !exists {
+		t.Fatalf("target omitted templateProtocolVersion: %s", stdout.String())
+	}
+}
+
+func TestUpgradeCheckRejectsInconsistentApplicationRPCContract(t *testing.T) {
+	root := makeUpgradeProjectRoot(t, currentProjectMetadata(
+		releaseinfo.Version,
+		releaseinfo.ProjectTemplateVersion,
+		3,
+	))
+	goProtocolPath := filepath.Join(root, filepath.FromSlash(codegen.GoProtocolPath))
+	before := readTestFile(t, goProtocolPath)
+	inconsistent := bytes.Replace(before, []byte("ProtocolVersion = 3"), []byte("ProtocolVersion = 2"), 1)
+	if bytes.Equal(inconsistent, before) {
+		t.Fatal("test fixture did not contain protocol 3")
+	}
+	if err := os.WriteFile(goProtocolPath, inconsistent, 0o644); err != nil {
+		t.Fatalf("write inconsistent generated protocol: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	err := testUpgradeCommand().run(
+		[]string{"--plan", "--json", "--root", root},
+		&stdout,
+		&bytes.Buffer{},
+	)
+	if !errors.Is(err, errUpgradeUnsupported) {
+		t.Fatalf("upgrade error = %v, want errUpgradeUnsupported", err)
+	}
+	var report upgradeReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode report: %v", err)
+	}
+	if report.Status != upgradeUnsupported || report.PlanAvailable ||
+		!hasUpgradeDiagnostic(report, "application_rpc_contract_inconsistent") {
+		t.Fatalf("report = %#v", report)
+	}
+	if !strings.Contains(
+		report.Diagnostics[0].Message,
+		"metadata 3, schema 3, Go 2, Dart 3",
+	) {
+		t.Fatalf("diagnostics = %#v", report.Diagnostics)
+	}
+	assertFileContents(t, goProtocolPath, inconsistent)
+}
+
 func TestUpgradePlanAndCheckFlagsAreAliases(t *testing.T) {
-	root := makeProjectRoot(t, currentProjectMetadata(
+	root := makeUpgradeProjectRoot(t, currentProjectMetadata(
 		releaseinfo.Version,
 		releaseinfo.ProjectTemplateVersion,
 		framework.ProtocolVersion,
@@ -219,7 +291,7 @@ func TestUpgradePlannerResolvesCrossPatchAndMinorPaths(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			root := makeProjectRoot(t, currentProjectMetadata("0.1.0", 2, 1))
+			root := makeUpgradeProjectRoot(t, currentProjectMetadata("0.1.0", 2, 1))
 			var stdout bytes.Buffer
 			err := testUpgradeCommandWithCatalog(catalog).run(
 				[]string{"--plan", "--to", test.target, "--json", "--root", root},
@@ -254,13 +326,41 @@ func TestUpgradePlannerResolvesCrossPatchAndMinorPaths(t *testing.T) {
 	}
 }
 
+func TestUpgradePlannerKeepsCustomApplicationProtocolOutOfFrameworkSteps(t *testing.T) {
+	root := makeUpgradeProjectRoot(t, currentProjectMetadata("0.1.0", 2, 3))
+	var stdout bytes.Buffer
+	err := testUpgradeCommandWithCatalog(automaticMigrationCatalog()).run(
+		[]string{"--plan", "--to", "0.1.3", "--json", "--root", root},
+		&stdout,
+		&bytes.Buffer{},
+	)
+	if !errors.Is(err, errUpgradeRequired) {
+		t.Fatalf("upgrade error = %v, want errUpgradeRequired", err)
+	}
+	var report upgradeReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode report: %v", err)
+	}
+	if report.Status != upgradeMigrationRequired || !report.PlanAvailable ||
+		!report.ApplyAvailable || report.Project.ProtocolVersion != 3 ||
+		report.Target.TemplateProtocolVersion != 1 ||
+		!hasUpgradeDiagnostic(report, "application_protocol_custom") {
+		t.Fatalf("report = %#v", report)
+	}
+	for _, step := range report.Steps {
+		if step.Kind != "framework" {
+			t.Fatalf("custom application protocol created step %#v", step)
+		}
+	}
+}
+
 func TestUpgradePlannerRejectsMissingMigrationHop(t *testing.T) {
 	catalog := testMigrationCatalog()
 	catalog.Migrations = append(
 		[]frameworkMigration(nil),
 		catalog.Migrations[:1]...,
 	)
-	root := makeProjectRoot(t, currentProjectMetadata("0.1.0", 2, 1))
+	root := makeUpgradeProjectRoot(t, currentProjectMetadata("0.1.0", 2, 1))
 	var stdout bytes.Buffer
 	err := testUpgradeCommandWithCatalog(catalog).run(
 		[]string{"--to", "0.2.1", "--json", "--root", root},
@@ -295,10 +395,21 @@ func TestUpgradePlannerRejectsUnknownTarget(t *testing.T) {
 	}
 }
 
-func TestUpgradeApplyUpdatesManagedFilesAndVerifies(t *testing.T) {
-	root := makeUpgradeableProject(t)
+func TestUpgradeApplyPreservesCustomApplicationProtocolAndVerifies(t *testing.T) {
+	root := makeUpgradeableProjectWithProtocol(t, 3)
 	applicationPath := filepath.Join(root, "backend", "app", "owned.go")
 	applicationBefore := readTestFile(t, applicationPath)
+	generatedBefore := map[string][]byte{}
+	for _, relative := range []string{
+		codegen.GoProtocolPath,
+		codegen.GoRoutesPath,
+		codegen.GoRequestsPath,
+		codegen.GoResponsesPath,
+		codegen.DartClientPath,
+	} {
+		path := filepath.Join(root, filepath.FromSlash(relative))
+		generatedBefore[path] = readTestFile(t, path)
+	}
 	var calls []upgradeProcess
 	system := upgradeSystem{
 		run: func(_ context.Context, process upgradeProcess) error {
@@ -323,6 +434,11 @@ func TestUpgradeApplyUpdatesManagedFilesAndVerifies(t *testing.T) {
 					t,
 					filepath.Join(root, ".bridra", "project.json"),
 					`"frameworkVersion": "0.1.3"`,
+				)
+				assertTestFileContains(
+					t,
+					filepath.Join(root, ".bridra", "project.json"),
+					`"protocolVersion": 3`,
 				)
 				return nil
 			default:
@@ -381,14 +497,22 @@ func TestUpgradeApplyUpdatesManagedFilesAndVerifies(t *testing.T) {
 		filepath.Join(root, ".bridra", "project.json"),
 		`"frameworkVersion": "0.1.3"`,
 	)
+	assertTestFileContains(
+		t,
+		filepath.Join(root, ".bridra", "project.json"),
+		`"protocolVersion": 3`,
+	)
 	assertFileContents(t, applicationPath, applicationBefore)
+	for path, expected := range generatedBefore {
+		assertFileContents(t, path, expected)
+	}
 	if !strings.Contains(stderr.String(), "Verify upgraded project") {
 		t.Fatalf("stderr = %q", stderr.String())
 	}
 }
 
 func TestUpgradeApplyRollsBackEveryManagedFileOnVerificationFailure(t *testing.T) {
-	root := makeUpgradeableProject(t)
+	root := makeUpgradeableProjectWithProtocol(t, 3)
 	goSumPath := filepath.Join(root, "backend", "go.sum")
 	if err := os.Remove(goSumPath); err != nil {
 		t.Fatalf("remove initial go.sum: %v", err)
@@ -399,6 +523,8 @@ func TestUpgradeApplyRollsBackEveryManagedFileOnVerificationFailure(t *testing.T
 		filepath.Join(root, "pubspec.lock"),
 		filepath.Join(root, ".bridra", "project.json"),
 		filepath.Join(root, "backend", "app", "owned.go"),
+		filepath.Join(root, filepath.FromSlash(codegen.GoProtocolPath)),
+		filepath.Join(root, filepath.FromSlash(codegen.DartClientPath)),
 	}
 	before := make(map[string][]byte, len(managedPaths))
 	for _, path := range managedPaths {
@@ -532,7 +658,7 @@ func TestUpgradeApplyRejectsDriftBeforeWriting(t *testing.T) {
 }
 
 func TestUpgradeApplyIsNoOpForCurrentProject(t *testing.T) {
-	root := makeProjectRoot(t, currentProjectMetadata(
+	root := makeUpgradeProjectRoot(t, currentProjectMetadata(
 		releaseinfo.Version,
 		releaseinfo.ProjectTemplateVersion,
 		framework.ProtocolVersion,
@@ -624,7 +750,7 @@ func TestCurrentUpgradeCatalogCoversEveryRegisteredRelease(t *testing.T) {
 	if target.FrameworkVersion != releaseinfo.Version ||
 		target.ProjectMetadataVersion != releaseinfo.ProjectMetadataVersion ||
 		target.TemplateVersion != releaseinfo.ProjectTemplateVersion ||
-		target.ProtocolVersion != framework.ProtocolVersion {
+		target.TemplateProtocolVersion != framework.ProtocolVersion {
 		t.Fatalf("current target = %#v", target)
 	}
 
@@ -813,8 +939,33 @@ func TestCurrentUpgradeCatalogIncludesAutomaticHTTPSecurityRelease(t *testing.T)
 	}
 }
 
+func TestCurrentUpgradeCatalogPlansHTTPSecurityForCustomApplicationProtocol(t *testing.T) {
+	root := makeUpgradeProjectRoot(t, currentProjectMetadata("0.9.0", 2, 3))
+	var stdout bytes.Buffer
+	err := testUpgradeCommand().run(
+		[]string{"--plan", "--to", "0.10.0", "--json", "--root", root},
+		&stdout,
+		&bytes.Buffer{},
+	)
+	if !errors.Is(err, errUpgradeRequired) {
+		t.Fatalf("upgrade error = %v, want errUpgradeRequired", err)
+	}
+	var report upgradeReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode report: %v", err)
+	}
+	if report.Status != upgradeMigrationRequired || !report.PlanAvailable ||
+		!report.ApplyAvailable || len(report.Steps) != 1 ||
+		report.Steps[0].ID != "framework-0.9.0-to-0.10.0" ||
+		report.Project.ProtocolVersion != 3 ||
+		report.Target.TemplateProtocolVersion != 1 ||
+		!hasUpgradeDiagnostic(report, "application_protocol_custom") {
+		t.Fatalf("report = %#v", report)
+	}
+}
+
 func TestNMinusOneProjectMetadataUsesCurrentGoCore(t *testing.T) {
-	root := makeProjectRoot(t, validProjectMetadata)
+	root := makeUpgradeProjectRoot(t, validProjectMetadata)
 	backendRoot := filepath.Join(root, "backend")
 	frameworkPath := filepath.Join(repositoryRoot(t), "backend")
 	goMod := fmt.Sprintf(`module example.test/legacy
@@ -898,12 +1049,12 @@ func testUpgradeCommandWithCatalog(catalog upgradeCatalog) upgradeCommand {
 
 func testMigrationCatalog() upgradeCatalog {
 	releases := []upgradeRelease{
-		{FrameworkVersion: "0.1.0", ProjectMetadataVersion: 2, TemplateVersion: 2, ProtocolVersion: 1},
-		{FrameworkVersion: "0.1.1", ProjectMetadataVersion: 2, TemplateVersion: 2, ProtocolVersion: 1},
-		{FrameworkVersion: "0.1.2", ProjectMetadataVersion: 2, TemplateVersion: 2, ProtocolVersion: 1},
-		{FrameworkVersion: "0.1.3", ProjectMetadataVersion: 2, TemplateVersion: 2, ProtocolVersion: 1},
-		{FrameworkVersion: "0.2.0", ProjectMetadataVersion: 2, TemplateVersion: 3, ProtocolVersion: 2},
-		{FrameworkVersion: "0.2.1", ProjectMetadataVersion: 2, TemplateVersion: 3, ProtocolVersion: 2},
+		{FrameworkVersion: "0.1.0", ProjectMetadataVersion: 2, TemplateVersion: 2, TemplateProtocolVersion: 1},
+		{FrameworkVersion: "0.1.1", ProjectMetadataVersion: 2, TemplateVersion: 2, TemplateProtocolVersion: 1},
+		{FrameworkVersion: "0.1.2", ProjectMetadataVersion: 2, TemplateVersion: 2, TemplateProtocolVersion: 1},
+		{FrameworkVersion: "0.1.3", ProjectMetadataVersion: 2, TemplateVersion: 2, TemplateProtocolVersion: 1},
+		{FrameworkVersion: "0.2.0", ProjectMetadataVersion: 2, TemplateVersion: 3, TemplateProtocolVersion: 2},
+		{FrameworkVersion: "0.2.1", ProjectMetadataVersion: 2, TemplateVersion: 3, TemplateProtocolVersion: 2},
 	}
 	migration := func(from, to string) frameworkMigration {
 		return frameworkMigration{
@@ -936,8 +1087,12 @@ func automaticMigrationCatalog() upgradeCatalog {
 }
 
 func makeUpgradeableProject(t *testing.T) string {
+	return makeUpgradeableProjectWithProtocol(t, 1)
+}
+
+func makeUpgradeableProjectWithProtocol(t *testing.T, protocolVersion int) string {
 	t.Helper()
-	root := makeProjectRoot(t, currentProjectMetadata("0.1.0", 2, 1))
+	root := makeUpgradeProjectRoot(t, currentProjectMetadata("0.1.0", 2, protocolVersion))
 	files := map[string]string{
 		"backend/go.mod": `module example.test/app
 
@@ -967,6 +1122,62 @@ dependency_overrides:
 		}
 	}
 	return root
+}
+
+func makeUpgradeProjectRoot(t *testing.T, metadataJSON string) string {
+	t.Helper()
+	root := makeProjectRoot(t, metadataJSON)
+	var metadata projectMetadata
+	if err := json.Unmarshal([]byte(metadataJSON), &metadata); err != nil {
+		return root
+	}
+	if metadata.SchemaVersion == releaseinfo.ProjectMetadataVersion &&
+		metadata.ProtocolVersion > 0 {
+		writeApplicationRPCFixture(t, root, metadata)
+	}
+	return root
+}
+
+func writeApplicationRPCFixture(t *testing.T, root string, metadata projectMetadata) {
+	t.Helper()
+	schema := codegen.Schema{
+		SchemaVersion:   codegen.SupportedSchemaVersion,
+		ProtocolVersion: metadata.ProtocolVersion,
+		Methods: []codegen.Method{
+			{
+				Name:       "system.health",
+				ClientName: "health",
+				Result: codegen.Object{
+					GoType:   "HealthResponse",
+					DartType: "HealthInfo",
+					Fields: []codegen.Field{
+						{Name: "status", Type: "string"},
+					},
+				},
+			},
+		},
+	}
+	contents, err := json.MarshalIndent(schema, "", "  ")
+	if err != nil {
+		t.Fatalf("encode application RPC fixture: %v", err)
+	}
+	schemaPath := filepath.Join(root, "schema", "bridra.json")
+	if err := os.MkdirAll(filepath.Dir(schemaPath), 0o755); err != nil {
+		t.Fatalf("create schema directory: %v", err)
+	}
+	if err := os.WriteFile(schemaPath, append(contents, '\n'), 0o644); err != nil {
+		t.Fatalf("write application RPC fixture: %v", err)
+	}
+	outputs, err := codegen.GenerateWithOptions(schema, codegen.Options{
+		GoFrameworkImport: metadata.FrameworkModule + "/framework",
+		DartRuntimeImport: codegen.DefaultDartRuntimeImport,
+	})
+	if err != nil {
+		t.Fatalf("generate application RPC fixture: %v", err)
+	}
+	if err := codegen.Write(root, outputs); err != nil {
+		t.Fatalf("write application RPC fixture: %v", err)
+	}
 }
 
 func assertTestFileContains(t *testing.T, path, expected string) {
