@@ -8,7 +8,7 @@
 [Upgrading](docs/UPGRADING.md) ·
 [Contributing](CONTRIBUTING.md)
 
-Bridra 0.10 combines Flutter UI with a Laravel-inspired Go
+Bridra 0.11 combines Flutter UI with a Laravel-inspired Go
 application pipeline. It provides one project model for Windows, macOS, Linux,
 Android, iOS, and Web while keeping application code explicit and testable.
 
@@ -21,7 +21,7 @@ Flutter UI -> typed gateway -> RPC transport
                               Middleware -> Controller -> Service
 ```
 
-Framework version `0.10.1` and the Project Template protocol baseline `1`
+Framework version `0.11.0` and the Project Template protocol baseline `1`
 evolve independently. Applications own their RPC protocol and may increment it
 when regenerating a coordinated Go/Dart contract.
 Bridra is licensed under the [MIT License](LICENSE), Copyright (c) 2026 Cluion.
@@ -92,7 +92,7 @@ Install Go 1.25+, FVM 4.x, and the native toolchain required by your target
 platform. Then install the exact Bridra CLI version:
 
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.10.1
+go install github.com/cluion/bridra/backend/cmd/bridra@v0.11.0
 bridra version
 ```
 
