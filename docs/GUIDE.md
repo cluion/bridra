@@ -153,6 +153,24 @@ schema, version, MIT license, module tag, source commit, reproducible build date
 target, size, and SHA-256 for every artifact. Every archive includes the CLI
 executable and a copy of the MIT `LICENSE`.
 
+Releases containing `bridra_VERSION_cli.spdx.json` also publish an SPDX 2.3
+dependency inventory and GitHub Sigstore attestations. After downloading an
+archive, verify both its build provenance and SBOM association:
+
+```bash
+gh attestation verify bridra_VERSION_OS_ARCH.tar.gz \
+  --repo cluion/bridra \
+  --signer-workflow cluion/bridra/.github/workflows/release.yml
+gh attestation verify bridra_VERSION_OS_ARCH.tar.gz \
+  --repo cluion/bridra \
+  --signer-workflow cluion/bridra/.github/workflows/release.yml \
+  --predicate-type https://spdx.dev/Document/v2.3
+```
+
+Use the matching `.zip` filename on Windows. Attestations establish which
+workflow and source commit produced the bytes; they do not replace operating
+system code signing or notarization.
+
 Upgrade by installing an explicit newer version, then inspect it before updating
 projects:
 

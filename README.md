@@ -59,7 +59,8 @@ distribution channels.
   shared Redis coordinated scheduled Tasks
 - `database/sql` lifecycle, transaction boundaries, and migration runner
 - Project creation, scaffolding, development supervision, builds, redacted
-  support diagnostics, release metadata, and transactional upgrades through one CLI
+  support diagnostics, deterministic SPDX release SBOMs, GitHub build
+  provenance, and transactional upgrades through one CLI
 - Single-instance desktop ownership with later-launch activation forwarding
 - Parent-bound desktop Sidecars that shut down when their Flutter owner exits
 - Typed server streams with progress events, cancellation, and bounded

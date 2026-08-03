@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	runtimedebug "runtime/debug"
 	"strings"
 	"testing"
 
@@ -24,6 +25,9 @@ func TestBuildCreatesDeterministicCrossPlatformArchivesAndMetadata(t *testing.T)
 	}
 	var specifications []ProcessSpec
 	system := DefaultSystem()
+	system.ReadBuildInfo = func(string) (*runtimedebug.BuildInfo, error) {
+		return testBuildInfo(), nil
+	}
 	system.Run = func(specification ProcessSpec) error {
 		specifications = append(specifications, specification)
 		output := argumentValue(t, specification.Arguments, "-o")
@@ -42,9 +46,10 @@ func TestBuildCreatesDeterministicCrossPlatformArchivesAndMetadata(t *testing.T)
 	if err != nil {
 		t.Fatalf("build release: %v", err)
 	}
-	if manifest.SchemaVersion != 2 || manifest.License != "MIT" ||
+	if manifest.SchemaVersion != 3 || manifest.License != "MIT" ||
 		manifest.BuildDate != "2026-07-22T00:00:00Z" ||
-		manifest.Tag != "backend/v"+releaseinfo.Version || len(manifest.Artifacts) != 2 {
+		manifest.Tag != "backend/v"+releaseinfo.Version || len(manifest.Artifacts) != 2 ||
+		manifest.SBOM.Format != "SPDX-2.3" || manifest.SBOM.PredicateType != spdxPredicateType {
 		t.Fatalf("manifest = %#v", manifest)
 	}
 	if len(specifications) != 2 {
@@ -112,6 +117,29 @@ func TestBuildCreatesDeterministicCrossPlatformArchivesAndMetadata(t *testing.T)
 	if len(decoded.Artifacts) != len(manifest.Artifacts) || decoded.Commit != "abc123" {
 		t.Fatalf("decoded manifest = %#v", decoded)
 	}
+	sbomContents, err := os.ReadFile(filepath.Join(config.Output, manifest.SBOM.File))
+	if err != nil {
+		t.Fatalf("read SBOM: %v", err)
+	}
+	if checksum(sbomContents) != manifest.SBOM.SHA256 || int64(len(sbomContents)) != manifest.SBOM.Size {
+		t.Fatalf("SBOM metadata = %#v", manifest.SBOM)
+	}
+	var sbom spdxDocument
+	if err := json.Unmarshal(sbomContents, &sbom); err != nil {
+		t.Fatalf("decode SBOM: %v", err)
+	}
+	if sbom.SPDXVersion != "SPDX-2.3" || sbom.DataLicense != "CC0-1.0" ||
+		len(sbom.Packages) != 3 || len(sbom.Relationships) != 3 {
+		t.Fatalf("SBOM = %#v", sbom)
+	}
+	if sbom.Packages[1].Name != "example.com/alpha" || sbom.Packages[2].Name != "example.com/zeta" {
+		t.Fatalf("SBOM packages = %#v", sbom.Packages)
+	}
+	if sbom.Packages[0].DownloadLocation != "NOASSERTION" ||
+		sbom.Packages[0].ExternalRefs[0].ReferenceLocator !=
+			"pkg:golang/github.com/cluion/bridra/backend/cmd/bridra@v"+releaseinfo.Version {
+		t.Fatalf("SBOM root package = %#v", sbom.Packages[0])
+	}
 
 	secondOutput := filepath.Join(t.TempDir(), "second")
 	config.Output = secondOutput
@@ -119,17 +147,61 @@ func TestBuildCreatesDeterministicCrossPlatformArchivesAndMetadata(t *testing.T)
 		t.Fatalf("second build: %v", err)
 	}
 	for _, artifact := range manifest.Artifacts {
-		first, err := os.ReadFile(filepath.Join(firstOutput, artifact.Archive))
-		if err != nil {
-			t.Fatalf("read first deterministic artifact: %v", err)
+		assertFilesEqual(t, firstOutput, secondOutput, artifact.Archive)
+	}
+	for _, name := range []string{manifest.SBOM.File, "manifest.json", "SHA256SUMS"} {
+		assertFilesEqual(t, firstOutput, secondOutput, name)
+	}
+}
+
+func TestModuleGraphRejectsReplacementDependencies(t *testing.T) {
+	info := testBuildInfo()
+	info.Deps[0].Replace = &runtimedebug.Module{Path: "../local"}
+	_, err := moduleGraphFromBuildInfo(info)
+	if !errors.Is(err, ErrInvalidConfiguration) {
+		t.Fatalf("error = %v, want ErrInvalidConfiguration", err)
+	}
+}
+
+func TestBuildRejectsDifferentTargetDependencyGraphs(t *testing.T) {
+	root := releaseTestRoot(t)
+	system := DefaultSystem()
+	system.Run = func(specification ProcessSpec) error {
+		output := argumentValue(t, specification.Arguments, "-o")
+		if err := os.MkdirAll(filepath.Dir(output), 0o755); err != nil {
+			return err
 		}
-		second, err := os.ReadFile(filepath.Join(secondOutput, artifact.Archive))
-		if err != nil {
-			t.Fatalf("read second deterministic artifact: %v", err)
+		return os.WriteFile(output, []byte("binary"), 0o755)
+	}
+	system.ReadBuildInfo = func(path string) (*runtimedebug.BuildInfo, error) {
+		info := testBuildInfo()
+		if strings.Contains(path, "windows-") {
+			info.Deps[0].Version = "v2.0.0"
 		}
-		if !bytes.Equal(first, second) {
-			t.Fatalf("%s is not deterministic", artifact.Archive)
-		}
+		return info, nil
+	}
+	_, err := Build(Config{
+		Root: root, Output: t.TempDir(), Version: releaseinfo.Version,
+		Commit: "abc123", BuildDate: "2026-07-22T00:00:00Z",
+		Targets: []Target{{GOOS: "linux", GOARCH: "arm64"}, {GOOS: "windows", GOARCH: "amd64"}},
+	}, system)
+	if !errors.Is(err, ErrInvalidConfiguration) {
+		t.Fatalf("error = %v, want ErrInvalidConfiguration", err)
+	}
+}
+
+func assertFilesEqual(t *testing.T, firstOutput string, secondOutput string, name string) {
+	t.Helper()
+	first, err := os.ReadFile(filepath.Join(firstOutput, name))
+	if err != nil {
+		t.Fatalf("read first deterministic %s: %v", name, err)
+	}
+	second, err := os.ReadFile(filepath.Join(secondOutput, name))
+	if err != nil {
+		t.Fatalf("read second deterministic %s: %v", name, err)
+	}
+	if !bytes.Equal(first, second) {
+		t.Fatalf("%s is not deterministic", name)
 	}
 }
 
@@ -179,6 +251,16 @@ func releaseTestRoot(t *testing.T) string {
 }
 
 const testLicense = "MIT License\n\nCopyright (c) 2026 Cluion\n"
+
+func testBuildInfo() *runtimedebug.BuildInfo {
+	return &runtimedebug.BuildInfo{
+		GoVersion: "go1.25.0",
+		Deps: []*runtimedebug.Module{
+			{Path: "example.com/zeta", Version: "v1.2.3", Sum: "h1:zeta"},
+			{Path: "example.com/alpha", Version: "v0.4.0", Sum: "h1:alpha"},
+		},
+	}
+}
 
 func extractArchive(archiveName string, contents []byte) (map[string][]byte, error) {
 	files := make(map[string][]byte)

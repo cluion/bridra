@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
+	stdbuildinfo "debug/buildinfo"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	runtimedebug "runtime/debug"
 	"sort"
 	"strings"
 	"time"
@@ -22,7 +24,7 @@ import (
 	"github.com/cluion/bridra/backend/internal/releaseinfo"
 )
 
-const ManifestSchemaVersion = 2
+const ManifestSchemaVersion = 3
 
 var (
 	ErrInvalidConfiguration = errors.New("CLI release: invalid configuration")
@@ -61,14 +63,15 @@ type ProcessSpec struct {
 }
 
 type System struct {
-	Abs       func(string) (string, error)
-	Stat      func(string) (os.FileInfo, error)
-	MkdirAll  func(string, os.FileMode) error
-	MkdirTemp func(string, string) (string, error)
-	RemoveAll func(string) error
-	ReadFile  func(string) ([]byte, error)
-	WriteFile func(string, []byte, os.FileMode) error
-	Run       func(ProcessSpec) error
+	Abs           func(string) (string, error)
+	Stat          func(string) (os.FileInfo, error)
+	MkdirAll      func(string, os.FileMode) error
+	MkdirTemp     func(string, string) (string, error)
+	RemoveAll     func(string) error
+	ReadFile      func(string) ([]byte, error)
+	ReadBuildInfo func(string) (*runtimedebug.BuildInfo, error)
+	WriteFile     func(string, []byte, os.FileMode) error
+	Run           func(ProcessSpec) error
 }
 
 type Manifest struct {
@@ -81,7 +84,16 @@ type Manifest struct {
 	BuildDate      string     `json:"buildDate"`
 	GoModule       string     `json:"goModule"`
 	CLIInstallPath string     `json:"cliInstallPath"`
+	SBOM           SBOMFile   `json:"sbom"`
 	Artifacts      []Artifact `json:"artifacts"`
+}
+
+type SBOMFile struct {
+	Format        string `json:"format"`
+	PredicateType string `json:"predicateType"`
+	File          string `json:"file"`
+	SHA256        string `json:"sha256"`
+	Size          int64  `json:"size"`
 }
 
 type Artifact struct {
@@ -94,13 +106,14 @@ type Artifact struct {
 
 func DefaultSystem() System {
 	return System{
-		Abs:       filepath.Abs,
-		Stat:      os.Stat,
-		MkdirAll:  os.MkdirAll,
-		MkdirTemp: os.MkdirTemp,
-		RemoveAll: os.RemoveAll,
-		ReadFile:  os.ReadFile,
-		WriteFile: os.WriteFile,
+		Abs:           filepath.Abs,
+		Stat:          os.Stat,
+		MkdirAll:      os.MkdirAll,
+		MkdirTemp:     os.MkdirTemp,
+		RemoveAll:     os.RemoveAll,
+		ReadFile:      os.ReadFile,
+		ReadBuildInfo: stdbuildinfo.ReadFile,
+		WriteFile:     os.WriteFile,
 		Run: func(specification ProcessSpec) error {
 			command := exec.Command(specification.Name, specification.Arguments...)
 			command.Dir = specification.Directory
@@ -141,9 +154,11 @@ func Build(config Config, system System) (Manifest, error) {
 	if !bytes.HasPrefix(licenseContents, []byte("MIT License\n")) {
 		return Manifest{}, fmt.Errorf("%w: backend LICENSE must contain the MIT License", ErrInvalidConfiguration)
 	}
-	files := make(map[string][]byte, len(resolved.Targets)+2)
+	files := make(map[string][]byte, len(resolved.Targets)+3)
+	var releaseGraph moduleGraph
+	graphSet := false
 	for _, target := range resolved.Targets {
-		artifact, contents, buildErr := buildTarget(
+		artifact, contents, buildInfo, buildErr := buildTarget(
 			resolved,
 			target,
 			buildTime,
@@ -156,10 +171,36 @@ func Build(config Config, system System) (Manifest, error) {
 		}
 		manifest.Artifacts = append(manifest.Artifacts, artifact)
 		files[artifact.Archive] = contents
+		graph, graphErr := moduleGraphFromBuildInfo(buildInfo)
+		if graphErr != nil {
+			return Manifest{}, fmt.Errorf("CLI release: inspect %s/%s dependencies: %w", target.GOOS, target.GOARCH, graphErr)
+		}
+		if !graphSet {
+			releaseGraph = graph
+			graphSet = true
+		} else if !releaseGraph.equal(graph) {
+			return Manifest{}, fmt.Errorf(
+				"%w: CLI targets must share one dependency graph for the release SBOM",
+				ErrInvalidConfiguration,
+			)
+		}
 	}
 	sort.Slice(manifest.Artifacts, func(left, right int) bool {
 		return manifest.Artifacts[left].Archive < manifest.Artifacts[right].Archive
 	})
+	sbomName := fmt.Sprintf("bridra_%s_cli.spdx.json", resolved.Version)
+	sbomContents, err := renderSPDXSBOM(resolved, buildTime, releaseGraph)
+	if err != nil {
+		return Manifest{}, err
+	}
+	manifest.SBOM = SBOMFile{
+		Format:        "SPDX-2.3",
+		PredicateType: spdxPredicateType,
+		File:          sbomName,
+		SHA256:        checksum(sbomContents),
+		Size:          int64(len(sbomContents)),
+	}
+	files[sbomName] = sbomContents
 	manifestContents, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return Manifest{}, fmt.Errorf("CLI release: encode manifest: %w", err)
@@ -265,14 +306,14 @@ func buildTarget(
 	work string,
 	licenseContents []byte,
 	system System,
-) (Artifact, []byte, error) {
+) (Artifact, []byte, *runtimedebug.BuildInfo, error) {
 	executable := "bridra"
 	if target.GOOS == "windows" {
 		executable += ".exe"
 	}
 	binary := filepath.Join(work, target.GOOS+"-"+target.GOARCH, executable)
 	if err := system.MkdirAll(filepath.Dir(binary), 0o755); err != nil {
-		return Artifact{}, nil, fmt.Errorf("CLI release: create target directory: %w", err)
+		return Artifact{}, nil, nil, fmt.Errorf("CLI release: create target directory: %w", err)
 	}
 	linkerFlags := strings.Join([]string{
 		"-s", "-w", "-buildid=",
@@ -291,7 +332,7 @@ func buildTarget(
 			"CGO_ENABLED=0", "GOOS=" + target.GOOS, "GOARCH=" + target.GOARCH,
 		},
 	}); err != nil {
-		return Artifact{}, nil, fmt.Errorf(
+		return Artifact{}, nil, nil, fmt.Errorf(
 			"CLI release: build %s/%s: %w",
 			target.GOOS,
 			target.GOARCH,
@@ -300,7 +341,11 @@ func buildTarget(
 	}
 	binaryContents, err := system.ReadFile(binary)
 	if err != nil {
-		return Artifact{}, nil, fmt.Errorf("CLI release: read %s/%s binary: %w", target.GOOS, target.GOARCH, err)
+		return Artifact{}, nil, nil, fmt.Errorf("CLI release: read %s/%s binary: %w", target.GOOS, target.GOARCH, err)
+	}
+	buildInfo, err := system.ReadBuildInfo(binary)
+	if err != nil {
+		return Artifact{}, nil, nil, fmt.Errorf("CLI release: read %s/%s build info: %w", target.GOOS, target.GOARCH, err)
 	}
 	archiveName := fmt.Sprintf("bridra_%s_%s_%s", config.Version, target.GOOS, target.GOARCH)
 	var archive []byte
@@ -312,12 +357,12 @@ func buildTarget(
 		archive, err = tarExecutable(executable, binaryContents, licenseContents, buildTime)
 	}
 	if err != nil {
-		return Artifact{}, nil, fmt.Errorf("CLI release: archive %s/%s: %w", target.GOOS, target.GOARCH, err)
+		return Artifact{}, nil, nil, fmt.Errorf("CLI release: archive %s/%s: %w", target.GOOS, target.GOARCH, err)
 	}
 	return Artifact{
 		GOOS: target.GOOS, GOARCH: target.GOARCH, Archive: archiveName,
 		SHA256: checksum(archive), Size: int64(len(archive)),
-	}, archive, nil
+	}, archive, buildInfo, nil
 }
 
 func tarExecutable(

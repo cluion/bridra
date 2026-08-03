@@ -35,6 +35,7 @@ func main() {
 	for _, artifact := range manifest.Artifacts {
 		fmt.Printf("%s  %s\n", artifact.SHA256, artifact.Archive)
 	}
+	fmt.Println(manifest.SBOM.File)
 	fmt.Println("SHA256SUMS")
 	fmt.Println("manifest.json")
 }

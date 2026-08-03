@@ -7,6 +7,7 @@ on:
 
 permissions:
   actions: read
+  attestations: write
   contents: write
   id-token: write
 
@@ -103,6 +104,24 @@ jobs:
       - name: Validate Dart package
         working-directory: packages/bridra_flutter
         run: fvm flutter pub publish --dry-run
+
+      - name: Attest CLI build provenance
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-path: |
+            build/bridra/cli/${{ steps.release.outputs.version }}/*.tar.gz
+            build/bridra/cli/${{ steps.release.outputs.version }}/*.zip
+            build/bridra/cli/${{ steps.release.outputs.version }}/SHA256SUMS
+            build/bridra/cli/${{ steps.release.outputs.version }}/manifest.json
+            build/bridra/cli/${{ steps.release.outputs.version }}/*.spdx.json
+
+      - name: Attest CLI SBOM
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-path: |
+            build/bridra/cli/${{ steps.release.outputs.version }}/*.tar.gz
+            build/bridra/cli/${{ steps.release.outputs.version }}/*.zip
+          sbom-path: build/bridra/cli/${{ steps.release.outputs.version }}/bridra_${{ steps.release.outputs.version }}_cli.spdx.json
 
       - name: Check Dart package publication
         id: pubdev

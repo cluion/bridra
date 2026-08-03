@@ -172,8 +172,16 @@ field, enum, counter, timestamp, and event-count validation.
 `backend/cmd/bridra-release` cross-compiles static amd64/arm64 binaries for macOS,
 Linux, and Windows. It removes host paths and VCS stamping, injects explicit
 release metadata, writes deterministic `tar.gz`/`zip` archives, and emits one
-sorted `SHA256SUMS` plus a versioned `manifest.json`. The source commit date is
-the archive timestamp; signing and publishing remain separate release steps.
+sorted `SHA256SUMS`, a versioned `manifest.json`, and a deterministic SPDX 2.3
+SBOM derived from each binary's Go build information. All six targets must expose
+the same public module graph; module replacements and target dependency drift fail
+the release build. The source commit date is the archive and SBOM timestamp.
+
+The protected release workflow uses GitHub's keyless Sigstore service to bind
+the archives and metadata to the exact repository, workflow, tag, and source
+commit. A second attestation binds the common SPDX SBOM to all six archives.
+These attestations prove build provenance and dependency claims; they do not
+replace platform executable signing, notarization, or installer trust.
 
 The schema describes the transport boundary only. Domain Models, Services,
 Controllers, provider composition, connection policy, and UI behavior remain

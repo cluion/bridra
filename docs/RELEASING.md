@@ -121,22 +121,27 @@ This produces the following under `build/bridra/cli/0.10.1/`:
 - Windows amd64 and arm64 `zip` archives
 - `SHA256SUMS`
 - schema-versioned `manifest.json`
+- deterministic `bridra_VERSION_cli.spdx.json`
 
 The source commit and commit timestamp are embedded into each binary. Confirm
 the native archive before publishing:
 
 ```bash
-shasum -a 256 -c build/bridra/cli/0.10.1/SHA256SUMS
+(cd build/bridra/cli/0.10.1 && shasum -a 256 -c SHA256SUMS)
 bridra version --json
 ```
 
 Running the release build twice from the same commit, Go toolchain, version, and
-build date must produce identical archive checksums.
+build date must produce identical archives, checksums, manifest, and SBOM. The
+SBOM is derived from binary Go build information; a module replacement or
+different dependency graph between targets must fail packaging.
 
 The release manager records the source commit, build host/toolchain, two checksum
-runs, archive smoke-test result, and `bridra version --json` output. Signing,
-notarization, installers, and app-store publication are product release layers and
-must not be implied by these unsigned CLI archives.
+runs, archive smoke-test result, SBOM digest, and `bridra version --json` output.
+GitHub Sigstore attestations establish build provenance and associate the SPDX
+SBOM with every archive. Platform executable signing, notarization, installers,
+and app-store publication remain product release layers and must not be implied
+by these attestations.
 
 ## Tag and publish
 
@@ -152,12 +157,13 @@ git push origin backend/v0.10.1
 The protected GitHub workflow requires the tag to point at the current `main`
 commit and reuses that exact commit's successful Verify workflow instead of
 running the full cross-platform suite again. It still repeats final version
-alignment, Dart package validation, and deterministic CLI packaging before
-creating the matching GitHub Release. The Release contains exactly the six
-archives, `SHA256SUMS`, and `manifest.json`. Every archive must contain the
-executable and the MIT `LICENSE`; the schema-versioned manifest must identify the
-license as `MIT`. Do not move or replace a published tag. Fix a bad release with
-a new patch version.
+alignment, deterministic CLI packaging, Dart package validation, and
+provenance/SBOM attestation before creating the matching GitHub Release. The Release
+contains exactly nine assets: six archives, `SHA256SUMS`, `manifest.json`, and
+the SPDX SBOM. Every archive must contain the executable and the MIT `LICENSE`;
+the schema-versioned manifest must identify the license as `MIT` and record the
+SBOM digest. Do not move or replace a published tag. Fix a bad release with a new
+patch version.
 
 The release candidate intentionally omits `publish_to: 'none'`. When
 `BRIDRA_PUBDEV_AUTOMATION_ENABLED=true`, the protected workflow publishes a
@@ -196,9 +202,23 @@ bridra version --json
 bridra create release_smoke --module example.com/acme/release-smoke
 ```
 
+Download the public archives and verify all six checksums. Verify both
+attestations for at least the native archive, while requiring the release
+workflow as signer:
+
+```bash
+gh attestation verify bridra_VERSION_OS_ARCH.tar.gz \
+  --repo cluion/bridra \
+  --signer-workflow cluion/bridra/.github/workflows/release.yml
+gh attestation verify bridra_VERSION_OS_ARCH.tar.gz \
+  --repo cluion/bridra \
+  --signer-workflow cluion/bridra/.github/workflows/release.yml \
+  --predicate-type https://spdx.dev/Document/v2.3
+```
+
 Run the generated project's full verification. The release is incomplete until
-the Go module, Dart package, CLI archives, checksums, documentation, and external
-consumer all agree on supported versions.
+the Go module, Dart package, CLI archives, checksums, SBOM, attestations,
+documentation, and external consumer all agree on supported versions.
 
 After publication, confirm `SECURITY.md` and `SUPPORT.md` still match the
 supported line, verify GitHub installation instructions from a clean
