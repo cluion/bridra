@@ -3,16 +3,22 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
-## [Unreleased]
+## [0.11.0] - 2026-08-03
 
 ### Added
 
-- Added a deterministic SPDX 2.3 SBOM for the six CLI archives. The release
-  manifest records its digest and rejects module replacements or
+- Added a deterministic SPDX 2.3 SBOM for the six CLI archives. Release
+  manifest schema `3` records its digest and rejects module replacements or
   cross-target dependency drift.
 - Added GitHub Sigstore build-provenance and SBOM attestations for release CLI
   archives, with the official `actions/attest` action pinned to its reviewed
   immutable commit.
+
+### Changed
+
+- Registered the automatic `0.10.1` to `0.11.0` dependency migration. The
+  public Go／Dart runtime APIs, Project Template version `2`, project metadata
+  schema `2`, and template protocol baseline `1` remain unchanged.
 
 ## [0.10.1] - 2026-08-02
 

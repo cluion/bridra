@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.11.0 - 2026-08-03
+
+- Aligned package metadata with Bridra 0.11.0's release supply-chain update.
+  The public Dart API and RPC protocol remain unchanged.
+
 ## 0.10.1 - 2026-08-02
 
 - Added immutable `SidecarDiagnostics` snapshots with bounded process,
