@@ -135,7 +135,7 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat generated iOS Simulator smoke script: %v", err)
 	}
-	if smokeInfo.Mode().Perm() != 0o755 {
+	if runtime.GOOS != "windows" && smokeInfo.Mode().Perm() != 0o755 {
 		t.Fatalf("generated iOS Simulator smoke script mode = %o", smokeInfo.Mode().Perm())
 	}
 	smokeTest, err := os.ReadFile(
