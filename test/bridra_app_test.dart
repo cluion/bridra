@@ -73,6 +73,20 @@ class ExitingBackend extends FakeBackend {
 }
 
 void main() {
+  testWidgets('fits the connected starter on an iPhone-width surface', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(402, 874);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(BridraApp(connector: () async => FakeBackend()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Go core online'), findsOneWidget);
+  });
+
   testWidgets('renders health and calls the typed backend gateway', (
     tester,
   ) async {

@@ -72,6 +72,13 @@ func TestCreateBuildsAndAtomicallyPublishesProject(t *testing.T) {
 		invocations[2].directory != filepath.Join(invocations[0].directory, "backend") {
 		t.Fatalf("Go verification invocation = %#v", invocations[2])
 	}
+	if invocations[4].name != "fvm" ||
+		!containsArguments(
+			invocations[4].arguments,
+			"dart", "format", "lib", "test", "integration_test",
+		) {
+		t.Fatalf("Dart format invocation = %#v", invocations[4])
+	}
 	if _, err := os.Stat(filepath.Join(destination, "flutter-runner.marker")); err != nil {
 		t.Fatalf("published Flutter marker: %v", err)
 	}

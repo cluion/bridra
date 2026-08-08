@@ -671,10 +671,10 @@ the protected surfaces; a Go checker emits a Markdown report and fails after
 reporting any regression below its floor. CI uploads the profiles and summary so
 coverage failures remain inspectable.
 
-The GitHub Actions workflow is configured to build:
+The GitHub Actions workflow is configured to build and verify:
 
 - Linux, Android, and Web on Ubuntu
-- macOS and iOS Simulator on macOS
+- macOS plus a real iOS Simulator Health／Greeting HTTP round trip on macOS
 - Windows on Windows
 
 Verify runs on Pull Requests and the merged `main` commit. The protected tag

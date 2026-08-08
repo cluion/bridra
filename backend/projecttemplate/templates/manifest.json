@@ -12,6 +12,8 @@
     {"source": "main.dart.tmpl", "destination": "lib/main.dart", "mode": "0644"},
     {"source": "backend_gateway.dart.tmpl", "destination": "lib/api/backend_gateway.dart", "mode": "0644"},
     {"source": "widget_test.dart.tmpl", "destination": "test/widget_test.dart", "mode": "0644"},
+    {"source": "ios_simulator_smoke_test.dart.tmpl", "destination": "integration_test/ios_simulator_smoke_test.dart", "mode": "0644"},
+    {"source": "ios_simulator_smoke.sh.tmpl", "destination": "tool/ios_simulator_smoke.sh", "mode": "0755"},
     {"source": "go.mod.tmpl", "destination": "backend/go.mod", "mode": "0644"},
     {"source": "router.go.tmpl", "destination": "backend/app/router.go", "mode": "0644"},
     {"source": "router_test.go.tmpl", "destination": "backend/app/router_test.go", "mode": "0644"},

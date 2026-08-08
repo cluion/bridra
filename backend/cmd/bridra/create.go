@@ -299,7 +299,11 @@ func (item createCommand) create(options createOptions, stdout io.Writer) (resul
 	if err := item.execute(staging, "fvm", "flutter", "pub", "get"); err != nil {
 		return fmt.Errorf("create: resolve Flutter dependencies: %w", err)
 	}
-	if err := item.execute(staging, "fvm", "dart", "format", "lib", "test"); err != nil {
+	if err := item.execute(
+		staging,
+		"fvm",
+		"dart", "format", "lib", "test", "integration_test",
+	); err != nil {
 		return fmt.Errorf("create: format Flutter sources: %w", err)
 	}
 	if err := item.system.rename(staging, options.directory); err != nil {

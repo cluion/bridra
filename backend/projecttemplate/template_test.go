@@ -126,8 +126,26 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 		t.Fatalf("read generated pubspec: %v", err)
 	}
 	if !strings.Contains(string(pubspec), `bridra_flutter: "^0.1.0"`) ||
-		!strings.Contains(string(pubspec), "dependency_overrides:") {
+		!strings.Contains(string(pubspec), "dependency_overrides:") ||
+		!strings.Contains(string(pubspec), "integration_test:") {
 		t.Fatalf("generated local pubspec = %s", pubspec)
+	}
+	smokeScript := filepath.Join(root, "tool", "ios_simulator_smoke.sh")
+	smokeInfo, err := os.Stat(smokeScript)
+	if err != nil {
+		t.Fatalf("stat generated iOS Simulator smoke script: %v", err)
+	}
+	if smokeInfo.Mode().Perm() != 0o755 {
+		t.Fatalf("generated iOS Simulator smoke script mode = %o", smokeInfo.Mode().Perm())
+	}
+	smokeTest, err := os.ReadFile(
+		filepath.Join(root, "integration_test", "ios_simulator_smoke_test.dart"),
+	)
+	if err != nil {
+		t.Fatalf("read generated iOS Simulator smoke test: %v", err)
+	}
+	if !strings.Contains(string(smokeTest), "package:starter_app/main.dart") {
+		t.Fatalf("generated iOS Simulator smoke test = %s", smokeTest)
 	}
 	projectMetadata, err := os.ReadFile(filepath.Join(root, ".bridra", "project.json"))
 	if err != nil {

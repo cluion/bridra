@@ -3,6 +3,18 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
+## [Unreleased]
+
+### Added
+
+- Added a generated-project iOS Simulator integration smoke test and hosted
+  macOS CI gate that exercise real `system.health` and `greeting.hello` HTTP
+  round trips against the Go backend.
+
+### Fixed
+
+- Prevented the connected-status header from overflowing at iPhone widths.
+
 ## [0.11.0] - 2026-08-03
 
 ### Added

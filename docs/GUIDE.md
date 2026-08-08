@@ -652,10 +652,16 @@ Profile and Release keep App Transport Security enabled.
 ```bash
 make ios-run DEVICE=<flutter-device-id>
 make ios-simulator-build
+make ios-simulator-smoke
 make ios-build \
   BACKEND_URL=https://api.example.com/rpc \
   BACKEND_TOKEN=replace-me
 ```
+
+`ios-simulator-smoke` automatically selects an available iPhone Simulator (or
+uses `DEVICE=<flutter-device-id>`), starts a temporary Go HTTP backend, and
+asserts real Health and Greeting RPC responses through the running iOS app. It
+shuts down only a Simulator that it booted itself.
 
 A physical device needs a reachable LAN or HTTPS URL:
 

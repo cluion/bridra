@@ -139,6 +139,7 @@ make doctor
 make verify
 make coverage
 make runtime-stress
+make ios-simulator-smoke
 ```
 
 `make verify` checks generated contracts, Go formatting and vet, race-enabled
@@ -147,6 +148,8 @@ tests, and static analysis. `make coverage` enforces the committed
 non-regression floors. `make runtime-stress` runs the slower fuzz, repeated
 lifecycle, concurrency, persistence, Sidecar recovery, and bounded resource
 stability suite.
+`make ios-simulator-smoke` boots an available iPhone Simulator when needed and
+verifies real `system.health` and `greeting.hello` HTTP round trips.
 
 ## Documentation
 

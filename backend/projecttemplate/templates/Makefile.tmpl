@@ -13,9 +13,10 @@ SERVER := $(CURDIR)/build/server/bridra_server$(EXECUTABLE_SUFFIX)
 BACKEND_TOKEN ?= dev-token
 BACKEND_URL ?=
 BUILD_MODE ?= release
+IOS_SIMULATOR_PORT ?= 18080
 
 .PHONY: doctor generate codegen-check backend-build backend-serve run test analyze verify \
-	linux-build macos-build windows-build android-build ios-build web-build
+	linux-build macos-build windows-build android-build ios-build ios-simulator-smoke web-build
 
 doctor:
 	cd backend && $(BRIDRA) doctor --root ..
@@ -71,6 +72,13 @@ android-build:
 ios-build:
 	cd backend && $(BRIDRA) build ios --root .. --mode $(BUILD_MODE) \
 		--backend-url '$(BACKEND_URL)' --token '$(BACKEND_TOKEN)'
+
+ios-simulator-smoke: backend-build
+	BRIDRA_SERVER_PATH='$(SERVER)' \
+		BRIDRA_FLUTTER='$(FLUTTER)' \
+		BRIDRA_IOS_SIMULATOR_DEVICE='$(DEVICE)' \
+		BRIDRA_IOS_SIMULATOR_PORT='$(IOS_SIMULATOR_PORT)' \
+		./tool/ios_simulator_smoke.sh
 
 web-build:
 	cd backend && $(BRIDRA) build web --root .. --mode $(BUILD_MODE) \

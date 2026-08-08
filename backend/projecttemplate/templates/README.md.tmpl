@@ -38,6 +38,13 @@ go run {{.BridraGoModule}}/cmd/bridra dev --root .. --device chrome
 Mobile and custom devices require `--listen 0.0.0.0:<port>` plus an explicit
 `--backend-url` reachable from the device.
 
+On macOS with full Xcode, exercise the generated iOS app and real Go HTTP
+backend together in an automatically managed Simulator:
+
+```bash
+make ios-simulator-smoke
+```
+
 ## Builds
 
 Build desktop Sidecar bundles or mobile/Web HTTP artifacts through the same local

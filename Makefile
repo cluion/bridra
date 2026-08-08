@@ -21,6 +21,7 @@ BACKEND_TOKEN ?= dev-token
 BACKEND_LISTEN ?= 127.0.0.1:8080
 BACKEND_CORS_ORIGIN ?= *
 BACKEND_URL ?=
+IOS_SIMULATOR_PORT ?= 18080
 DART_DEFINES := --dart-define='BRIDRA_BACKEND_TOKEN=$(BACKEND_TOKEN)'
 ifneq ($(strip $(BACKEND_URL)),)
 DART_DEFINES += --dart-define='BRIDRA_BACKEND_URL=$(BACKEND_URL)'
@@ -46,7 +47,7 @@ RUNTIME_RESOURCE_MAX_RSS_GROWTH_MIB ?= 32
 	flutter-format flutter-package-test flutter-web-test flutter-test analyze verify coverage backend-coverage flutter-package-coverage flutter-app-coverage coverage-check linux-check linux-run linux-build \
 	linux-smoke macos-check macos-run macos-build macos-smoke windows-run \
 	windows-build windows-smoke windows-verify android-run android-build \
-	ios-run ios-build ios-simulator-build web-run web-build remote-release-check \
+	ios-run ios-build ios-simulator-build ios-simulator-smoke web-run web-build remote-release-check \
 	release-prepare release-check cli-release runtime-fuzz runtime-resources runtime-stress run
 
 help:
@@ -76,6 +77,7 @@ help:
 	@echo "make android-build Build an Android release APK (HTTPS URL required)"
 	@echo "make ios-run      Run on an iOS device (DEVICE=<id> optional)"
 	@echo "make ios-build    Build an unsigned iOS release (HTTPS URL required)"
+	@echo "make ios-simulator-smoke Exercise real HTTP RPCs in an iOS Simulator"
 	@echo "make web-run      Run the Web app in Chrome"
 	@echo "make web-build    Build a Web release (HTTPS URL required)"
 	@echo "make release-prepare VERSION=x.y.z Synchronize one release version"
@@ -108,7 +110,7 @@ license-check:
 
 format:
 	cd backend && gofmt -w .
-	$(DART) format lib test $(BRIDRA_FLUTTER_PACKAGE)/lib $(BRIDRA_FLUTTER_PACKAGE)/test
+	$(DART) format lib test integration_test $(BRIDRA_FLUTTER_PACKAGE)/lib $(BRIDRA_FLUTTER_PACKAGE)/test
 
 backend-build:
 	mkdir -p $(dir $(SIDECAR))
@@ -159,7 +161,7 @@ runtime-stress: runtime-fuzz runtime-resources
 	cd $(BRIDRA_FLUTTER_PACKAGE) && BRIDRA_STRESS=1 BRIDRA_STRESS_CYCLES='$(RUNTIME_STRESS_CYCLES)' $(FLUTTER) test test/sidecar_client_test.dart --plain-name 'stress repeatedly crashes and recovers without replay'
 
 flutter-format:
-	$(DART) format --output=none --set-exit-if-changed lib test $(BRIDRA_FLUTTER_PACKAGE)/lib $(BRIDRA_FLUTTER_PACKAGE)/test
+	$(DART) format --output=none --set-exit-if-changed lib test integration_test $(BRIDRA_FLUTTER_PACKAGE)/lib $(BRIDRA_FLUTTER_PACKAGE)/test
 
 flutter-package-test: backend-build
 	cd $(BRIDRA_FLUTTER_PACKAGE) && BRIDRA_SIDECAR_PATH=$(SIDECAR) $(FLUTTER) test
@@ -294,6 +296,13 @@ ios-build: macos-check remote-release-check
 
 ios-simulator-build: macos-check
 	$(FLUTTER) build ios --simulator --debug $(DART_DEFINES)
+
+ios-simulator-smoke: macos-check backend-server-build
+	BRIDRA_SERVER_PATH='$(HTTP_SERVER)' \
+		BRIDRA_FLUTTER='$(FLUTTER)' \
+		BRIDRA_IOS_SIMULATOR_DEVICE='$(DEVICE)' \
+		BRIDRA_IOS_SIMULATOR_PORT='$(IOS_SIMULATOR_PORT)' \
+		./tool/ios_simulator_smoke.sh
 
 web-run:
 	$(FLUTTER) run -d chrome $(DART_DEFINES)

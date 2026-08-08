@@ -133,6 +133,9 @@ jobs:
       - name: Build and smoke-test macOS bundle
         run: make macos-smoke
 
+      - name: Exercise iOS Simulator HTTP round trip
+        run: make ios-simulator-smoke
+
       - name: Build unsigned iOS release
         run: make ios-build BACKEND_URL=https://backend.example/rpc BACKEND_TOKEN=ci-token
 

@@ -344,30 +344,36 @@ class _TopBar extends StatelessWidget {
       children: [
         const _BridraMark(size: 42),
         const SizedBox(width: 13),
-        const Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'BRIDRA',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 2.4,
+        const Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'BRIDRA',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 2.4,
+                ),
               ),
-            ),
-            Text(
-              'APPLICATION FRAMEWORK',
-              style: TextStyle(
-                color: _subtle,
-                fontSize: 9,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1.4,
+              Text(
+                'APPLICATION FRAMEWORK',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: _subtle,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.4,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-        const Spacer(),
+        const SizedBox(width: 12),
         _ConnectionPill(connected: connected, connecting: connecting),
       ],
     );
@@ -967,17 +973,21 @@ class _RequestResult extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 9),
-              Text(
-                error != null
-                    ? 'REQUEST FAILED'
-                    : hasResult
-                    ? '200 · CONTROLLER RESPONSE'
-                    : 'READY · AWAITING REQUEST',
-                style: TextStyle(
-                  color: accent,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.15,
+              Expanded(
+                child: Text(
+                  error != null
+                      ? 'REQUEST FAILED'
+                      : hasResult
+                      ? '200 · CONTROLLER RESPONSE'
+                      : 'READY · AWAITING REQUEST',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: accent,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.15,
+                  ),
                 ),
               ),
             ],
