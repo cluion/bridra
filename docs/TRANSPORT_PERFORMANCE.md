@@ -1,6 +1,6 @@
 # Transport performance evaluation
 
-Updated: 2026-07-29
+Updated: 2026-08-09
 
 ## Decision
 
@@ -12,8 +12,9 @@ as the binary bulk-data path.
   application workload that fails an explicit latency or throughput target.
 - If that workload appears, prototype length-prefixed binary frames before
   considering shared memory.
-- The next framework milestone should focus on persistent Queue delivery and
-  distributed Scheduler locking rather than transport replacement.
+- The Bridra 0.12.0 revalidation remains within the 0.6.1 microbenchmark
+  baseline. Continue measuring real application workloads rather than replacing
+  the transport speculatively.
 
 This is a deferral with measurable reconsideration gates, not a claim that
 binary framing can never help.
@@ -54,6 +55,40 @@ validation, stream credit accounting, cancellation, and one-time session
 buffer allocation. The managed-file benchmark includes `fsync`, so its fixed
 cost is intentionally visible. Results are directional microbenchmarks and do
 not replace end-to-end measurements from a real Flutter application.
+
+## 2026-08-09 revalidation
+
+Host:
+
+- Apple M4 Pro, macOS arm64
+- Go 1.26.5
+- Bridra 0.12.0
+
+Median of three 200 ms benchmark samples:
+
+| Payload | JSON round trip | Length-prefixed pipe | Managed file round trip |
+| ---: | ---: | ---: | ---: |
+| 1 KiB | 0.0046 ms | 0.0013 ms | — |
+| 64 KiB | 0.242 ms | 0.0054 ms | 4.80 ms |
+| 1 MiB | 3.82 ms | 0.129 ms | 6.08 ms |
+| 3 MiB | 11.59 ms | 0.398 ms | 9.51 ms |
+| 16 MiB | — | 2.70 ms | 23.38 ms |
+
+The JSON medians remain within 3.1% of the 0.6.1 baseline and the optimistic
+pipe medians remain within 5.9%. Managed files improved for 64 KiB through
+3 MiB in this short run; the 16 MiB result was about 9.9% slower, where file
+synchronization makes host noise visible. There is no framework-level
+regression.
+
+At 1 MiB, JSON used a median 2.20 MiB per operation; at 3 MiB it used a median
+8.72 MiB. The pipe still allocated no Go memory per operation and managed files
+stayed near 34 KiB. This preserves the theoretical binary-frame opportunity but
+does not establish a real end-to-end bottleneck.
+
+No current Bridra workload satisfies the reconsideration gates below: no real
+application is missing an explicit p95 latency or CPU target, and profiling has
+not attributed at least 25% of such a missed budget to serialization or
+transport copies. Binary framing and shared memory therefore remain deferred.
 
 ## 2026-07-29 baseline
 
