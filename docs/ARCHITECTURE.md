@@ -604,10 +604,13 @@ must therefore be concurrency-safe.
   Debug phase it verifies ordered Streaming／Progress, forces a backend outage,
   proves unavailable/reconnect UI, then repeats Health, Greeting, the stream,
   and a managed download after restart. The download is checked against a known
-  size, SHA-256, and content on the device. Its authenticated smoke routes exist
-  only when the test script explicitly enables `--smoke-stream` and
-  `--smoke-download`. Developer Team and bundle identifier overrides live in
-  ignored `Local.xcconfig`.
+  size, SHA-256, and content on the device. A managed upload is interrupted after
+  32 KiB; the client must query the stored offset, continue from it, and let Go
+  consume and re-hash the completed file before and after recovery. Its
+  authenticated smoke routes and fault injection exist only when the test
+  script explicitly enables `--smoke-stream`, `--smoke-download`, and
+  `--smoke-upload-resume`. Developer Team and bundle identifier overrides live
+  in ignored `Local.xcconfig`.
 - Web release configuration should use HTTPS and an exact allowed origin.
 
 The complete server mux sits behind `HTTPObservationHandler`. That boundary

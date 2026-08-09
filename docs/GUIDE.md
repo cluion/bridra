@@ -664,8 +664,10 @@ make ios-build \
 uses `DEVICE=<flutter-device-id>`), starts a temporary Go HTTP backend, and
 asserts real Health, Greeting, ordered Streaming／Progress, and a 60 KiB managed
 download through the running iOS app. The download must match its expected
-name, media type, byte count, SHA-256, and content. The script shuts down only a
-Simulator that it booted itself.
+name, media type, byte count, SHA-256, and content. It also interrupts a 112 KiB
+upload after 32 KiB, requires Flutter to recover the stored offset, resumes from
+that exact byte, then has Go consume and re-hash the result. The script shuts
+down only a Simulator that it booted itself.
 
 For this repository, keep developer-only signing outside Git:
 
@@ -681,14 +683,16 @@ through a Debug integration test, stops the backend, verifies the unavailable
 state and successful reconnect, preserves the installed app so iOS keeps its
 local-network grant, verifies ordered Streaming／Progress before and after the
 reconnect, repeats the size/SHA-256-verified managed download after recovery,
+repeats the interrupted/resumed upload with Go-side size/SHA-256 verification,
 then installs a Profile build and verifies two cold launches without Flutter
-tooling. The authenticated smoke-only routes are disabled unless the script
-passes `--smoke-stream` and `--smoke-download`. The script uses `flutter drive`,
-which handles wired and wireless iPhones, and stops the app and temporary backend
-when the test finishes. Keep the iPhone unlocked, in Developer Mode, trusted,
-and on a network that can reach the Mac. Accept the one-time Local Network prompt
-for each new bundle identifier. Override address discovery with
-`IOS_DEVICE_HOST=<address>` when needed.
+tooling. The authenticated smoke-only routes and fault injection are disabled
+unless the script passes `--smoke-stream`, `--smoke-download`, and
+`--smoke-upload-resume`. The script uses `flutter drive`, which handles wired
+and wireless iPhones, and stops the app and temporary backend when the test
+finishes. Keep the iPhone unlocked, in Developer Mode, trusted, and on a network
+that can reach the Mac. Accept the one-time Local Network prompt for each new
+bundle identifier. Override address discovery with `IOS_DEVICE_HOST=<address>`
+when needed.
 
 An iOS Debug app cannot be relaunched from the Home Screen without Flutter
 tooling or Xcode. Use Profile for a standalone development launch; Release and

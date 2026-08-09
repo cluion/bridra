@@ -2,15 +2,19 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -36,6 +40,11 @@ func main() {
 		"smoke-download",
 		false,
 		"enable the authenticated managed-download route used by platform smoke tests",
+	)
+	smokeUploadResume := flag.Bool(
+		"smoke-upload-resume",
+		false,
+		"enable authenticated upload verification with one injected interruption",
 	)
 	flag.Parse()
 	tokenProvided := false
@@ -65,6 +74,9 @@ func main() {
 	}
 	if *smokeDownload {
 		registerSmokeDownload(application.Router(), fileTransfers)
+	}
+	if *smokeUploadResume {
+		registerSmokeUploadVerification(application.Router(), fileTransfers)
 	}
 	backendToken := framework.ConfigValue(
 		application.Config(),
@@ -116,12 +128,19 @@ func main() {
 		AllowedOrigin: *allowedOrigin,
 		Errors:        os.Stderr,
 	})
-	mux.Handle("/rpc/files/", &framework.FileTransferHTTPHandler{
+	fileTransferHandler := http.Handler(&framework.FileTransferHTTPHandler{
 		Store:         fileTransfers,
 		AllowedOrigin: *allowedOrigin,
 		Token:         backendToken,
 		Errors:        os.Stderr,
 	})
+	if *smokeUploadResume {
+		fileTransferHandler = &smokeUploadResumeHandler{
+			handler:     fileTransferHandler,
+			errorOutput: os.Stderr,
+		}
+	}
+	mux.Handle("/rpc/files/", fileTransferHandler)
 
 	server := &http.Server{
 		Addr: *listenAddress,
@@ -204,7 +223,11 @@ const (
 	smokeDownloadMediaType  = "application/octet-stream"
 	smokeDownloadBlock      = "bridra-managed-download-smoke|"
 	smokeDownloadBlockCount = 2048
+	smokeUploadVerifyMethod = "bridra.smoke.upload.verify"
+	smokeUploadInterruptAt  = int64(32 << 10)
 )
+
+var errSmokeUploadInterrupted = errors.New("smoke upload stream interrupted")
 
 func registerSmokeStream(router *framework.Router) {
 	router.Handle(smokeStreamMethod, func(ctx *framework.Context) (any, error) {
@@ -254,4 +277,88 @@ func registerSmokeDownload(
 			)),
 		)
 	})
+}
+
+func registerSmokeUploadVerification(
+	router *framework.Router,
+	store *framework.FileTransferStore,
+) {
+	router.Handle(smokeUploadVerifyMethod, func(ctx *framework.Context) (any, error) {
+		params, err := framework.BindParams[struct {
+			File framework.FileReference `json:"file"`
+		}](ctx)
+		if err != nil {
+			return nil, err
+		}
+		upload, err := store.ConsumeUpload(params.File)
+		if err != nil {
+			return nil, err
+		}
+		digest := sha256.New()
+		size, readErr := io.Copy(digest, upload)
+		closeErr := upload.Close()
+		if err := errors.Join(readErr, closeErr); err != nil {
+			return nil, err
+		}
+		return map[string]any{
+			"name":   params.File.Name,
+			"size":   size,
+			"sha256": hex.EncodeToString(digest.Sum(nil)),
+		}, nil
+	})
+}
+
+type smokeUploadResumeHandler struct {
+	handler     http.Handler
+	errorOutput io.Writer
+	interrupted atomic.Bool
+	resumed     atomic.Bool
+}
+
+func (handler *smokeUploadResumeHandler) ServeHTTP(
+	writer http.ResponseWriter,
+	request *http.Request,
+) {
+	if request.Method == http.MethodPatch &&
+		request.Header.Get("Upload-Offset") == "0" &&
+		handler.interrupted.CompareAndSwap(false, true) {
+		request.Body = &smokeInterruptedReadCloser{
+			ReadCloser: request.Body,
+			remaining:  smokeUploadInterruptAt,
+		}
+		handler.handler.ServeHTTP(writer, request)
+		fmt.Fprintf(
+			handler.errorOutput,
+			"server: smoke upload interrupted at offset %d\n",
+			smokeUploadInterruptAt,
+		)
+		return
+	}
+	if request.Method == http.MethodPatch &&
+		request.Header.Get("Upload-Offset") == fmt.Sprint(smokeUploadInterruptAt) &&
+		handler.resumed.CompareAndSwap(false, true) {
+		fmt.Fprintf(
+			handler.errorOutput,
+			"server: smoke upload resumed at offset %d\n",
+			smokeUploadInterruptAt,
+		)
+	}
+	handler.handler.ServeHTTP(writer, request)
+}
+
+type smokeInterruptedReadCloser struct {
+	io.ReadCloser
+	remaining int64
+}
+
+func (reader *smokeInterruptedReadCloser) Read(buffer []byte) (int, error) {
+	if reader.remaining == 0 {
+		return 0, errSmokeUploadInterrupted
+	}
+	if int64(len(buffer)) > reader.remaining {
+		buffer = buffer[:reader.remaining]
+	}
+	read, err := reader.ReadCloser.Read(buffer)
+	reader.remaining -= int64(read)
+	return read, err
 }

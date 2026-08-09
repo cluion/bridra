@@ -13,6 +13,9 @@ const smokeClient = String.fromEnvironment(
 const smokeReconnect = bool.fromEnvironment('BRIDRA_IOS_SMOKE_RECONNECT');
 const smokeStream = bool.fromEnvironment('BRIDRA_IOS_SMOKE_STREAM');
 const smokeDownload = bool.fromEnvironment('BRIDRA_IOS_SMOKE_DOWNLOAD');
+const smokeUploadResume = bool.fromEnvironment(
+  'BRIDRA_IOS_SMOKE_UPLOAD_RESUME',
+);
 const smokeBackendUrl = String.fromEnvironment('BRIDRA_BACKEND_URL');
 const smokeBackendToken = String.fromEnvironment('BRIDRA_BACKEND_TOKEN');
 const smokeStreamMethod = 'bridra.smoke.stream';
@@ -23,6 +26,13 @@ const smokeDownloadBlock = 'bridra-managed-download-smoke|';
 const smokeDownloadBlockCount = 2048;
 const smokeDownloadSha256 =
     '1d07674b0ad481aad8ca8bfb35963b10d765add489fc10c8e4645958023da950';
+const smokeUploadVerifyMethod = 'bridra.smoke.upload.verify';
+const smokeUploadName = 'bridra-upload-smoke.bin';
+const smokeUploadBlock = 'bridra-managed-upload-smoke|';
+const smokeUploadBlockCount = 4096;
+const smokeUploadInterruptAt = 32768;
+const smokeUploadSha256 =
+    '3af311d71afcc68896f0306cd8b29b828593cfbd5f712478d4f16af6b0a87dd3';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -42,6 +52,9 @@ void main() {
     if (smokeDownload) {
       await _verifyManagedDownload();
     }
+    if (smokeUploadResume) {
+      await _verifyResumableManagedUpload();
+    }
 
     if (smokeReconnect) {
       await _waitForBackendLoss(tester);
@@ -52,6 +65,9 @@ void main() {
       }
       if (smokeDownload) {
         await _verifyManagedDownload();
+      }
+      if (smokeUploadResume) {
+        await _verifyResumableManagedUpload();
       }
     }
   });
@@ -84,6 +100,54 @@ Future<void> _verifyManagedDownload() async {
     }
     expect(downloaded.length, reference.size);
     expect(downloaded, orderedEquals(expected));
+  } finally {
+    await client.close();
+  }
+}
+
+Future<void> _verifyResumableManagedUpload() async {
+  final client = HttpRpcClient(
+    endpoint: Uri.parse(smokeBackendUrl),
+    token: smokeBackendToken,
+  );
+  try {
+    final expected = utf8.encode(
+      List.filled(smokeUploadBlockCount, smokeUploadBlock).join(),
+    );
+    final openedOffsets = <int>[];
+    Stream<List<int>> openRead(int offset) async* {
+      openedOffsets.add(offset);
+      const chunkSize = 8192;
+      for (var cursor = offset; cursor < expected.length; cursor += chunkSize) {
+        final end = (cursor + chunkSize).clamp(0, expected.length);
+        yield expected.sublist(cursor, end);
+      }
+    }
+
+    final upload = RpcFileUpload(
+      name: smokeUploadName,
+      mediaType: smokeDownloadMediaType,
+      size: expected.length,
+      sha256: smokeUploadSha256,
+      openRead: openRead,
+    );
+    final reference = await client.upload(upload);
+    expect(openedOffsets, [0, smokeUploadInterruptAt]);
+    expect(reference.name, smokeUploadName);
+    expect(reference.mediaType, smokeDownloadMediaType);
+    expect(reference.size, expected.length);
+    expect(reference.sha256, smokeUploadSha256);
+    expect(reference.localPath, isNull);
+
+    final reply = await client.call(
+      smokeUploadVerifyMethod,
+      params: {'file': reference.toJson()},
+    );
+    expect(reply.result, {
+      'name': smokeUploadName,
+      'size': expected.length,
+      'sha256': smokeUploadSha256,
+    });
   } finally {
     await client.close();
   }

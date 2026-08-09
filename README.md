@@ -69,7 +69,8 @@ distribution channels.
   capabilities, managed Desktop files, bounded retries, and end-to-end size
   plus SHA-256 verification
 - Simulator and physical-iPhone smoke coverage for verified HTTP managed
-  downloads, including a repeat after backend recovery on the physical device
+  downloads and interrupted/resumed uploads, including repeats after backend
+  recovery on the physical device
 - Real process, HTTP, browser, widget, race, public API, and coverage tests
 
 ## Platform model

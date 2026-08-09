@@ -82,6 +82,7 @@ echo "Starting Go HTTP backend on 127.0.0.1:$port..."
   --token "$token" \
   --smoke-stream \
   --smoke-download \
+  --smoke-upload-resume \
   --cors-origin '*' >"$smoke_log" 2>&1 &
 server_pid=$!
 
@@ -102,7 +103,7 @@ while ! grep -Fq 'server: listening on ' "$smoke_log"; do
   sleep 0.1
 done
 
-echo "Running iOS Simulator RPC, Streaming/Progress, and managed-download integration test on $device..."
+echo "Running iOS Simulator RPC, streaming, managed-download, and resumable-upload integration test on $device..."
 test_status=0
 # BRIDRA_FLUTTER intentionally contains a command and optional wrapper argument.
 # shellcheck disable=SC2086
@@ -112,6 +113,7 @@ $flutter_command test integration_test/ios_http_smoke_test.dart \
   --dart-define="BRIDRA_BACKEND_TOKEN=$token" \
   --dart-define="BRIDRA_IOS_SMOKE_STREAM=true" \
   --dart-define="BRIDRA_IOS_SMOKE_DOWNLOAD=true" \
+  --dart-define="BRIDRA_IOS_SMOKE_UPLOAD_RESUME=true" \
   --dart-define="BRIDRA_IOS_SMOKE_CLIENT=iOS Simulator" || test_status=$?
 
 cat "$smoke_log"
@@ -123,3 +125,6 @@ grep -Fq '"rpc_method":"greeting.hello"' "$smoke_log"
 grep -Fq '"rpc_method":"bridra.smoke.stream"' "$smoke_log"
 grep -Fq '"rpc_method":"bridra.smoke.download"' "$smoke_log"
 grep -Fq '"surface":"file_transfer"' "$smoke_log"
+grep -Fq 'server: smoke upload interrupted at offset 32768' "$smoke_log"
+grep -Fq 'server: smoke upload resumed at offset 32768' "$smoke_log"
+grep -Fq '"rpc_method":"bridra.smoke.upload.verify"' "$smoke_log"

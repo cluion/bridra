@@ -1,9 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -201,5 +208,135 @@ func TestSmokeDownloadUsesApplicationAuthentication(t *testing.T) {
 	)
 	if response.Error == nil || response.Error.Code != "unauthorized" {
 		t.Fatalf("response = %#v", response)
+	}
+}
+
+func TestSmokeUploadResumeHandlerInterruptsAndContinuesAtStoredOffset(t *testing.T) {
+	store, err := framework.NewFileTransferStore(
+		framework.DefaultFileTransferOptions(),
+	)
+	if err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("close store: %v", err)
+		}
+	})
+	content := []byte(strings.Repeat("bridra-managed-upload-smoke|", 4096))
+	sum := sha256.Sum256(content)
+	status, err := store.BeginUpload(
+		"bridra-upload-smoke.bin",
+		"application/octet-stream",
+		int64(len(content)),
+		hex.EncodeToString(sum[:]),
+	)
+	if err != nil {
+		t.Fatalf("begin upload: %v", err)
+	}
+	var logs bytes.Buffer
+	handler := &smokeUploadResumeHandler{
+		handler: &framework.FileTransferHTTPHandler{
+			Store:  store,
+			Errors: &logs,
+		},
+		errorOutput: &logs,
+	}
+
+	appendUpload := func(offset int64, body []byte) *httptest.ResponseRecorder {
+		t.Helper()
+		request := httptest.NewRequest(
+			http.MethodPatch,
+			"/rpc/files/"+status.Reference.ID,
+			bytes.NewReader(body),
+		)
+		request.Header.Set("Content-Type", "application/offset+octet-stream")
+		request.Header.Set("Upload-Offset", fmt.Sprint(offset))
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response
+	}
+
+	first := appendUpload(0, content)
+	if first.Code != http.StatusInternalServerError {
+		t.Fatalf("interrupted response = %d, body %s", first.Code, first.Body.String())
+	}
+	status, err = store.UploadStatus(status.Reference.ID)
+	if err != nil {
+		t.Fatalf("upload status: %v", err)
+	}
+	if status.Offset != smokeUploadInterruptAt || status.Complete {
+		t.Fatalf("interrupted status = %#v", status)
+	}
+
+	resumed := appendUpload(status.Offset, content[status.Offset:])
+	if resumed.Code != http.StatusOK {
+		t.Fatalf("resumed response = %d, body %s", resumed.Code, resumed.Body.String())
+	}
+	status, err = store.UploadStatus(status.Reference.ID)
+	if err != nil {
+		t.Fatalf("completed upload status: %v", err)
+	}
+	if status.Offset != int64(len(content)) || !status.Complete {
+		t.Fatalf("completed status = %#v", status)
+	}
+	if !strings.Contains(logs.String(), "smoke upload interrupted at offset 32768") ||
+		!strings.Contains(logs.String(), "smoke upload resumed at offset 32768") {
+		t.Fatalf("logs = %s", logs.String())
+	}
+}
+
+func TestSmokeUploadVerificationConsumesAndHashesManagedUpload(t *testing.T) {
+	store, err := framework.NewFileTransferStore(
+		framework.DefaultFileTransferOptions(),
+	)
+	if err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("close store: %v", err)
+		}
+	})
+	content := []byte("verified managed upload")
+	sum := sha256.Sum256(content)
+	status, err := store.BeginUpload(
+		"upload.bin",
+		"application/octet-stream",
+		int64(len(content)),
+		hex.EncodeToString(sum[:]),
+	)
+	if err != nil {
+		t.Fatalf("begin upload: %v", err)
+	}
+	status, err = store.AppendUpload(
+		context.Background(),
+		status.Reference.ID,
+		0,
+		bytes.NewReader(content),
+	)
+	if err != nil {
+		t.Fatalf("append upload: %v", err)
+	}
+	params, err := json.Marshal(map[string]any{"file": status.Reference})
+	if err != nil {
+		t.Fatalf("encode params: %v", err)
+	}
+	router := framework.NewRouter()
+	registerSmokeUploadVerification(router, store)
+	response := router.Dispatch(context.Background(), framework.Request{
+		ID: "1", Method: smokeUploadVerifyMethod, Params: params,
+	})
+	if response.Error != nil {
+		t.Fatalf("response error: %v", response.Error)
+	}
+	result, ok := response.Result.(map[string]any)
+	if !ok || result["name"] != status.Reference.Name ||
+		result["size"] != int64(len(content)) ||
+		result["sha256"] != hex.EncodeToString(sum[:]) {
+		t.Fatalf("result = %#v", response.Result)
+	}
+	if _, err := store.ConsumeUpload(status.Reference); err == nil {
+		t.Fatal("verified upload was not consumed")
 	}
 }

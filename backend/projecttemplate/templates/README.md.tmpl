@@ -48,15 +48,18 @@ make ios-device-smoke
 
 The Simulator target verifies Health, Greeting, ordered Streaming/Progress, and
 a managed download with known size, SHA-256, and content through the running iOS
-app. It is suitable for hosted macOS CI.
+app. It also interrupts an upload after 32 KiB, requires resume from that exact
+offset, and has Go consume and re-hash the completed upload. It is suitable for
+hosted macOS CI.
 
 The device target selects the only available iPhone unless `DEVICE=<id>` is
 provided, avoids occupied local ports, verifies Health and Greeting, forces a
 backend outage and verifies reconnect, checks ordered Streaming and Progress
-plus a verified managed download before and after recovery, and proves that a
-signed Profile app cold-launches twice without Flutter tooling. Configure an
-Apple Development Team before running it and accept the one-time Local Network
-prompt for a new bundle identifier; signing remains application-owned.
+plus a verified managed download and interrupted/resumed upload before and after
+recovery, and proves that a signed Profile app cold-launches twice without
+Flutter tooling. Configure an Apple Development Team before running it and
+accept the one-time Local Network prompt for a new bundle identifier; signing
+remains application-owned.
 
 ## Builds
 

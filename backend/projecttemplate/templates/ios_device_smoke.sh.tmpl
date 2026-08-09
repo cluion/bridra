@@ -201,7 +201,15 @@ stream_count() {
 }
 
 download_count() {
-  backend_log_count '"surface":"file_transfer"'
+  backend_log_count '"http_method":"GET".*"surface":"file_transfer"'
+}
+
+upload_verify_count() {
+  backend_log_count '"rpc_method":"bridra.smoke.upload.verify"'
+}
+
+upload_resume_count() {
+  backend_log_count 'server: smoke upload resumed at offset 32768'
 }
 
 start_backend() {
@@ -212,6 +220,7 @@ start_backend() {
     --token "$token" \
     --smoke-stream \
     --smoke-download \
+    --smoke-upload-resume \
     --cors-origin '*' >>"$smoke_log" 2>&1 &
   server_pid=$!
 
@@ -281,7 +290,7 @@ start_backend
 
 backend_url=http://$host_ip:$port/rpc
 echo "Allow the Local Network prompt on the iPhone if this bundle ID is new."
-echo "Running physical iPhone Health, Greeting, Streaming/Progress, managed-download, and reconnect integration test..."
+echo "Running physical iPhone RPC, streaming, managed-download, resumable-upload, and reconnect integration test..."
 # BRIDRA_FLUTTER intentionally contains a command and optional wrapper argument.
 # shellcheck disable=SC2086
 $flutter_command drive \
@@ -294,6 +303,7 @@ $flutter_command drive \
   --dart-define="BRIDRA_IOS_SMOKE_CLIENT=Physical iPhone" \
   --dart-define="BRIDRA_IOS_SMOKE_STREAM=true" \
   --dart-define="BRIDRA_IOS_SMOKE_DOWNLOAD=true" \
+  --dart-define="BRIDRA_IOS_SMOKE_UPLOAD_RESUME=true" \
   --dart-define="BRIDRA_IOS_SMOKE_RECONNECT=true" >"$test_log" 2>&1 &
 test_pid=$!
 
@@ -304,6 +314,14 @@ fi
 if ! wait_for_test_pattern \
   "$smoke_log" '"surface":"file_transfer"' 3000; then
   abort_test "Physical iPhone did not complete its initial verified managed download."
+fi
+if ! wait_for_test_pattern \
+  "$smoke_log" 'server: smoke upload resumed at offset 32768' 3000; then
+  abort_test "Physical iPhone did not resume its interrupted managed upload."
+fi
+if ! wait_for_test_pattern \
+  "$smoke_log" '"rpc_method":"bridra.smoke.upload.verify"' 3000; then
+  abort_test "Go did not consume and verify the resumed managed upload."
 fi
 
 echo "Stopping Go HTTP backend to exercise the unavailable state..."
@@ -318,6 +336,8 @@ reconnect_health_baseline=$(health_count)
 reconnect_greeting_baseline=$(greeting_count)
 reconnect_stream_baseline=$(stream_count)
 reconnect_download_baseline=$(download_count)
+reconnect_upload_verify_baseline=$(upload_verify_count)
+reconnect_upload_resume_baseline=$(upload_resume_count)
 echo "Restarting Go HTTP backend for the reconnect action..."
 start_backend
 test_status=0
@@ -335,9 +355,11 @@ fi
 if [ "$(health_count)" -le "$reconnect_health_baseline" ] ||
   [ "$(greeting_count)" -le "$reconnect_greeting_baseline" ] ||
   [ "$(stream_count)" -le "$reconnect_stream_baseline" ] ||
-  [ "$(download_count)" -le "$reconnect_download_baseline" ]; then
+  [ "$(download_count)" -le "$reconnect_download_baseline" ] ||
+  [ "$(upload_verify_count)" -le "$reconnect_upload_verify_baseline" ] ||
+  [ "$(upload_resume_count)" -le "$reconnect_upload_resume_baseline" ]; then
   cat "$smoke_log" >&2
-  echo "Reconnect did not complete new Health, Greeting, Streaming, and managed-download requests." >&2
+  echo "Reconnect did not complete new RPC, download, and resumable-upload requests." >&2
   exit 1
 fi
 
@@ -396,4 +418,4 @@ cold_launch "Cold-launching Profile app without Flutter tooling"
 cold_launch "Cold-launching Profile app a second time"
 
 cat "$smoke_log"
-echo "Physical iPhone smoke passed: Health, Greeting, Streaming/Progress, verified managed downloads, reconnect, and two Profile cold launches."
+echo "Physical iPhone smoke passed: RPC, streaming, verified downloads, resumed uploads, reconnect, and two Profile cold launches."

@@ -144,8 +144,10 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 	}
 	if !strings.Contains(string(simulatorSource), "BRIDRA_IOS_SMOKE_STREAM=true") ||
 		!strings.Contains(string(simulatorSource), "BRIDRA_IOS_SMOKE_DOWNLOAD=true") ||
+		!strings.Contains(string(simulatorSource), "BRIDRA_IOS_SMOKE_UPLOAD_RESUME=true") ||
 		!strings.Contains(string(simulatorSource), "--smoke-stream") ||
-		!strings.Contains(string(simulatorSource), "--smoke-download") {
+		!strings.Contains(string(simulatorSource), "--smoke-download") ||
+		!strings.Contains(string(simulatorSource), "--smoke-upload-resume") {
 		t.Fatalf("generated iOS Simulator smoke script = %s", simulatorSource)
 	}
 	deviceScript := filepath.Join(root, "tool", "ios_device_smoke.sh")
@@ -163,6 +165,7 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 	if !strings.Contains(string(deviceSource), "BRIDRA_IOS_SMOKE_RECONNECT=true") ||
 		!strings.Contains(string(deviceSource), "BRIDRA_IOS_SMOKE_STREAM=true") ||
 		!strings.Contains(string(deviceSource), "BRIDRA_IOS_SMOKE_DOWNLOAD=true") ||
+		!strings.Contains(string(deviceSource), "BRIDRA_IOS_SMOKE_UPLOAD_RESUME=true") ||
 		!strings.Contains(string(deviceSource), "Stopping Go HTTP backend") ||
 		!strings.Contains(string(deviceSource), "--keep-app-running") ||
 		!strings.Contains(string(deviceSource), "--driver=test_driver/integration_test.dart") {
@@ -178,7 +181,9 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 		!strings.Contains(string(smokeTest), "Go core unavailable") ||
 		!strings.Contains(string(smokeTest), "RpcStreamProgress<RpcReply>") ||
 		!strings.Contains(string(smokeTest), "RpcFileReference.fromJson") ||
-		!strings.Contains(string(smokeTest), "client.download(reference)") {
+		!strings.Contains(string(smokeTest), "client.download(reference)") ||
+		!strings.Contains(string(smokeTest), "RpcFileUpload(") ||
+		!strings.Contains(string(smokeTest), "expect(openedOffsets, [0, smokeUploadInterruptAt])") {
 		t.Fatalf("generated iOS HTTP smoke test = %s", smokeTest)
 	}
 	driver, err := os.ReadFile(filepath.Join(root, "test_driver", "integration_test.dart"))
@@ -221,8 +226,10 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 		`flag.String("cors-origin", "",`,
 		`"smoke-stream",`,
 		`"smoke-download",`,
+		`"smoke-upload-resume",`,
 		`const smokeStreamMethod = "bridra.smoke.stream"`,
 		`smokeDownloadMethod     = "bridra.smoke.download"`,
+		`smokeUploadVerifyMethod = "bridra.smoke.upload.verify"`,
 		"framework.NewJSONHTTPObserver(os.Stderr)",
 		"&framework.HTTPObservationHandler{",
 		"ReadHeaderTimeout: 5 * time.Second",
