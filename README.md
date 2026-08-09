@@ -157,12 +157,13 @@ stability suite.
 Greeting, ordered Streaming／Progress, interrupted file-transfer resume, a real
 backend outage, and the complete flow again after reconnect.
 `make ios-simulator-smoke` boots an available iPhone Simulator when needed and
-verifies real `system.health`, `greeting.hello`, and ordered Streaming／Progress
-HTTP round trips.
+verifies real `system.health`, `greeting.hello`, ordered Streaming／Progress,
+and interrupted/resumed managed download and upload HTTP round trips.
 `make ios-device-smoke` exercises the same RPCs on a physical iPhone, forces a
 backend outage and verifies UI recovery, checks ordered Streaming／Progress both
-before and after reconnect, then installs a signed Profile app and proves two
-launches without Flutter tooling.
+before and after reconnect, repeats the managed download/upload recovery flow,
+then installs a signed Profile app and proves two launches without Flutter
+tooling.
 
 ## Documentation
 
