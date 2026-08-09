@@ -1,1 +1,3 @@
 #include "Generated.xcconfig"
+BRIDRA_PRODUCT_BUNDLE_IDENTIFIER = com.example.bridra
+#include? "Local.xcconfig"

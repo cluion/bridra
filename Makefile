@@ -22,6 +22,8 @@ BACKEND_LISTEN ?= 127.0.0.1:8080
 BACKEND_CORS_ORIGIN ?= *
 BACKEND_URL ?=
 IOS_SIMULATOR_PORT ?= 18080
+IOS_DEVICE_PORT ?= 18081
+IOS_DEVICE_HOST ?=
 DART_DEFINES := --dart-define='BRIDRA_BACKEND_TOKEN=$(BACKEND_TOKEN)'
 ifneq ($(strip $(BACKEND_URL)),)
 DART_DEFINES += --dart-define='BRIDRA_BACKEND_URL=$(BACKEND_URL)'
@@ -47,7 +49,7 @@ RUNTIME_RESOURCE_MAX_RSS_GROWTH_MIB ?= 32
 	flutter-format flutter-package-test flutter-web-test flutter-test analyze verify coverage backend-coverage flutter-package-coverage flutter-app-coverage coverage-check linux-check linux-run linux-build \
 	linux-smoke macos-check macos-run macos-build macos-smoke windows-run \
 	windows-build windows-smoke windows-verify android-run android-build \
-	ios-run ios-build ios-simulator-build ios-simulator-smoke web-run web-build remote-release-check \
+	ios-run ios-build ios-simulator-build ios-simulator-smoke ios-device-smoke web-run web-build remote-release-check \
 	release-prepare release-check cli-release runtime-fuzz runtime-resources runtime-stress run
 
 help:
@@ -78,6 +80,7 @@ help:
 	@echo "make ios-run      Run on an iOS device (DEVICE=<id> optional)"
 	@echo "make ios-build    Build an unsigned iOS release (HTTPS URL required)"
 	@echo "make ios-simulator-smoke Exercise real HTTP RPCs in an iOS Simulator"
+	@echo "make ios-device-smoke Exercise RPCs and Profile cold launches on an iPhone"
 	@echo "make web-run      Run the Web app in Chrome"
 	@echo "make web-build    Build a Web release (HTTPS URL required)"
 	@echo "make release-prepare VERSION=x.y.z Synchronize one release version"
@@ -303,6 +306,14 @@ ios-simulator-smoke: macos-check backend-server-build
 		BRIDRA_IOS_SIMULATOR_DEVICE='$(DEVICE)' \
 		BRIDRA_IOS_SIMULATOR_PORT='$(IOS_SIMULATOR_PORT)' \
 		./tool/ios_simulator_smoke.sh
+
+ios-device-smoke: macos-check backend-server-build
+	BRIDRA_SERVER_PATH='$(HTTP_SERVER)' \
+		BRIDRA_FLUTTER='$(FLUTTER)' \
+		BRIDRA_IOS_DEVICE='$(DEVICE)' \
+		BRIDRA_IOS_DEVICE_HOST='$(IOS_DEVICE_HOST)' \
+		BRIDRA_IOS_DEVICE_PORT='$(IOS_DEVICE_PORT)' \
+		./tool/ios_device_smoke.sh
 
 web-run:
 	$(FLUTTER) run -d chrome $(DART_DEFINES)

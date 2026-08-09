@@ -653,6 +653,7 @@ Profile and Release keep App Transport Security enabled.
 make ios-run DEVICE=<flutter-device-id>
 make ios-simulator-build
 make ios-simulator-smoke
+make ios-device-smoke
 make ios-build \
   BACKEND_URL=https://api.example.com/rpc \
   BACKEND_TOKEN=replace-me
@@ -662,6 +663,27 @@ make ios-build \
 uses `DEVICE=<flutter-device-id>`), starts a temporary Go HTTP backend, and
 asserts real Health and Greeting RPC responses through the running iOS app. It
 shuts down only a Simulator that it booted itself.
+
+For this repository, keep developer-only signing outside Git:
+
+```bash
+cp ios/Flutter/Local.xcconfig.example ios/Flutter/Local.xcconfig
+```
+
+Set `DEVELOPMENT_TEAM` and a unique `BRIDRA_PRODUCT_BUNDLE_IDENTIFIER` in the
+ignored local file. `ios-device-smoke` selects the only available physical
+iPhone (or uses `DEVICE=<flutter-device-id>`), discovers the Mac's LAN address,
+and selects a free port starting at `18081`. It first drives Health and Greeting
+through a Debug integration test, then installs a Profile build and verifies two
+cold launches without Flutter tooling. The app and temporary backend are stopped
+when the test finishes. Keep the iPhone unlocked, in Developer Mode, trusted,
+and on a network that can reach the Mac. Accept the one-time Local Network
+prompt for each new bundle identifier. Override address discovery with
+`IOS_DEVICE_HOST=<address>` when needed.
+
+An iOS Debug app cannot be relaunched from the Home Screen without Flutter
+tooling or Xcode. Use Profile for a standalone development launch; Release and
+Store signing remain separate application-owned workflows.
 
 A physical device needs a reachable LAN or HTTPS URL:
 

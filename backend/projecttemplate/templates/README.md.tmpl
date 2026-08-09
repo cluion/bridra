@@ -39,11 +39,18 @@ Mobile and custom devices require `--listen 0.0.0.0:<port>` plus an explicit
 `--backend-url` reachable from the device.
 
 On macOS with full Xcode, exercise the generated iOS app and real Go HTTP
-backend together in an automatically managed Simulator:
+backend in a Simulator or on a trusted physical iPhone:
 
 ```bash
 make ios-simulator-smoke
+make ios-device-smoke
 ```
+
+The device target selects the only available iPhone unless `DEVICE=<id>` is
+provided, avoids occupied local ports, verifies Health and Greeting, and proves
+that a signed Profile app cold-launches twice without Flutter tooling. Configure
+an Apple Development Team before running it and accept the one-time Local
+Network prompt for a new bundle identifier; signing remains application-owned.
 
 ## Builds
 

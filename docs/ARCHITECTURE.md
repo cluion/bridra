@@ -596,6 +596,9 @@ must therefore be concurrency-safe.
 - Android Release uses a cleartext-disabled network security config.
 - iOS Debug uses `Info-Debug.plist` for local HTTP and local-network permission.
 - iOS Profile and Release use `Info.plist` with default App Transport Security.
+- The physical-device gate uses Debug only for automated UI assertions, then a
+  signed Profile build for two standalone cold-launch Health checks. Developer
+  Team and bundle identifier overrides live in ignored `Local.xcconfig`.
 - Web release configuration should use HTTPS and an exact allowed origin.
 
 The complete server mux sits behind `HTTPObservationHandler`. That boundary

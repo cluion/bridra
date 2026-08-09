@@ -1,0 +1,3 @@
+// Copy to Local.xcconfig. The real file is ignored by Git.
+DEVELOPMENT_TEAM = YOUR_APPLE_TEAM_ID
+BRIDRA_PRODUCT_BUNDLE_IDENTIFIER = com.example.bridra.dev

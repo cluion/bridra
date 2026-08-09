@@ -130,22 +130,30 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 		!strings.Contains(string(pubspec), "integration_test:") {
 		t.Fatalf("generated local pubspec = %s", pubspec)
 	}
-	smokeScript := filepath.Join(root, "tool", "ios_simulator_smoke.sh")
-	smokeInfo, err := os.Stat(smokeScript)
+	simulatorScript := filepath.Join(root, "tool", "ios_simulator_smoke.sh")
+	simulatorInfo, err := os.Stat(simulatorScript)
 	if err != nil {
 		t.Fatalf("stat generated iOS Simulator smoke script: %v", err)
 	}
-	if runtime.GOOS != "windows" && smokeInfo.Mode().Perm() != 0o755 {
-		t.Fatalf("generated iOS Simulator smoke script mode = %o", smokeInfo.Mode().Perm())
+	if runtime.GOOS != "windows" && simulatorInfo.Mode().Perm() != 0o755 {
+		t.Fatalf("generated iOS Simulator smoke script mode = %o", simulatorInfo.Mode().Perm())
+	}
+	deviceScript := filepath.Join(root, "tool", "ios_device_smoke.sh")
+	deviceInfo, err := os.Stat(deviceScript)
+	if err != nil {
+		t.Fatalf("stat generated iOS device smoke script: %v", err)
+	}
+	if runtime.GOOS != "windows" && deviceInfo.Mode().Perm() != 0o755 {
+		t.Fatalf("generated iOS device smoke script mode = %o", deviceInfo.Mode().Perm())
 	}
 	smokeTest, err := os.ReadFile(
-		filepath.Join(root, "integration_test", "ios_simulator_smoke_test.dart"),
+		filepath.Join(root, "integration_test", "ios_http_smoke_test.dart"),
 	)
 	if err != nil {
-		t.Fatalf("read generated iOS Simulator smoke test: %v", err)
+		t.Fatalf("read generated iOS HTTP smoke test: %v", err)
 	}
 	if !strings.Contains(string(smokeTest), "package:starter_app/main.dart") {
-		t.Fatalf("generated iOS Simulator smoke test = %s", smokeTest)
+		t.Fatalf("generated iOS HTTP smoke test = %s", smokeTest)
 	}
 	projectMetadata, err := os.ReadFile(filepath.Join(root, ".bridra", "project.json"))
 	if err != nil {

@@ -18,11 +18,12 @@ backend/cmd/server/main.go
 backend/cmd/sidecar/main.go
 backend/framework/protocol_version.gen.go
 backend/go.mod
-integration_test/ios_simulator_smoke_test.dart
+integration_test/ios_http_smoke_test.dart
 lib/api/backend_gateway.dart
 lib/api/generated/bridra_api.g.dart
 lib/main.dart
 pubspec.yaml
 schema/bridra.json
 test/widget_test.dart
+tool/ios_device_smoke.sh
 tool/ios_simulator_smoke.sh

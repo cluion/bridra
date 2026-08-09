@@ -10,6 +10,10 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 - Added a generated-project iOS Simulator integration smoke test and hosted
   macOS CI gate that exercise real `system.health` and `greeting.hello` HTTP
   round trips against the Go backend.
+- Added a physical-iPhone smoke target with LAN address discovery, occupied-port
+  avoidance, Health/Greeting integration coverage, and two standalone signed
+  Profile cold launches. Local Apple Team and bundle identifier overrides stay
+  outside Git.
 
 ### Fixed
 

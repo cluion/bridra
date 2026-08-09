@@ -140,6 +140,7 @@ make verify
 make coverage
 make runtime-stress
 make ios-simulator-smoke
+make ios-device-smoke
 ```
 
 `make verify` checks generated contracts, Go formatting and vet, race-enabled
@@ -150,6 +151,8 @@ lifecycle, concurrency, persistence, Sidecar recovery, and bounded resource
 stability suite.
 `make ios-simulator-smoke` boots an available iPhone Simulator when needed and
 verifies real `system.health` and `greeting.hello` HTTP round trips.
+`make ios-device-smoke` exercises the same RPCs on a physical iPhone, then
+installs a signed Profile app and proves two launches without Flutter tooling.
 
 ## Documentation
 

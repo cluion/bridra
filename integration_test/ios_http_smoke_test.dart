@@ -1,14 +1,17 @@
+import 'package:bridra/main.dart' as app;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:{{.ProjectName}}/main.dart' as app;
+
+const smokeClient = String.fromEnvironment(
+  'BRIDRA_IOS_SMOKE_CLIENT',
+  defaultValue: 'iOS',
+);
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('iOS Simulator completes health and greeting RPCs', (
-    tester,
-  ) async {
+  testWidgets('iOS completes health and greeting RPCs', (tester) async {
     await app.main();
 
     await _pumpUntilFound(tester, find.text('Go core online'));
@@ -16,17 +19,17 @@ void main() {
     final nameField = find.byKey(const Key('name-field'));
     final callButton = find.byKey(const Key('call-button'));
     await tester.ensureVisible(nameField);
-    await tester.enterText(nameField, 'iOS Simulator');
+    await tester.enterText(nameField, smokeClient);
     await tester.ensureVisible(callButton);
     await tester.tap(callButton);
 
-    await _pumpUntilFound(tester, find.text('Hello, iOS Simulator!'));
+    await _pumpUntilFound(tester, find.text('Hello, $smokeClient!'));
     expect(find.text('200 · CONTROLLER RESPONSE'), findsOneWidget);
   });
 }
 
 Future<void> _pumpUntilFound(WidgetTester tester, Finder finder) async {
-  for (var attempt = 0; attempt < 100 && finder.evaluate().isEmpty; attempt++) {
+  for (var attempt = 0; attempt < 150 && finder.evaluate().isEmpty; attempt++) {
     await tester.pump(const Duration(milliseconds: 200));
   }
   expect(finder, findsOneWidget);
