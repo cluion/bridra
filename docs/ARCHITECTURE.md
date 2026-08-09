@@ -594,11 +594,16 @@ must therefore be concurrency-safe.
 - Android Debug and Profile overlay a cleartext-enabled network security
   config for emulator/LAN development.
 - Android Release uses a cleartext-disabled network security config.
-- iOS Debug uses `Info-Debug.plist` for local HTTP and local-network permission.
-- iOS Profile and Release use `Info.plist` with default App Transport Security.
+- iOS Debug uses `Info-Debug.plist` for local HTTP. Debug, Profile, and Release
+  use the same local-network permission purpose so switching build modes does
+  not create conflicting prompts.
+- iOS Profile and Release use `Info.plist` with `NSAllowsLocalNetworking`; ATS
+  still rejects insecure public-network traffic.
 - The physical-device gate uses Debug only for automated UI assertions, then a
-  signed Profile build for two standalone cold-launch Health checks. Developer
-  Team and bundle identifier overrides live in ignored `Local.xcconfig`.
+  signed Profile build for two standalone cold-launch Health checks. During the
+  Debug phase it forces a backend outage and proves unavailable/reconnect UI plus
+  new post-restart Health and Greeting RPCs. Developer Team and bundle identifier
+  overrides live in ignored `Local.xcconfig`.
 - Web release configuration should use HTTPS and an exact allowed origin.
 
 The complete server mux sits behind `HTTPObservationHandler`. That boundary

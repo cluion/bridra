@@ -11,13 +11,16 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
   macOS CI gate that exercise real `system.health` and `greeting.hello` HTTP
   round trips against the Go backend.
 - Added a physical-iPhone smoke target with LAN address discovery, occupied-port
-  avoidance, Health/Greeting integration coverage, and two standalone signed
-  Profile cold launches. Local Apple Team and bundle identifier overrides stay
-  outside Git.
+  avoidance, Health/Greeting integration coverage, forced backend-loss recovery,
+  and two standalone signed Profile cold launches. Local Apple Team and bundle
+  identifier overrides stay outside Git.
 
 ### Fixed
 
 - Prevented the connected-status header from overflowing at iPhone widths.
+- Kept the iOS local-network permission purpose consistent across build modes
+  and added the scoped ATS local-network exception required by current iOS,
+  without allowing arbitrary public-network HTTP in Profile or Release.
 
 ## [0.11.0] - 2026-08-03
 

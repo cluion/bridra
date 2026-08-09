@@ -146,14 +146,40 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 	if runtime.GOOS != "windows" && deviceInfo.Mode().Perm() != 0o755 {
 		t.Fatalf("generated iOS device smoke script mode = %o", deviceInfo.Mode().Perm())
 	}
+	deviceSource, err := os.ReadFile(deviceScript)
+	if err != nil {
+		t.Fatalf("read generated iOS device smoke script: %v", err)
+	}
+	if !strings.Contains(string(deviceSource), "BRIDRA_IOS_SMOKE_RECONNECT=true") ||
+		!strings.Contains(string(deviceSource), "Stopping Go HTTP backend") ||
+		!strings.Contains(string(deviceSource), "--keep-app-running") ||
+		!strings.Contains(string(deviceSource), "--driver=test_driver/integration_test.dart") {
+		t.Fatalf("generated iOS device smoke script = %s", deviceSource)
+	}
 	smokeTest, err := os.ReadFile(
 		filepath.Join(root, "integration_test", "ios_http_smoke_test.dart"),
 	)
 	if err != nil {
 		t.Fatalf("read generated iOS HTTP smoke test: %v", err)
 	}
-	if !strings.Contains(string(smokeTest), "package:starter_app/main.dart") {
+	if !strings.Contains(string(smokeTest), "package:starter_app/main.dart") ||
+		!strings.Contains(string(smokeTest), "Go core unavailable") {
 		t.Fatalf("generated iOS HTTP smoke test = %s", smokeTest)
+	}
+	driver, err := os.ReadFile(filepath.Join(root, "test_driver", "integration_test.dart"))
+	if err != nil {
+		t.Fatalf("read generated integration test driver: %v", err)
+	}
+	if !strings.Contains(string(driver), "integrationDriver()") {
+		t.Fatalf("generated integration test driver = %s", driver)
+	}
+	iosInfo, err := os.ReadFile(filepath.Join(root, "ios", "Runner", "Info.plist"))
+	if err != nil {
+		t.Fatalf("read generated iOS Info.plist: %v", err)
+	}
+	if !strings.Contains(string(iosInfo), "NSAllowsLocalNetworking") ||
+		!strings.Contains(string(iosInfo), "NSLocalNetworkUsageDescription") {
+		t.Fatalf("generated iOS Info.plist = %s", iosInfo)
 	}
 	projectMetadata, err := os.ReadFile(filepath.Join(root, ".bridra", "project.json"))
 	if err != nil {

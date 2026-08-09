@@ -7,25 +7,75 @@ const smokeClient = String.fromEnvironment(
   'BRIDRA_IOS_SMOKE_CLIENT',
   defaultValue: 'iOS',
 );
+const smokeReconnect = bool.fromEnvironment('BRIDRA_IOS_SMOKE_RECONNECT');
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('iOS completes health and greeting RPCs', (tester) async {
+  testWidgets('iOS completes HTTP smoke flow', (tester) async {
     await app.main();
 
-    await _pumpUntilFound(tester, find.text('Go core online'));
+    if (smokeReconnect) {
+      await _retryUntilOnline(tester);
+    } else {
+      await _pumpUntilFound(tester, find.text('Go core online'));
+    }
+    await _callGreeting(tester, smokeClient);
 
-    final nameField = find.byKey(const Key('name-field'));
-    final callButton = find.byKey(const Key('call-button'));
-    await tester.ensureVisible(nameField);
-    await tester.enterText(nameField, smokeClient);
-    await tester.ensureVisible(callButton);
-    await tester.tap(callButton);
-
-    await _pumpUntilFound(tester, find.text('Hello, $smokeClient!'));
-    expect(find.text('200 · CONTROLLER RESPONSE'), findsOneWidget);
+    if (smokeReconnect) {
+      await _waitForBackendLoss(tester);
+      await _retryUntilOnline(tester);
+      await _callGreeting(tester, '$smokeClient reconnected');
+    }
   });
+}
+
+Future<void> _callGreeting(WidgetTester tester, String name) async {
+  final nameField = find.byKey(const Key('name-field'));
+  final callButton = find.byKey(const Key('call-button'));
+  await tester.ensureVisible(nameField);
+  await tester.tap(nameField);
+  await tester.pump();
+  await tester.enterText(nameField, name);
+  expect(tester.widget<TextField>(nameField).controller?.text, name);
+  await tester.ensureVisible(callButton);
+  await tester.tap(callButton);
+
+  await _pumpUntilFound(tester, find.text('Hello, $name!'));
+  expect(find.text('200 · CONTROLLER RESPONSE'), findsOneWidget);
+}
+
+Future<void> _waitForBackendLoss(WidgetTester tester) async {
+  final callButton = find.byKey(const Key('call-button'));
+  final unavailable = find.text('Go core unavailable');
+  for (
+    var attempt = 0;
+    attempt < 150 && unavailable.evaluate().isEmpty;
+    attempt++
+  ) {
+    if (callButton.evaluate().isNotEmpty &&
+        tester.widget<FilledButton>(callButton).onPressed != null) {
+      await tester.ensureVisible(callButton);
+      await tester.tap(callButton);
+    }
+    await tester.pump(const Duration(milliseconds: 200));
+  }
+  expect(unavailable, findsOneWidget);
+  expect(find.byKey(const Key('retry-button')), findsOneWidget);
+}
+
+Future<void> _retryUntilOnline(WidgetTester tester) async {
+  final retryButton = find.byKey(const Key('retry-button'));
+  final online = find.text('Go core online');
+  for (var attempt = 0; attempt < 150 && online.evaluate().isEmpty; attempt++) {
+    if (retryButton.evaluate().isNotEmpty &&
+        tester.widget<OutlinedButton>(retryButton).onPressed != null) {
+      await tester.ensureVisible(retryButton);
+      await tester.tap(retryButton);
+    }
+    await tester.pump(const Duration(milliseconds: 200));
+  }
+  expect(online, findsOneWidget);
 }
 
 Future<void> _pumpUntilFound(WidgetTester tester, Finder finder) async {

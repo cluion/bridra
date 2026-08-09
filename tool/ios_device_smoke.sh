@@ -39,13 +39,21 @@ fi
 temporary_directory=$(mktemp -d "${TMPDIR:-/tmp}/bridra-ios-device-smoke.XXXXXX")
 devices_json=$temporary_directory/devices.json
 smoke_log=$temporary_directory/backend.log
+test_log=$temporary_directory/flutter-test.log
 launch_json=$temporary_directory/launch.json
 server_pid=
+test_pid=
 app_pid=
+: >"$smoke_log"
+: >"$test_log"
 
 cleanup() {
   status=$?
   trap - EXIT INT TERM
+  if [ -n "$test_pid" ] && kill -0 "$test_pid" 2>/dev/null; then
+    kill "$test_pid" 2>/dev/null || true
+    wait "$test_pid" 2>/dev/null || true
+  fi
   if [ -n "$app_pid" ]; then
     xcrun devicectl device process terminate \
       --device "$device" \
@@ -56,7 +64,7 @@ cleanup() {
     kill "$server_pid" 2>/dev/null || true
     wait "$server_pid" 2>/dev/null || true
   fi
-  rm -f "$devices_json" "$smoke_log" "$launch_json"
+  rm -f "$devices_json" "$smoke_log" "$test_log" "$launch_json"
   rmdir "$temporary_directory" 2>/dev/null || true
   exit "$status"
 }
@@ -150,48 +158,143 @@ if [ -z "$development_team" ]; then
 fi
 
 echo "Using physical iPhone $device_name ($device)."
-echo "Starting Go HTTP backend on 0.0.0.0:$port for $host_ip..."
-"$server_path" \
-  --listen "0.0.0.0:$port" \
-  --token "$token" \
-  --cors-origin '*' >"$smoke_log" 2>&1 &
-server_pid=$!
 
-attempt=0
-while ! grep -Fq 'server: listening on ' "$smoke_log"; do
-  if ! kill -0 "$server_pid" 2>/dev/null; then
-    cat "$smoke_log" >&2
-    wait "$server_pid" || true
-    echo "Go HTTP backend stopped before becoming ready." >&2
-    exit 1
+backend_log_count() {
+  grep -c "$1" "$smoke_log" || true
+}
+
+health_count() {
+  backend_log_count '"rpc_method":"system.health"'
+}
+
+greeting_count() {
+  backend_log_count '"rpc_method":"greeting.hello"'
+}
+
+start_backend() {
+  listen_baseline=$(backend_log_count 'server: listening on ')
+  echo "Starting Go HTTP backend on 0.0.0.0:$port for $host_ip..."
+  "$server_path" \
+    --listen "0.0.0.0:$port" \
+    --token "$token" \
+    --cors-origin '*' >>"$smoke_log" 2>&1 &
+  server_pid=$!
+
+  attempt=0
+  while [ "$(backend_log_count 'server: listening on ')" -le "$listen_baseline" ]; do
+    if ! kill -0 "$server_pid" 2>/dev/null; then
+      cat "$smoke_log" >&2
+      wait "$server_pid" || true
+      server_pid=
+      echo "Go HTTP backend stopped before becoming ready." >&2
+      exit 1
+    fi
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 100 ]; then
+      cat "$smoke_log" >&2
+      echo "Go HTTP backend did not become ready." >&2
+      exit 1
+    fi
+    sleep 0.1
+  done
+}
+
+stop_backend() {
+  if [ -n "$server_pid" ] && kill -0 "$server_pid" 2>/dev/null; then
+    kill "$server_pid" 2>/dev/null || true
+    wait "$server_pid" 2>/dev/null || true
   fi
-  attempt=$((attempt + 1))
-  if [ "$attempt" -ge 100 ]; then
-    cat "$smoke_log" >&2
-    echo "Go HTTP backend did not become ready." >&2
-    exit 1
+  server_pid=
+}
+
+wait_for_test_pattern() {
+  log_file=$1
+  pattern=$2
+  max_attempts=$3
+  attempt=0
+  while ! grep -Fq "$pattern" "$log_file"; do
+    if ! kill -0 "$test_pid" 2>/dev/null; then
+      return 1
+    fi
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge "$max_attempts" ]; then
+      return 1
+    fi
+    sleep 0.2
+  done
+}
+
+abort_test() {
+  message=$1
+  test_status=1
+  if kill -0 "$test_pid" 2>/dev/null; then
+    kill "$test_pid" 2>/dev/null || true
   fi
-  sleep 0.1
-done
+  if wait "$test_pid"; then
+    :
+  else
+    test_status=$?
+  fi
+  test_pid=
+  cat "$test_log" >&2
+  cat "$smoke_log" >&2
+  echo "$message" >&2
+  exit "$test_status"
+}
+
+start_backend
 
 backend_url=http://$host_ip:$port/rpc
 echo "Allow the Local Network prompt on the iPhone if this bundle ID is new."
-echo "Running physical iPhone Health and Greeting integration test..."
-test_status=0
+echo "Running physical iPhone Health, Greeting, and reconnect integration test..."
 # BRIDRA_FLUTTER intentionally contains a command and optional wrapper argument.
 # shellcheck disable=SC2086
-$flutter_command test integration_test/ios_http_smoke_test.dart \
+$flutter_command drive \
+  --keep-app-running \
+  --driver=test_driver/integration_test.dart \
+  --target=integration_test/ios_http_smoke_test.dart \
   -d "$device" \
-  --no-uninstall \
   --dart-define="BRIDRA_BACKEND_URL=$backend_url" \
   --dart-define="BRIDRA_BACKEND_TOKEN=$token" \
-  --dart-define="BRIDRA_IOS_SMOKE_CLIENT=Physical iPhone" || test_status=$?
+  --dart-define="BRIDRA_IOS_SMOKE_CLIENT=Physical iPhone" \
+  --dart-define="BRIDRA_IOS_SMOKE_RECONNECT=true" >"$test_log" 2>&1 &
+test_pid=$!
+
+if ! wait_for_test_pattern \
+  "$smoke_log" '"rpc_method":"greeting.hello"' 3000; then
+  abort_test "Physical iPhone did not complete its initial Greeting."
+fi
+
+echo "Stopping Go HTTP backend to exercise the unavailable state..."
+stop_backend
+echo "Holding the backend offline for five seconds..."
+sleep 5
+if ! kill -0 "$test_pid" 2>/dev/null; then
+  abort_test "Physical iPhone did not remain active through the unavailable state."
+fi
+
+reconnect_health_baseline=$(health_count)
+reconnect_greeting_baseline=$(greeting_count)
+echo "Restarting Go HTTP backend for the reconnect action..."
+start_backend
+test_status=0
+if wait "$test_pid"; then
+  :
+else
+  test_status=$?
+fi
+test_pid=
+cat "$test_log"
 if [ "$test_status" -ne 0 ]; then
   cat "$smoke_log" >&2
   exit "$test_status"
 fi
-grep -Fq '"rpc_method":"system.health"' "$smoke_log"
-grep -Fq '"rpc_method":"greeting.hello"' "$smoke_log"
+if [ "$(health_count)" -le "$reconnect_health_baseline" ] ||
+  [ "$(greeting_count)" -le "$reconnect_greeting_baseline" ]; then
+  cat "$smoke_log" >&2
+  echo "Reconnect did not complete new Health and Greeting RPCs." >&2
+  exit 1
+fi
 
 echo "Building signed Profile app for standalone cold launches..."
 # shellcheck disable=SC2086
@@ -212,10 +315,8 @@ fi
 
 echo "Installing Profile app $bundle_identifier..."
 xcrun devicectl device install app --device "$device" "$app_path"
-
-health_count() {
-  grep -c '"rpc_method":"system.health"' "$smoke_log" || true
-}
+echo "Waiting for the installed Profile app to settle..."
+sleep 5
 
 wait_for_new_health() {
   baseline=$1
@@ -250,4 +351,4 @@ cold_launch "Cold-launching Profile app without Flutter tooling"
 cold_launch "Cold-launching Profile app a second time"
 
 cat "$smoke_log"
-echo "Physical iPhone smoke passed: Health, Greeting, and two Profile cold launches."
+echo "Physical iPhone smoke passed: Health, Greeting, reconnect, and two Profile cold launches."

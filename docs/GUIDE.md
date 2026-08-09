@@ -646,8 +646,9 @@ make android-run \
 ## Run iOS
 
 The iOS Simulator defaults to `http://127.0.0.1:8080/rpc`. Only the Debug
-configuration has a local HTTP exception and local-network usage description;
-Profile and Release keep App Transport Security enabled.
+configuration has a local HTTP exception. All configurations use the same
+local-network permission purpose. Profile and Release allow local-network loads
+but keep App Transport Security enabled for public-network traffic.
 
 ```bash
 make ios-run DEVICE=<flutter-device-id>
@@ -674,12 +675,14 @@ Set `DEVELOPMENT_TEAM` and a unique `BRIDRA_PRODUCT_BUNDLE_IDENTIFIER` in the
 ignored local file. `ios-device-smoke` selects the only available physical
 iPhone (or uses `DEVICE=<flutter-device-id>`), discovers the Mac's LAN address,
 and selects a free port starting at `18081`. It first drives Health and Greeting
-through a Debug integration test, then installs a Profile build and verifies two
-cold launches without Flutter tooling. The app and temporary backend are stopped
-when the test finishes. Keep the iPhone unlocked, in Developer Mode, trusted,
-and on a network that can reach the Mac. Accept the one-time Local Network
-prompt for each new bundle identifier. Override address discovery with
-`IOS_DEVICE_HOST=<address>` when needed.
+through a Debug integration test, stops the backend, verifies the unavailable
+state and successful reconnect, preserves the installed app so iOS keeps its
+local-network grant, then installs a Profile build and verifies two cold launches
+without Flutter tooling. It uses `flutter drive`, which handles wired and wireless
+iPhones, and stops the app and temporary backend when the test finishes. Keep the
+iPhone unlocked, in Developer Mode, trusted, and on a network that can reach the
+Mac. Accept the one-time Local Network prompt for each new bundle identifier.
+Override address discovery with `IOS_DEVICE_HOST=<address>` when needed.
 
 An iOS Debug app cannot be relaunched from the Home Screen without Flutter
 tooling or Xcode. Use Profile for a standalone development launch; Release and

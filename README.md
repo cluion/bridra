@@ -151,8 +151,9 @@ lifecycle, concurrency, persistence, Sidecar recovery, and bounded resource
 stability suite.
 `make ios-simulator-smoke` boots an available iPhone Simulator when needed and
 verifies real `system.health` and `greeting.hello` HTTP round trips.
-`make ios-device-smoke` exercises the same RPCs on a physical iPhone, then
-installs a signed Profile app and proves two launches without Flutter tooling.
+`make ios-device-smoke` exercises the same RPCs on a physical iPhone, forces a
+backend outage and verifies UI recovery, then installs a signed Profile app and
+proves two launches without Flutter tooling.
 
 ## Documentation
 
