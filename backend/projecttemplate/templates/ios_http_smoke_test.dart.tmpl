@@ -1,3 +1,4 @@
+import '{{.BridraDartImport}}';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -8,6 +9,10 @@ const smokeClient = String.fromEnvironment(
   defaultValue: 'iOS',
 );
 const smokeReconnect = bool.fromEnvironment('BRIDRA_IOS_SMOKE_RECONNECT');
+const smokeStream = bool.fromEnvironment('BRIDRA_IOS_SMOKE_STREAM');
+const smokeBackendUrl = String.fromEnvironment('BRIDRA_BACKEND_URL');
+const smokeBackendToken = String.fromEnvironment('BRIDRA_BACKEND_TOKEN');
+const smokeStreamMethod = 'bridra.smoke.stream';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -21,13 +26,50 @@ void main() {
       await _pumpUntilFound(tester, find.text('Go core online'));
     }
     await _callGreeting(tester, smokeClient);
+    if (smokeStream) {
+      await _verifyStreamingProgress();
+    }
 
     if (smokeReconnect) {
       await _waitForBackendLoss(tester);
       await _retryUntilOnline(tester);
       await _callGreeting(tester, '$smokeClient reconnected');
+      if (smokeStream) {
+        await _verifyStreamingProgress();
+      }
     }
   });
+}
+
+Future<void> _verifyStreamingProgress() async {
+  final client = HttpRpcClient(
+    endpoint: Uri.parse(smokeBackendUrl),
+    token: smokeBackendToken,
+  );
+  try {
+    final events = await client
+        .stream(smokeStreamMethod, timeout: const Duration(seconds: 30))
+        .toList();
+    expect(events.map((event) => event.sequence), [1, 2, 3, 4, 5]);
+
+    final firstProgress = events[0] as RpcStreamProgress<RpcReply>;
+    expect(firstProgress.progress.completed, 0);
+    expect(firstProgress.progress.total, 2);
+    expect(firstProgress.progress.message, 'Streaming platform smoke');
+    expect(firstProgress.progress.unit, 'items');
+
+    final firstData = events[1] as RpcStreamData<RpcReply>;
+    final secondProgress = events[2] as RpcStreamProgress<RpcReply>;
+    final secondData = events[3] as RpcStreamData<RpcReply>;
+    final completeProgress = events[4] as RpcStreamProgress<RpcReply>;
+    expect(firstData.value.result, {'item': 'first'});
+    expect(secondProgress.progress.completed, 1);
+    expect(secondData.value.result, {'item': 'second'});
+    expect(completeProgress.progress.completed, 2);
+    expect(completeProgress.progress.fraction, 1);
+  } finally {
+    await client.close();
+  }
 }
 
 Future<void> _callGreeting(WidgetTester tester, String name) async {

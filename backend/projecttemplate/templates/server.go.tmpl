@@ -16,6 +16,11 @@ func main() {
 	listen := flag.String("listen", "127.0.0.1:8080", "HTTP listen address")
 	token := flag.String("token", "", "RPC token; defaults to BRIDRA_BACKEND_TOKEN")
 	origin := flag.String("cors-origin", "", "allowed browser origin; use * for local development")
+	smokeStream := flag.Bool(
+		"smoke-stream",
+		false,
+		"enable the authenticated streaming route used by platform smoke tests",
+	)
 	flag.Parse()
 	if *token == "" {
 		*token = os.Getenv("BRIDRA_BACKEND_TOKEN")
@@ -57,14 +62,18 @@ func main() {
 		fmt.Fprintf(os.Stderr, "server: HTTP observer: %v\n", err)
 		os.Exit(2)
 	}
+	router := app.NewRouterWithFileTransfers(
+		*token,
+		os.Stderr,
+		"Go HTTP server",
+		fileTransfers,
+	)
+	if *smokeStream {
+		registerSmokeStream(router)
+	}
 	mux := http.NewServeMux()
 	mux.Handle("/rpc", &framework.HTTPHandler{
-		Router: app.NewRouterWithFileTransfers(
-			*token,
-			os.Stderr,
-			"Go HTTP server",
-			fileTransfers,
-		),
+		Router:        router,
 		Authenticator: httpAuthenticator,
 		RateLimiter:   httpRateLimiter,
 		AllowedOrigin: *origin,
@@ -95,4 +104,39 @@ func main() {
 		fmt.Fprintf(os.Stderr, "server: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+const smokeStreamMethod = "bridra.smoke.stream"
+
+func registerSmokeStream(router *framework.Router) {
+	router.Handle(smokeStreamMethod, func(ctx *framework.Context) (any, error) {
+		return framework.ProduceStream(ctx, func(stream *framework.StreamWriter) error {
+			frames := []struct {
+				completed int64
+				item      string
+			}{
+				{completed: 0, item: "first"},
+				{completed: 1, item: "second"},
+			}
+			for _, frame := range frames {
+				if err := stream.Report(framework.Progress{
+					Completed: frame.completed,
+					Total:     int64(len(frames)),
+					Message:   "Streaming platform smoke",
+					Unit:      "items",
+				}); err != nil {
+					return err
+				}
+				if err := stream.Send(map[string]any{"item": frame.item}); err != nil {
+					return err
+				}
+			}
+			return stream.Report(framework.Progress{
+				Completed: int64(len(frames)),
+				Total:     int64(len(frames)),
+				Message:   "Streaming platform smoke complete",
+				Unit:      "items",
+			})
+		})
+	})
 }

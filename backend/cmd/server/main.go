@@ -26,6 +26,11 @@ func main() {
 		"token required in every RPC request; overrides BRIDRA_BACKEND_TOKEN",
 	)
 	allowedOrigin := flag.String("cors-origin", "", "allowed browser origin; use * for local development")
+	smokeStream := flag.Bool(
+		"smoke-stream",
+		false,
+		"enable the authenticated streaming route used by platform smoke tests",
+	)
 	flag.Parse()
 	tokenProvided := false
 	flag.Visit(func(value *flag.Flag) {
@@ -37,6 +42,9 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "server: configure: %v\n", err)
 		os.Exit(2)
+	}
+	if *smokeStream {
+		registerSmokeStream(application.Router())
 	}
 	fileTransfers, err := framework.Resolve(
 		application.Container(),
@@ -177,4 +185,39 @@ func buildApplication(token string, tokenProvided bool) (*framework.Application,
 	}, framework.NewFileTransferServiceProvider(
 		framework.DefaultFileTransferOptions(),
 	))
+}
+
+const smokeStreamMethod = "bridra.smoke.stream"
+
+func registerSmokeStream(router *framework.Router) {
+	router.Handle(smokeStreamMethod, func(ctx *framework.Context) (any, error) {
+		return framework.ProduceStream(ctx, func(stream *framework.StreamWriter) error {
+			frames := []struct {
+				completed int64
+				item      string
+			}{
+				{completed: 0, item: "first"},
+				{completed: 1, item: "second"},
+			}
+			for _, frame := range frames {
+				if err := stream.Report(framework.Progress{
+					Completed: frame.completed,
+					Total:     int64(len(frames)),
+					Message:   "Streaming platform smoke",
+					Unit:      "items",
+				}); err != nil {
+					return err
+				}
+				if err := stream.Send(map[string]any{"item": frame.item}); err != nil {
+					return err
+				}
+			}
+			return stream.Report(framework.Progress{
+				Completed: int64(len(frames)),
+				Total:     int64(len(frames)),
+				Message:   "Streaming platform smoke complete",
+				Unit:      "items",
+			})
+		})
+	})
 }

@@ -46,11 +46,15 @@ make ios-simulator-smoke
 make ios-device-smoke
 ```
 
+The Simulator target verifies Health, Greeting, and ordered Streaming/Progress
+through the running iOS app and is suitable for hosted macOS CI.
+
 The device target selects the only available iPhone unless `DEVICE=<id>` is
 provided, avoids occupied local ports, verifies Health and Greeting, forces a
-backend outage and verifies reconnect, and proves that a signed Profile app
-cold-launches twice without Flutter tooling. Configure an Apple Development Team
-before running it and accept the one-time Local Network prompt for a new bundle
+backend outage and verifies reconnect, checks ordered Streaming and Progress
+before and after recovery, and proves that a signed Profile app cold-launches
+twice without Flutter tooling. Configure an Apple Development Team before
+running it and accept the one-time Local Network prompt for a new bundle
 identifier; signing remains application-owned.
 
 ## Builds

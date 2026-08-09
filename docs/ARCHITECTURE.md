@@ -601,9 +601,11 @@ must therefore be concurrency-safe.
   still rejects insecure public-network traffic.
 - The physical-device gate uses Debug only for automated UI assertions, then a
   signed Profile build for two standalone cold-launch Health checks. During the
-  Debug phase it forces a backend outage and proves unavailable/reconnect UI plus
-  new post-restart Health and Greeting RPCs. Developer Team and bundle identifier
-  overrides live in ignored `Local.xcconfig`.
+  Debug phase it verifies ordered Streaming／Progress, forces a backend outage,
+  proves unavailable/reconnect UI, then repeats Health, Greeting, and the stream
+  after restart. Its authenticated `bridra.smoke.stream` route exists only when
+  the test script explicitly enables `--smoke-stream`. Developer Team and bundle
+  identifier overrides live in ignored `Local.xcconfig`.
 - Web release configuration should use HTTPS and an exact allowed origin.
 
 The complete server mux sits behind `HTTPObservationHandler`. That boundary
@@ -682,7 +684,8 @@ coverage failures remain inspectable.
 The GitHub Actions workflow is configured to build and verify:
 
 - Linux, Android, and Web on Ubuntu
-- macOS plus a real iOS Simulator Health／Greeting HTTP round trip on macOS
+- macOS plus real iOS Simulator Health／Greeting and Streaming／Progress HTTP
+  round trips on macOS
 - Windows on Windows
 
 Verify runs on Pull Requests and the merged `main` commit. The protected tag

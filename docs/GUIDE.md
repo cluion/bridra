@@ -662,8 +662,9 @@ make ios-build \
 
 `ios-simulator-smoke` automatically selects an available iPhone Simulator (or
 uses `DEVICE=<flutter-device-id>`), starts a temporary Go HTTP backend, and
-asserts real Health and Greeting RPC responses through the running iOS app. It
-shuts down only a Simulator that it booted itself.
+asserts real Health, Greeting, and ordered Streaming／Progress RPC responses
+through the running iOS app. It shuts down only a Simulator that it booted
+itself.
 
 For this repository, keep developer-only signing outside Git:
 
@@ -677,12 +678,15 @@ iPhone (or uses `DEVICE=<flutter-device-id>`), discovers the Mac's LAN address,
 and selects a free port starting at `18081`. It first drives Health and Greeting
 through a Debug integration test, stops the backend, verifies the unavailable
 state and successful reconnect, preserves the installed app so iOS keeps its
-local-network grant, then installs a Profile build and verifies two cold launches
-without Flutter tooling. It uses `flutter drive`, which handles wired and wireless
-iPhones, and stops the app and temporary backend when the test finishes. Keep the
-iPhone unlocked, in Developer Mode, trusted, and on a network that can reach the
-Mac. Accept the one-time Local Network prompt for each new bundle identifier.
-Override address discovery with `IOS_DEVICE_HOST=<address>` when needed.
+local-network grant, verifies ordered Streaming／Progress before and after the
+reconnect, then installs a Profile build and verifies two cold launches without
+Flutter tooling. The authenticated smoke-only stream route is disabled unless
+the script passes `--smoke-stream`. The script uses `flutter drive`, which handles
+wired and wireless iPhones, and stops the app and temporary backend when the test
+finishes. Keep the iPhone unlocked, in Developer Mode, trusted, and on a network
+that can reach the Mac. Accept the one-time Local Network prompt for each new
+bundle identifier. Override address discovery with `IOS_DEVICE_HOST=<address>`
+when needed.
 
 An iOS Debug app cannot be relaunched from the Home Screen without Flutter
 tooling or Xcode. Use Profile for a standalone development launch; Release and

@@ -150,10 +150,12 @@ non-regression floors. `make runtime-stress` runs the slower fuzz, repeated
 lifecycle, concurrency, persistence, Sidecar recovery, and bounded resource
 stability suite.
 `make ios-simulator-smoke` boots an available iPhone Simulator when needed and
-verifies real `system.health` and `greeting.hello` HTTP round trips.
+verifies real `system.health`, `greeting.hello`, and ordered Streaming／Progress
+HTTP round trips.
 `make ios-device-smoke` exercises the same RPCs on a physical iPhone, forces a
-backend outage and verifies UI recovery, then installs a signed Profile app and
-proves two launches without Flutter tooling.
+backend outage and verifies UI recovery, checks ordered Streaming／Progress both
+before and after reconnect, then installs a signed Profile app and proves two
+launches without Flutter tooling.
 
 ## Documentation
 
