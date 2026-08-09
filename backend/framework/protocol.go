@@ -7,7 +7,7 @@ import (
 	"fmt"
 )
 
-const FrameworkVersion = "0.11.0"
+const FrameworkVersion = "0.12.0"
 const MaxRequestBytes = 4 * 1024 * 1024
 
 const (

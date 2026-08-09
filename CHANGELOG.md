@@ -3,7 +3,7 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
-## [Unreleased]
+## [0.12.0] - 2026-08-09
 
 ### Added
 
@@ -17,6 +17,9 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
   by Go before and after forced backend-loss recovery, plus two standalone
   signed Profile cold launches. Local Apple Team and bundle identifier overrides
   stay outside Git.
+- Added a generated-project Android Emulator integration smoke test and hosted
+  Linux CI gate covering real health, greeting, ordered streaming/progress,
+  interrupted file-transfer resume, and backend-loss recovery.
 
 ### Changed
 
@@ -24,6 +27,8 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
   versioned stdin handshake instead of process arguments. The Flutter client
   falls back once for older generated Sidecars that do not recognize the new
   non-secret launch flag; the RPC protocol version is unchanged.
+- Updated the release provenance action to its reviewed immutable `v4.2.2`
+  commit, including upstream dependency security backports.
 
 ### Fixed
 
@@ -33,6 +38,14 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
   without allowing arbitrary public-network HTTP in Profile or Release.
 - Retried transient `devicectl` termination failures and verified the process
   exits so physical-iPhone smoke cleanup does not silently leave Runner behind.
+- Corrected the Android Emulator CI cache dependency path so the hosted gate
+  completes without the previous cache warning annotation.
+
+### Support
+
+- The latest `0.12.x` release receives best-effort security fixes until the next
+  minor line is published. The `0.11.x` line is no longer supported after this
+  release.
 
 ## [0.11.0] - 2026-08-03
 

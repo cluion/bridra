@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.12.0 - 2026-08-09
 
 - Kept Desktop Sidecar launch tokens out of process arguments with a bounded
   stdin handshake. Older generated Sidecars are detected and supported through

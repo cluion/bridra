@@ -9,8 +9,8 @@ Run the read-only planner from a project root before changing dependencies:
 
 ```bash
 bridra upgrade
-bridra upgrade --plan --to 0.11.0
-bridra upgrade --plan --to 0.11.0 --json
+bridra upgrade --plan --to 0.12.0
+bridra upgrade --plan --to 0.12.0 --json
 ```
 
 When invoking the CLI through the backend dependency, use:
@@ -79,7 +79,7 @@ adding the necessary path fails verification.
 | Identity | Current | Compatibility rule |
 | --- | ---: | --- |
 | Project metadata schema | 2 | Schema 1 remains readable by core project commands but requires a metadata migration. A newer schema requires a newer CLI. |
-| Framework SemVer | 0.11.0 | The project and selected target must match. An older version requires a complete registered migration path; downgrade plans are rejected. |
+| Framework SemVer | 0.12.0 | The project and selected target must match. An older version requires a complete registered migration path; downgrade plans are rejected. |
 | Project Template | 2 | Older templates require manual review. A newer template cannot be evaluated by an older CLI. |
 | Application RPC protocol | Application-owned | `.bridra/project.json`, `schema/bridra.json`, and generated Go/Dart contracts must agree exactly. It may be newer than the selected release's Project Template baseline. |
 
@@ -232,7 +232,7 @@ the Go and Flutter dependencies together, add the version contract:
   "projectName": "your_app",
   "goModule": "example.com/your/app",
   "frameworkModule": "github.com/cluion/bridra/backend",
-  "frameworkVersion": "0.11.0",
+  "frameworkVersion": "0.12.0",
   "templateVersion": 2,
   "protocolVersion": 1
 }
@@ -258,6 +258,47 @@ the default for an unchanged generated Template 2 project.
    template, and any explicit RPC changes it records have actually been applied.
 6. Run any platform builds required by the application before committing the
    upgrade.
+
+## Framework 0.11.0 to 0.12.0
+
+The `0.12.0` release keeps Desktop Sidecar launch tokens out of process
+arguments. The Dart runtime first starts the Sidecar with `--token-stdin`, sends
+a bounded versioned JSON handshake on stdin, and waits for a credential-free
+ready marker. The Go Framework adds `ReadSidecarLaunch`; new generated Sidecars
+use it and preserve any RPC bytes buffered while reading the handshake.
+
+The dependency and metadata migration is automatic. Update both framework
+dependencies, run the full verification, then update `.bridra/project.json` to
+framework version `0.12.0` without changing the application's verified protocol:
+
+```bash
+cd backend
+go get github.com/cluion/bridra/backend@v0.12.0
+cd ..
+fvm flutter pub upgrade bridra_flutter
+make verify
+```
+
+Existing application-owned Sidecar entrypoints remain operational: the Dart
+runtime detects the exact older unknown-flag failure and restarts once with the
+legacy `--token` argument. That fallback keeps the migration automatic, but the
+token remains visible in process arguments until the entrypoint is updated.
+
+To fully adopt the new launch path, update the application-owned
+`backend/cmd/sidecar/main.go` to match the generated reference in
+`backend/projecttemplate/templates/sidecar.go.tmpl`:
+
+1. call `framework.ReadSidecarLaunch(os.Args[1:], os.Stdin)`;
+2. emit `framework.SidecarLaunchReadyMessage` on stderr when
+   `launch.UsesStdinHandshake` is true;
+3. use `launch.Token` for the Router and Server token; and
+4. use `launch.Input` as `framework.Server.Input`.
+
+This release does not change the RPC protocol, Project Template version `2`,
+project metadata schema `2`, or template protocol baseline `1`. Roll back an
+unmodified legacy project by restoring the `0.11.0` dependencies, lockfiles,
+and framework metadata. If the Sidecar entrypoint was manually updated, restore
+that file too because `ReadSidecarLaunch` is not available in `0.11.0`.
 
 ## Framework 0.10.1 to 0.11.0
 
@@ -405,43 +446,45 @@ previous Go and Flutter dependency versions, lockfiles, and project metadata.
 Stop persistent workers before rollback and retain their Store tables until
 pending work has been reconciled.
 
-## Framework 0.7.0 to 0.11.0
+## Framework 0.7.0 to 0.12.0
 
 The path contains the automatic `0.8.0` SQL-persistence, `0.9.0`
 Redis-persistence, `0.10.0` HTTP-security, `0.10.1` diagnostics and
-upgrade-planner, and runtime-neutral `0.11.0` supply-chain dependency steps. The
+upgrade-planner, runtime-neutral `0.11.0` supply-chain, and `0.12.0` secure
+Sidecar launch dependency steps. The
 persistence and HTTP server controls are additive and opt-in. Project Template
 version `2`, project metadata schema `2`, and template protocol baseline `1`
 remain unchanged. The public Dart API gains `RpcRateLimitedException` and
 `SidecarDiagnostics`; the application's verified protocol is preserved.
 
-Update both framework dependencies to `0.11.0`, run `make generate` and
+Update both framework dependencies to `0.12.0`, run `make generate` and
 `make verify`, then update `.bridra/project.json`. Follow the adoption and
 rollback guidance above for the Store and HTTP controls selected by the
 application.
 
-## Framework 0.6.1 to 0.11.0
+## Framework 0.6.1 to 0.12.0
 
 The path contains the automatic `0.7.0` file-persistence, `0.8.0`
 SQL-persistence, `0.9.0` Redis-persistence, `0.10.0` HTTP-security, `0.10.1`
-diagnostics and upgrade-planner, and runtime-neutral `0.11.0` supply-chain
-dependency steps. Runtime capabilities are additive and opt-in. Project Template
+diagnostics and upgrade-planner, runtime-neutral `0.11.0` supply-chain, and
+`0.12.0` secure Sidecar launch dependency steps. Runtime capabilities are
+additive and opt-in. Project Template
 version `2`, project metadata schema `2`, and template protocol baseline `1`
 remain unchanged. The public Dart API gains
 `RpcRateLimitedException` and `SidecarDiagnostics`; the application's verified
 protocol is preserved.
 
-Update both framework dependencies to `0.11.0`, run `make generate` and
+Update both framework dependencies to `0.12.0`, run `make generate` and
 `make verify`, then update `.bridra/project.json`. Follow the adoption and
 rollback guidance above for the Store and HTTP controls selected by the
 application.
 
-## Framework 0.6.0 to 0.11.0
+## Framework 0.6.0 to 0.12.0
 
 The path contains the manual `0.6.0` to `0.6.1` generated-test repair followed
 by the automatic file-, SQL-, Redis-persistence, `0.10.0` HTTP-security,
-`0.10.1` diagnostics and upgrade-planner, and runtime-neutral `0.11.0`
-supply-chain dependency updates.
+`0.10.1` diagnostics and upgrade-planner, runtime-neutral `0.11.0` supply-chain,
+and `0.12.0` secure Sidecar launch dependency updates.
 
 Projects created with the `0.6.0` CLI contain a stale `FakeBackend` in
 `test/widget_test.dart`. Before running `make verify`, add the optional
@@ -450,18 +493,19 @@ Projects created with the `0.6.0` CLI contain a stale `FakeBackend` in
 not overwrite this application-owned test file. Then follow the persistent
 runtime and HTTP-security adoption and rollback guidance above.
 
-Update both framework dependencies to `0.11.0`, run `make generate` and
+Update both framework dependencies to `0.12.0`, run `make generate` and
 `make verify`, then update `.bridra/project.json`. Project Template version `2`,
 project metadata schema `2`, and template protocol baseline `1` remain
 unchanged. The public Dart API gains `RpcRateLimitedException` and
 `SidecarDiagnostics`; the application's verified protocol is preserved.
 
-## Framework 0.5.0 to 0.11.0
+## Framework 0.5.0 to 0.12.0
 
 The migration path from `0.5.0` contains the automatic `0.6.0` framework step
 followed by the manual `0.6.1` generated-test repair and automatic file-, SQL-,
 Redis-persistence, `0.10.0` HTTP-security, `0.10.1` diagnostics and
-upgrade-planner, and runtime-neutral `0.11.0` supply-chain dependency steps.
+upgrade-planner, runtime-neutral `0.11.0` supply-chain, and `0.12.0` secure
+Sidecar launch dependency steps.
 Typed server streaming, progress, bounded
 Sidecar backpressure, verified out-of-band file transfer, persistent runtime
 stores, HTTP controls, and diagnostics are additive and opt-in. Existing unary
@@ -473,7 +517,7 @@ fields, then run the full verification:
 
 ```bash
 cd backend
-go get github.com/cluion/bridra/backend@v0.11.0
+go get github.com/cluion/bridra/backend@v0.12.0
 cd ..
 fvm flutter pub upgrade bridra_flutter
 make generate
@@ -481,7 +525,7 @@ make verify
 ```
 
 After verification succeeds, update `.bridra/project.json` to framework version
-`0.11.0`. Project Template version `2`, project metadata schema `2`, and template
+`0.12.0`. Project Template version `2`, project metadata schema `2`, and template
 protocol baseline `1` remain unchanged. The public Dart API gains
 `RpcRateLimitedException` and `SidecarDiagnostics`; the application's verified
 protocol is preserved. Roll back by removing application-owned HTTP integration
