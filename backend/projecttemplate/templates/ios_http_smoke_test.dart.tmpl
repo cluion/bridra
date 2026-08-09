@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '{{.BridraDartImport}}';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,9 +12,17 @@ const smokeClient = String.fromEnvironment(
 );
 const smokeReconnect = bool.fromEnvironment('BRIDRA_IOS_SMOKE_RECONNECT');
 const smokeStream = bool.fromEnvironment('BRIDRA_IOS_SMOKE_STREAM');
+const smokeDownload = bool.fromEnvironment('BRIDRA_IOS_SMOKE_DOWNLOAD');
 const smokeBackendUrl = String.fromEnvironment('BRIDRA_BACKEND_URL');
 const smokeBackendToken = String.fromEnvironment('BRIDRA_BACKEND_TOKEN');
 const smokeStreamMethod = 'bridra.smoke.stream';
+const smokeDownloadMethod = 'bridra.smoke.download';
+const smokeDownloadName = 'bridra-smoke.bin';
+const smokeDownloadMediaType = 'application/octet-stream';
+const smokeDownloadBlock = 'bridra-managed-download-smoke|';
+const smokeDownloadBlockCount = 2048;
+const smokeDownloadSha256 =
+    '1d07674b0ad481aad8ca8bfb35963b10d765add489fc10c8e4645958023da950';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -29,6 +39,9 @@ void main() {
     if (smokeStream) {
       await _verifyStreamingProgress();
     }
+    if (smokeDownload) {
+      await _verifyManagedDownload();
+    }
 
     if (smokeReconnect) {
       await _waitForBackendLoss(tester);
@@ -37,8 +50,43 @@ void main() {
       if (smokeStream) {
         await _verifyStreamingProgress();
       }
+      if (smokeDownload) {
+        await _verifyManagedDownload();
+      }
     }
   });
+}
+
+Future<void> _verifyManagedDownload() async {
+  final client = HttpRpcClient(
+    endpoint: Uri.parse(smokeBackendUrl),
+    token: smokeBackendToken,
+  );
+  try {
+    final reply = await client.call(smokeDownloadMethod);
+    final result = reply.result;
+    expect(result, isA<Map<Object?, Object?>>());
+    final reference = RpcFileReference.fromJson(
+      Map<String, dynamic>.from(result! as Map),
+    );
+    final expected = utf8.encode(
+      List.filled(smokeDownloadBlockCount, smokeDownloadBlock).join(),
+    );
+    expect(reference.name, smokeDownloadName);
+    expect(reference.mediaType, smokeDownloadMediaType);
+    expect(reference.size, expected.length);
+    expect(reference.sha256, smokeDownloadSha256);
+    expect(reference.localPath, isNull);
+
+    final downloaded = <int>[];
+    await for (final chunk in client.download(reference)) {
+      downloaded.addAll(chunk);
+    }
+    expect(downloaded.length, reference.size);
+    expect(downloaded, orderedEquals(expected));
+  } finally {
+    await client.close();
+  }
 }
 
 Future<void> _verifyStreamingProgress() async {

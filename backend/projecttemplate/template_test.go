@@ -143,7 +143,9 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 		t.Fatalf("read generated iOS Simulator smoke script: %v", err)
 	}
 	if !strings.Contains(string(simulatorSource), "BRIDRA_IOS_SMOKE_STREAM=true") ||
-		!strings.Contains(string(simulatorSource), "--smoke-stream") {
+		!strings.Contains(string(simulatorSource), "BRIDRA_IOS_SMOKE_DOWNLOAD=true") ||
+		!strings.Contains(string(simulatorSource), "--smoke-stream") ||
+		!strings.Contains(string(simulatorSource), "--smoke-download") {
 		t.Fatalf("generated iOS Simulator smoke script = %s", simulatorSource)
 	}
 	deviceScript := filepath.Join(root, "tool", "ios_device_smoke.sh")
@@ -160,6 +162,7 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 	}
 	if !strings.Contains(string(deviceSource), "BRIDRA_IOS_SMOKE_RECONNECT=true") ||
 		!strings.Contains(string(deviceSource), "BRIDRA_IOS_SMOKE_STREAM=true") ||
+		!strings.Contains(string(deviceSource), "BRIDRA_IOS_SMOKE_DOWNLOAD=true") ||
 		!strings.Contains(string(deviceSource), "Stopping Go HTTP backend") ||
 		!strings.Contains(string(deviceSource), "--keep-app-running") ||
 		!strings.Contains(string(deviceSource), "--driver=test_driver/integration_test.dart") {
@@ -173,7 +176,9 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 	}
 	if !strings.Contains(string(smokeTest), "package:starter_app/main.dart") ||
 		!strings.Contains(string(smokeTest), "Go core unavailable") ||
-		!strings.Contains(string(smokeTest), "RpcStreamProgress<RpcReply>") {
+		!strings.Contains(string(smokeTest), "RpcStreamProgress<RpcReply>") ||
+		!strings.Contains(string(smokeTest), "RpcFileReference.fromJson") ||
+		!strings.Contains(string(smokeTest), "client.download(reference)") {
 		t.Fatalf("generated iOS HTTP smoke test = %s", smokeTest)
 	}
 	driver, err := os.ReadFile(filepath.Join(root, "test_driver", "integration_test.dart"))
@@ -215,7 +220,9 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 	for _, expected := range []string{
 		`flag.String("cors-origin", "",`,
 		`"smoke-stream",`,
+		`"smoke-download",`,
 		`const smokeStreamMethod = "bridra.smoke.stream"`,
+		`smokeDownloadMethod     = "bridra.smoke.download"`,
 		"framework.NewJSONHTTPObserver(os.Stderr)",
 		"&framework.HTTPObservationHandler{",
 		"ReadHeaderTimeout: 5 * time.Second",

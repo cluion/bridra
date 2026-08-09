@@ -9,12 +9,13 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 
 - Added a generated-project iOS Simulator integration smoke test and hosted
   macOS CI gate that exercise real `system.health`, `greeting.hello`, and
-  ordered Streaming/Progress HTTP round trips against the Go backend.
+  ordered Streaming/Progress HTTP round trips plus a verified managed download
+  against the Go backend.
 - Added a physical-iPhone smoke target with LAN address discovery, occupied-port
   avoidance, Health/Greeting integration coverage, ordered Streaming/Progress
-  before and after forced backend-loss recovery, and two standalone signed
-  Profile cold launches. Local Apple Team and bundle identifier overrides stay
-  outside Git.
+  and size/SHA-256-verified managed downloads before and after forced
+  backend-loss recovery, and two standalone signed Profile cold launches. Local
+  Apple Team and bundle identifier overrides stay outside Git.
 
 ### Fixed
 
@@ -22,8 +23,8 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 - Kept the iOS local-network permission purpose consistent across build modes
   and added the scoped ATS local-network exception required by current iOS,
   without allowing arbitrary public-network HTTP in Profile or Release.
-- Retried transient `devicectl` termination failures so physical-iPhone smoke
-  cleanup does not silently leave a Runner process behind.
+- Retried transient `devicectl` termination failures and verified the process
+  exits so physical-iPhone smoke cleanup does not silently leave Runner behind.
 
 ## [0.11.0] - 2026-08-03
 

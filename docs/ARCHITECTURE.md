@@ -602,10 +602,12 @@ must therefore be concurrency-safe.
 - The physical-device gate uses Debug only for automated UI assertions, then a
   signed Profile build for two standalone cold-launch Health checks. During the
   Debug phase it verifies ordered Streaming／Progress, forces a backend outage,
-  proves unavailable/reconnect UI, then repeats Health, Greeting, and the stream
-  after restart. Its authenticated `bridra.smoke.stream` route exists only when
-  the test script explicitly enables `--smoke-stream`. Developer Team and bundle
-  identifier overrides live in ignored `Local.xcconfig`.
+  proves unavailable/reconnect UI, then repeats Health, Greeting, the stream,
+  and a managed download after restart. The download is checked against a known
+  size, SHA-256, and content on the device. Its authenticated smoke routes exist
+  only when the test script explicitly enables `--smoke-stream` and
+  `--smoke-download`. Developer Team and bundle identifier overrides live in
+  ignored `Local.xcconfig`.
 - Web release configuration should use HTTPS and an exact allowed origin.
 
 The complete server mux sits behind `HTTPObservationHandler`. That boundary

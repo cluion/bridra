@@ -48,19 +48,31 @@ app_pid=
 : >"$test_log"
 
 terminate_app() {
+  terminating_pid=$app_pid
   attempt=0
   while [ "$attempt" -lt 3 ]; do
     if xcrun devicectl device process terminate \
       --device "$device" \
-      --pid "$app_pid" \
+      --pid "$terminating_pid" \
       --kill >/dev/null 2>&1; then
-      app_pid=
-      return
+      sleep 1
+      if process_output=$(
+        xcrun devicectl device info processes \
+          --device "$device" \
+          --filter "processIdentifier == $terminating_pid" \
+          --hide-headers 2>/dev/null
+      ); then
+        if ! printf '%s\n' "$process_output" |
+          grep -Eq "^[[:space:]]*${terminating_pid}[[:space:]]"; then
+          app_pid=
+          return
+        fi
+      fi
     fi
     attempt=$((attempt + 1))
     sleep 1
   done
-  echo "Warning: could not terminate iPhone app process $app_pid." >&2
+  echo "Warning: could not verify termination of iPhone app process $terminating_pid." >&2
 }
 
 cleanup() {
@@ -188,6 +200,10 @@ stream_count() {
   backend_log_count '"rpc_method":"bridra.smoke.stream"'
 }
 
+download_count() {
+  backend_log_count '"surface":"file_transfer"'
+}
+
 start_backend() {
   listen_baseline=$(backend_log_count 'server: listening on ')
   echo "Starting Go HTTP backend on 0.0.0.0:$port for $host_ip..."
@@ -195,6 +211,7 @@ start_backend() {
     --listen "0.0.0.0:$port" \
     --token "$token" \
     --smoke-stream \
+    --smoke-download \
     --cors-origin '*' >>"$smoke_log" 2>&1 &
   server_pid=$!
 
@@ -264,7 +281,7 @@ start_backend
 
 backend_url=http://$host_ip:$port/rpc
 echo "Allow the Local Network prompt on the iPhone if this bundle ID is new."
-echo "Running physical iPhone Health, Greeting, Streaming/Progress, and reconnect integration test..."
+echo "Running physical iPhone Health, Greeting, Streaming/Progress, managed-download, and reconnect integration test..."
 # BRIDRA_FLUTTER intentionally contains a command and optional wrapper argument.
 # shellcheck disable=SC2086
 $flutter_command drive \
@@ -276,12 +293,17 @@ $flutter_command drive \
   --dart-define="BRIDRA_BACKEND_TOKEN=$token" \
   --dart-define="BRIDRA_IOS_SMOKE_CLIENT=Physical iPhone" \
   --dart-define="BRIDRA_IOS_SMOKE_STREAM=true" \
+  --dart-define="BRIDRA_IOS_SMOKE_DOWNLOAD=true" \
   --dart-define="BRIDRA_IOS_SMOKE_RECONNECT=true" >"$test_log" 2>&1 &
 test_pid=$!
 
 if ! wait_for_test_pattern \
   "$smoke_log" '"rpc_method":"bridra.smoke.stream"' 3000; then
   abort_test "Physical iPhone did not complete its initial Streaming/Progress RPC."
+fi
+if ! wait_for_test_pattern \
+  "$smoke_log" '"surface":"file_transfer"' 3000; then
+  abort_test "Physical iPhone did not complete its initial verified managed download."
 fi
 
 echo "Stopping Go HTTP backend to exercise the unavailable state..."
@@ -295,6 +317,7 @@ fi
 reconnect_health_baseline=$(health_count)
 reconnect_greeting_baseline=$(greeting_count)
 reconnect_stream_baseline=$(stream_count)
+reconnect_download_baseline=$(download_count)
 echo "Restarting Go HTTP backend for the reconnect action..."
 start_backend
 test_status=0
@@ -311,9 +334,10 @@ if [ "$test_status" -ne 0 ]; then
 fi
 if [ "$(health_count)" -le "$reconnect_health_baseline" ] ||
   [ "$(greeting_count)" -le "$reconnect_greeting_baseline" ] ||
-  [ "$(stream_count)" -le "$reconnect_stream_baseline" ]; then
+  [ "$(stream_count)" -le "$reconnect_stream_baseline" ] ||
+  [ "$(download_count)" -le "$reconnect_download_baseline" ]; then
   cat "$smoke_log" >&2
-  echo "Reconnect did not complete new Health, Greeting, and Streaming RPCs." >&2
+  echo "Reconnect did not complete new Health, Greeting, Streaming, and managed-download requests." >&2
   exit 1
 fi
 
@@ -372,4 +396,4 @@ cold_launch "Cold-launching Profile app without Flutter tooling"
 cold_launch "Cold-launching Profile app a second time"
 
 cat "$smoke_log"
-echo "Physical iPhone smoke passed: Health, Greeting, Streaming/Progress, reconnect, and two Profile cold launches."
+echo "Physical iPhone smoke passed: Health, Greeting, Streaming/Progress, verified managed downloads, reconnect, and two Profile cold launches."

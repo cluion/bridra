@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -31,6 +32,11 @@ func main() {
 		false,
 		"enable the authenticated streaming route used by platform smoke tests",
 	)
+	smokeDownload := flag.Bool(
+		"smoke-download",
+		false,
+		"enable the authenticated managed-download route used by platform smoke tests",
+	)
 	flag.Parse()
 	tokenProvided := false
 	flag.Visit(func(value *flag.Flag) {
@@ -43,9 +49,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "server: configure: %v\n", err)
 		os.Exit(2)
 	}
-	if *smokeStream {
-		registerSmokeStream(application.Router())
-	}
 	fileTransfers, err := framework.Resolve(
 		application.Container(),
 		framework.FileTransferStoreKey,
@@ -56,6 +59,12 @@ func main() {
 			fmt.Fprintf(os.Stderr, "server: application shutdown: %v\n", shutdownErr)
 		}
 		os.Exit(2)
+	}
+	if *smokeStream {
+		registerSmokeStream(application.Router())
+	}
+	if *smokeDownload {
+		registerSmokeDownload(application.Router(), fileTransfers)
 	}
 	backendToken := framework.ConfigValue(
 		application.Config(),
@@ -189,6 +198,14 @@ func buildApplication(token string, tokenProvided bool) (*framework.Application,
 
 const smokeStreamMethod = "bridra.smoke.stream"
 
+const (
+	smokeDownloadMethod     = "bridra.smoke.download"
+	smokeDownloadName       = "bridra-smoke.bin"
+	smokeDownloadMediaType  = "application/octet-stream"
+	smokeDownloadBlock      = "bridra-managed-download-smoke|"
+	smokeDownloadBlockCount = 2048
+)
+
 func registerSmokeStream(router *framework.Router) {
 	router.Handle(smokeStreamMethod, func(ctx *framework.Context) (any, error) {
 		return framework.ProduceStream(ctx, func(stream *framework.StreamWriter) error {
@@ -219,5 +236,22 @@ func registerSmokeStream(router *framework.Router) {
 				Unit:      "items",
 			})
 		})
+	})
+}
+
+func registerSmokeDownload(
+	router *framework.Router,
+	store *framework.FileTransferStore,
+) {
+	router.Handle(smokeDownloadMethod, func(ctx *framework.Context) (any, error) {
+		return store.Stage(
+			ctx,
+			smokeDownloadName,
+			smokeDownloadMediaType,
+			strings.NewReader(strings.Repeat(
+				smokeDownloadBlock,
+				smokeDownloadBlockCount,
+			)),
+		)
 	})
 }
