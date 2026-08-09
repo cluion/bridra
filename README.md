@@ -144,6 +144,7 @@ make doctor
 make verify
 make coverage
 make runtime-stress
+make http-fault-test
 make android-emulator-smoke
 make ios-simulator-smoke
 make ios-device-smoke
@@ -155,6 +156,9 @@ tests, and static analysis. `make coverage` enforces the committed
 non-regression floors. `make runtime-stress` runs the slower fuzz, repeated
 lifecycle, concurrency, persistence, Sidecar recovery, and bounded resource
 stability suite.
+`make http-fault-test` deterministically injects HTTP latency, timeouts, stream
+interruptions, consumer backpressure, and dropped resumable downloads on both
+the Dart VM and Chrome without replaying application RPCs.
 `make android-emulator-smoke` uses a running Android Emulator to verify Health,
 Greeting, ordered Streaming／Progress, interrupted file-transfer resume, a real
 backend outage, and the complete flow again after reconnect.

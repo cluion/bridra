@@ -46,7 +46,7 @@ RUNTIME_RESOURCE_MAX_HEAP_GROWTH_MIB ?= 8
 RUNTIME_RESOURCE_MAX_FD_GROWTH ?= 4
 RUNTIME_RESOURCE_MAX_RSS_GROWTH_MIB ?= 32
 
-.PHONY: help setup doctor generate codegen-check license-check format backend-build backend-server-build backend-serve backend-format backend-test backend-public-api-test backend-sql-store-test backend-sql-job-store-test backend-vet transport-benchmark \
+.PHONY: help setup doctor generate codegen-check license-check format backend-build backend-server-build backend-serve backend-format backend-test backend-public-api-test backend-sql-store-test backend-sql-job-store-test backend-vet transport-benchmark http-fault-test \
 	flutter-format flutter-package-test flutter-web-test flutter-test analyze verify coverage backend-coverage flutter-package-coverage flutter-app-coverage coverage-check linux-check linux-run linux-build \
 	linux-smoke macos-check macos-run macos-build macos-smoke windows-run \
 	windows-build windows-smoke windows-verify android-run android-build android-emulator-smoke \
@@ -63,6 +63,7 @@ help:
 	@echo "make runtime-fuzz Fuzz Sidecar and HTTP RPC parsing"
 	@echo "make runtime-resources Check Runtime resource growth and orphan processes"
 	@echo "make runtime-stress Repeat Runtime lifecycle, concurrency, and recovery checks"
+	@echo "make http-fault-test Exercise HTTP latency, timeout, backpressure, and resume"
 	@echo "make transport-benchmark Measure JSON, binary-pipe, and managed-file transport costs"
 	@echo "make run          Run the starter on the current desktop platform"
 	@echo "make macos-run    Run the starter on macOS"
@@ -171,11 +172,16 @@ flutter-format:
 flutter-package-test: backend-build
 	cd $(BRIDRA_FLUTTER_PACKAGE) && BRIDRA_SIDECAR_PATH=$(SIDECAR) $(FLUTTER) test
 
+http-fault-test:
+	cd $(BRIDRA_FLUTTER_PACKAGE) && $(FLUTTER) test test/http_rpc_client_fault_test.dart
+	cd $(BRIDRA_FLUTTER_PACKAGE) && $(FLUTTER) test --platform chrome test/http_rpc_client_fault_test.dart
+
 flutter-web-test:
 	cd $(BRIDRA_FLUTTER_PACKAGE) && $(FLUTTER) test --platform chrome \
 		test/default_connector_web_test.dart \
 		test/rpc_file_test.dart \
-		test/http_rpc_client_test.dart
+		test/http_rpc_client_test.dart \
+		test/http_rpc_client_fault_test.dart
 
 flutter-test: backend-build
 	BRIDRA_SIDECAR_PATH=$(SIDECAR) BRIDRA_SERVER_PATH=$(HTTP_SERVER) $(FLUTTER) test
