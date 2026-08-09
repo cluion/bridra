@@ -18,6 +18,13 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
   signed Profile cold launches. Local Apple Team and bundle identifier overrides
   stay outside Git.
 
+### Changed
+
+- Desktop Sidecars now receive their random launch token through a bounded,
+  versioned stdin handshake instead of process arguments. The Flutter client
+  falls back once for older generated Sidecars that do not recognize the new
+  non-secret launch flag; the RPC protocol version is unchanged.
+
 ### Fixed
 
 - Prevented the connected-status header from overflowing at iPhone widths.

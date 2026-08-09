@@ -97,6 +97,15 @@ typedef SidecarProcessStarter =
 
 enum _SidecarState { running, restarting, closing, closed, failed }
 
+enum _SidecarLaunchMode { stdinHandshake, legacyArguments }
+
+const _sidecarLaunchProtocolVersion = 1;
+const _sidecarLaunchReadyMessage = 'sidecar: launch ready 1';
+const _legacyStdinLaunchFlagError =
+    'flag provided but not defined: -token-stdin';
+const _sidecarLaunchTimeout = Duration(seconds: 2);
+const _maximumSidecarLaunchTokenBytes = 1024;
+
 enum SidecarRuntimeState { running, restarting, closing, closed, failed }
 
 enum SidecarDiagnosticEventType {
@@ -189,16 +198,13 @@ String _diagnosticEventTypeName(SidecarDiagnosticEventType type) =>
 
 class SidecarClient implements RpcClient {
   SidecarClient._({
-    required SidecarProcess process,
     required this._executablePath,
     required this._token,
     required this._processStarter,
     required this._restartPolicy,
     required this._streamWindow,
     this._onLog,
-  }) {
-    _attachSession(process);
-  }
+  });
 
   final String _executablePath;
   final String _token;
@@ -222,6 +228,7 @@ class SidecarClient implements RpcClient {
   var _successfulRestarts = 0;
   var _failedRestartAttempts = 0;
   int? _lastExitCode;
+  var _launchMode = _SidecarLaunchMode.stdinHandshake;
 
   static const _maximumDiagnosticEvents = 50;
 
@@ -241,10 +248,17 @@ class SidecarClient implements RpcClient {
         'Use a value between 1 and 256.',
       );
     }
+    if (token.isEmpty ||
+        utf8.encode(token).length > _maximumSidecarLaunchTokenBytes) {
+      throw ArgumentError.value(
+        token.isEmpty ? token : '[REDACTED]',
+        'token',
+        'Use a non-empty token no larger than '
+            '$_maximumSidecarLaunchTokenBytes UTF-8 bytes.',
+      );
+    }
     final starter = processStarter ?? _startSystemProcess;
-    final process = await starter(executablePath, ['--token', token]);
-    return SidecarClient._(
-      process: process,
+    final client = SidecarClient._(
       executablePath: executablePath,
       token: token,
       processStarter: starter,
@@ -252,6 +266,14 @@ class SidecarClient implements RpcClient {
       streamWindow: streamWindow,
       onLog: onLog,
     );
+    try {
+      await client._startSessionWithCompatibility(replacement: false);
+      return client;
+    } on Object catch (error, stackTrace) {
+      client._terminalError = error;
+      client._state = _SidecarState.failed;
+      Error.throwWithStackTrace(error, stackTrace);
+    }
   }
 
   SidecarDiagnostics diagnostics() => SidecarDiagnostics(
@@ -701,11 +723,23 @@ class SidecarClient implements RpcClient {
     _recordDiagnostic(SidecarDiagnosticEventType.closed);
   }
 
-  void _attachSession(SidecarProcess process) {
+  void _attachSession(
+    SidecarProcess process, {
+    required bool expectsLaunchReady,
+  }) {
     _processStarts++;
     _recordDiagnostic(SidecarDiagnosticEventType.processStarted);
-    final session = _SidecarSession(process);
+    final session = _SidecarSession(
+      process,
+      expectsLaunchReady: expectsLaunchReady,
+    );
     _session = session;
+    final launch = session.launchCompleter;
+    if (launch != null) {
+      unawaited(
+        launch.future.then<void>((_) {}, onError: (Object _, StackTrace _) {}),
+      );
+    }
     session.stdoutSubscription = process.stdout
         .transform(utf8.decoder)
         .transform(const LineSplitter())
@@ -719,7 +753,7 @@ class SidecarClient implements RpcClient {
         .transform(utf8.decoder)
         .transform(const LineSplitter())
         .listen(
-          _emitLog,
+          (line) => _handleLogLine(session, line),
           onError: (Object error, StackTrace stackTrace) {
             _handleLogStreamError(session, error, stackTrace);
           },
@@ -732,6 +766,98 @@ class SidecarClient implements RpcClient {
         },
       ),
     );
+  }
+
+  Future<_SidecarSession> _startSessionWithCompatibility({
+    required bool replacement,
+  }) async {
+    try {
+      return await _startSession(_launchMode, replacement: replacement);
+    } on _LegacySidecarLaunchUnsupported {
+      if (_launchMode != _SidecarLaunchMode.stdinHandshake) rethrow;
+      _launchMode = _SidecarLaunchMode.legacyArguments;
+      _emitLog(
+        'The Go sidecar uses the legacy launch protocol; update the '
+        'generated backend to keep the launch token out of process arguments.',
+      );
+      return _startSession(
+        _SidecarLaunchMode.legacyArguments,
+        replacement: replacement,
+      );
+    }
+  }
+
+  Future<_SidecarSession> _startSession(
+    _SidecarLaunchMode mode, {
+    required bool replacement,
+  }) async {
+    SidecarProcess process;
+    try {
+      process = await _processStarter(
+        _executablePath,
+        mode == _SidecarLaunchMode.stdinHandshake
+            ? const ['--token-stdin']
+            : ['--token', _token],
+      );
+    } on Object catch (error) {
+      final details = error.toString().replaceAll(_token, '[REDACTED]');
+      throw BackendTransportException(
+        replacement
+            ? 'Could not start a replacement Go sidecar: $details'
+            : 'Could not start the Go sidecar: $details',
+      );
+    }
+
+    _attachSession(
+      process,
+      expectsLaunchReady: mode == _SidecarLaunchMode.stdinHandshake,
+    );
+    final session = _session!;
+    if (mode == _SidecarLaunchMode.legacyArguments) return session;
+
+    try {
+      process.stdin.writeln(
+        jsonEncode({
+          'protocolVersion': _sidecarLaunchProtocolVersion,
+          'token': _token,
+        }),
+      );
+      await process.stdin.flush();
+      await session.launchCompleter!.future.timeout(_sidecarLaunchTimeout);
+      return session;
+    } on _LegacySidecarLaunchUnsupported {
+      await _stopSession(session, graceful: false);
+      rethrow;
+    } on Object catch (error, stackTrace) {
+      await _stopSession(session, graceful: false);
+      final safeError = BackendTransportException(
+        'The Go sidecar launch handshake failed.',
+      );
+      Error.throwWithStackTrace(safeError, stackTrace);
+    }
+  }
+
+  void _handleLogLine(_SidecarSession session, String line) {
+    if (!identical(_session, session)) return;
+    final launch = session.launchCompleter;
+    if (launch != null && !launch.isCompleted) {
+      if (line == _sidecarLaunchReadyMessage) {
+        session.launchReady = true;
+        launch.complete();
+        return;
+      }
+      if (line == _legacyStdinLaunchFlagError) {
+        session.legacyLaunchUnsupported = true;
+        if (session.launchExitCode == 2) {
+          launch.completeError(
+            const _LegacySidecarLaunchUnsupported(),
+            StackTrace.current,
+          );
+        }
+        return;
+      }
+    }
+    _emitLog(line);
   }
 
   Future<_SidecarSession> _waitForRunning() async {
@@ -882,6 +1008,19 @@ class SidecarClient implements RpcClient {
   void _handleResponse(_SidecarSession session, String line) {
     if (!identical(_session, session)) return;
 
+    final launch = session.launchCompleter;
+    if (launch != null && !session.launchReady) {
+      if (!launch.isCompleted) {
+        launch.completeError(
+          const BackendProtocolException(
+            'The Go sidecar responded before completing its launch handshake.',
+          ),
+          StackTrace.current,
+        );
+      }
+      return;
+    }
+
     _PendingSidecarCall? pending;
     try {
       final decoded = jsonDecode(line);
@@ -980,6 +1119,13 @@ class SidecarClient implements RpcClient {
             cause: error,
           );
     final effectiveStackTrace = stackTrace ?? StackTrace.current;
+    final launch = session.launchCompleter;
+    if (launch != null && !session.launchReady) {
+      if (!launch.isCompleted) {
+        launch.completeError(transportError, effectiveStackTrace);
+      }
+      return;
+    }
     final health = session.healthCompleter;
     if (_state == _SidecarState.restarting &&
         health != null &&
@@ -996,17 +1142,43 @@ class SidecarClient implements RpcClient {
     StackTrace? stackTrace,
   ]) {
     if (!identical(_session, session)) return;
+    final launch = session.launchCompleter;
+    if (launch != null && !session.launchReady) {
+      if (!launch.isCompleted) {
+        launch.completeError(
+          const BackendTransportException(
+            'The Go sidecar launch log stream failed.',
+          ),
+          stackTrace ?? StackTrace.current,
+        );
+      }
+      return;
+    }
     _emitLog('The Go sidecar log stream failed: $error');
   }
 
   void _handleExit(_SidecarSession session, int exitCode) {
     session.exited = true;
+    session.launchExitCode = exitCode;
     if (!identical(_session, session)) return;
     _lastExitCode = exitCode;
     _recordDiagnostic(
       SidecarDiagnosticEventType.processExited,
       exitCode: exitCode,
     );
+    final launch = session.launchCompleter;
+    if (launch != null && !session.launchReady) {
+      Timer.run(() {
+        if (launch.isCompleted) return;
+        launch.completeError(
+          session.legacyLaunchUnsupported && exitCode == 2
+              ? const _LegacySidecarLaunchUnsupported()
+              : SidecarExitedException(exitCode),
+          StackTrace.current,
+        );
+      });
+      return;
+    }
     if (_state == _SidecarState.closing ||
         _state == _SidecarState.closed ||
         _state == _SidecarState.failed) {
@@ -1078,16 +1250,12 @@ class SidecarClient implements RpcClient {
 
       _SidecarSession? session;
       try {
-        final process = await _startReplacementProcess();
+        session = await _startSessionWithCompatibility(replacement: true);
         if (_state != _SidecarState.restarting) {
-          final abandoned = _SidecarSession(process);
-          await _stopUnattachedProcess(abandoned);
+          await _stopSession(session, graceful: false);
           return;
         }
-
-        _attachSession(process);
-        session = _session;
-        if (session == null) {
+        if (!identical(_session, session)) {
           throw const BackendTransportException(
             'The restarted Go sidecar process is unavailable.',
           );
@@ -1136,17 +1304,6 @@ class SidecarClient implements RpcClient {
           return;
         }
       }
-    }
-  }
-
-  Future<SidecarProcess> _startReplacementProcess() async {
-    try {
-      return await _processStarter(_executablePath, ['--token', _token]);
-    } on Object catch (error) {
-      final details = error.toString().replaceAll(_token, '[REDACTED]');
-      throw BackendTransportException(
-        'Could not start a replacement Go sidecar: $details',
-      );
     }
   }
 
@@ -1254,17 +1411,6 @@ class SidecarClient implements RpcClient {
     }
   }
 
-  Future<void> _stopUnattachedProcess(_SidecarSession session) async {
-    session.process.kill();
-    try {
-      await session.process.exitCode.timeout(const Duration(seconds: 2));
-    } on TimeoutException {
-      if (!Platform.isWindows) {
-        session.process.kill(ProcessSignal.sigkill);
-      }
-    }
-  }
-
   Future<void> _waitForExit(_SidecarSession session) async {
     try {
       await session.process.exitCode.timeout(const Duration(seconds: 2));
@@ -1357,15 +1503,24 @@ class SidecarClient implements RpcClient {
 }
 
 class _SidecarSession {
-  _SidecarSession(this.process);
+  _SidecarSession(this.process, {required bool expectsLaunchReady})
+    : launchCompleter = expectsLaunchReady ? Completer<void>() : null;
 
   final SidecarProcess process;
+  final Completer<void>? launchCompleter;
   late StreamSubscription<String> stdoutSubscription;
   late StreamSubscription<String> stderrSubscription;
   String? healthRequestID;
   Completer<RpcReply>? healthCompleter;
   Future<void>? stopFuture;
   var exited = false;
+  var launchReady = false;
+  var legacyLaunchUnsupported = false;
+  int? launchExitCode;
+}
+
+class _LegacySidecarLaunchUnsupported implements Exception {
+  const _LegacySidecarLaunchUnsupported();
 }
 
 class _PendingSidecarCall {

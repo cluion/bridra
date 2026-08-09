@@ -26,6 +26,11 @@ Calls that were in flight fail and are never replayed automatically. Calls made
 during recovery wait for a replacement process to pass `system.health`, while
 their own timeout and cancellation remain active.
 
+Current Sidecars receive the random launch token through a bounded stdin
+handshake, so it is absent from process arguments. The client detects older
+generated Sidecars, falls back once to their legacy launch argument, and retains
+that compatibility mode across restarts.
+
 Application-specific methods and response models do not belong in this package.
 Define those in the consuming application's typed gateway.
 

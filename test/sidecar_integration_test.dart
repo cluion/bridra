@@ -21,6 +21,7 @@ void main() {
     );
 
     final processes = <Process>[];
+    final launchArguments = <List<String>>[];
     final recoveryStarted = Completer<void>();
     final client = await SidecarClient.start(
       executablePath: executable,
@@ -36,6 +37,7 @@ void main() {
         maxDelay: Duration.zero,
       ),
       processStarter: (path, arguments) async {
+        launchArguments.add(List.of(arguments));
         final process = await Process.start(path, arguments);
         processes.add(process);
         return TestSidecarProcess(process);
@@ -73,6 +75,13 @@ void main() {
     }
 
     expect(processes, hasLength(1));
+    expect(launchArguments, [
+      ['--token-stdin'],
+    ]);
+    expect(
+      launchArguments.toString(),
+      isNot(contains('integration-test-token')),
+    );
     expect(processes.single.kill(), isTrue);
     await recoveryStarted.future;
 
@@ -80,6 +89,10 @@ void main() {
     expect(recoveredHealth.status, 'ok');
     expect(recoveredHealth.protocolVersion, supportedBackendProtocolVersion);
     expect(processes, hasLength(2));
+    expect(launchArguments, [
+      ['--token-stdin'],
+      ['--token-stdin'],
+    ]);
   });
 }
 

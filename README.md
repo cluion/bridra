@@ -85,7 +85,9 @@ distribution channels.
 | Web | Yes | HTTP RPC with CORS | Static Web bundle |
 
 Desktop applications launch and own an ephemeral-token Go child process. The
-Sidecar independently watches its Flutter parent and exits if that owner dies.
+token is delivered through a bounded stdin launch handshake, not process
+arguments. The Sidecar independently watches its Flutter parent and exits if
+that owner dies.
 Mobile and Web applications connect to a separately deployed Go HTTP backend
 through the same typed contract.
 

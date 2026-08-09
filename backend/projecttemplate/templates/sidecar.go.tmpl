@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -14,11 +13,13 @@ import (
 )
 
 func main() {
-	token := flag.String("token", "", "ephemeral token supplied by Flutter")
-	flag.Parse()
-	if *token == "" {
-		fmt.Fprintln(os.Stderr, "sidecar: --token is required")
+	launch, err := framework.ReadSidecarLaunch(os.Args[1:], os.Stdin)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "sidecar: launch: %v\n", err)
 		os.Exit(2)
+	}
+	if launch.UsesStdinHandshake {
+		fmt.Fprintln(os.Stderr, framework.SidecarLaunchReadyMessage)
 	}
 	fileTransfers, err := framework.NewFileTransferStore(
 		framework.FileTransferOptions{ExposeLocalPath: true},
@@ -30,16 +31,16 @@ func main() {
 	defer fileTransfers.Close()
 	server := framework.Server{
 		Router: app.NewRouterWithFileTransfers(
-			*token,
+			launch.Token,
 			os.Stderr,
 			"Go sidecar",
 			fileTransfers,
 		),
-		Input:         os.Stdin,
+		Input:         launch.Input,
 		Output:        os.Stdout,
 		Errors:        os.Stderr,
 		FileTransfers: fileTransfers,
-		Token:         *token,
+		Token:         launch.Token,
 	}
 	signalContext, stopSignals := signal.NotifyContext(
 		context.Background(),

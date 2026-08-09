@@ -48,6 +48,8 @@ Threads:\t9
       final restartSignals = StreamController<void>.broadcast(sync: true);
       late Process currentProcess;
       Future<SidecarProcess> start(String path, List<String> arguments) async {
+        expect(arguments, ['--token-stdin']);
+        expect(arguments, isNot(contains('resource-stress-token')));
         final process = await Process.start(path, arguments);
         currentProcess = process;
         activeProcesses.add(process);

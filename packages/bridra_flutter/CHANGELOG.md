@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Kept Desktop Sidecar launch tokens out of process arguments with a bounded
+  stdin handshake. Older generated Sidecars are detected and supported through
+  a one-time legacy fallback; the RPC protocol remains unchanged.
+
 ## 0.11.0 - 2026-08-03
 
 - Aligned package metadata with Bridra 0.11.0's release supply-chain update.

@@ -8,6 +8,157 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('launches without exposing the token in process arguments', () async {
+    final process = FakeSidecarProcess();
+    final arguments = <List<String>>[];
+    final client = await SidecarClient.start(
+      executablePath: '/fake/sidecar',
+      token: 'test-token',
+      restartPolicy: const SidecarRestartPolicy.disabled(),
+      processStarter: (executablePath, launchArguments) async {
+        expect(executablePath, '/fake/sidecar');
+        arguments.add(List.of(launchArguments));
+        return process;
+      },
+    );
+    addTearDown(client.close);
+
+    expect(arguments, [
+      ['--token-stdin'],
+    ]);
+    expect(arguments.toString(), isNot(contains('test-token')));
+    expect(process.launchHandshake, {
+      'protocolVersion': 1,
+      'token': 'test-token',
+    });
+  });
+
+  test('falls back once and retains legacy mode across restarts', () async {
+    final unsupported = LegacyStdinLaunchSidecarProcess();
+    final legacy = FakeSidecarProcess();
+    final legacyReplacement = FakeSidecarProcess();
+    final arguments = <List<String>>[];
+    final logs = <String>[];
+    final recoveryStarted = Completer<void>();
+    var starts = 0;
+
+    final client = await SidecarClient.start(
+      executablePath: '/fake/sidecar',
+      token: 'test-token',
+      onLog: (line) {
+        logs.add(line);
+        if (line.startsWith('Restarting the Go sidecar') &&
+            !recoveryStarted.isCompleted) {
+          recoveryStarted.complete();
+        }
+      },
+      restartPolicy: const SidecarRestartPolicy(
+        maxAttempts: 1,
+        initialDelay: Duration.zero,
+        maxDelay: Duration.zero,
+      ),
+      processStarter: (executablePath, launchArguments) async {
+        expect(executablePath, '/fake/sidecar');
+        arguments.add(List.of(launchArguments));
+        if (starts++ == 0) {
+          Timer.run(unsupported.rejectStdinLaunch);
+          return unsupported;
+        }
+        if (starts == 2) return legacy;
+        if (starts == 3) return legacyReplacement;
+        throw StateError('Unexpected Sidecar start $starts.');
+      },
+    );
+    addTearDown(client.close);
+
+    expect(arguments, [
+      ['--token-stdin'],
+      ['--token', 'test-token'],
+    ]);
+    expect(legacy.launchHandshake, isNull);
+    expect(
+      logs,
+      contains(
+        'The Go sidecar uses the legacy launch protocol; update the '
+        'generated backend to keep the launch token out of process arguments.',
+      ),
+    );
+    expect(logs.join('\n'), isNot(contains('test-token')));
+
+    final call = client.call('legacy-compatible');
+    final request = await legacy.nextRequest();
+    legacy.respond({
+      'id': request['id'],
+      'result': 'ok',
+      'meta': <String, Object?>{},
+    });
+    expect((await call).result, 'ok');
+
+    await legacy.exit(17);
+    await recoveryStarted.future;
+    final recovered = client.call('legacy-recovered');
+    final health = await legacyReplacement.nextRequest();
+    expect(health['method'], 'system.health');
+    legacyReplacement.respond({
+      'id': health['id'],
+      'result': {'status': 'ok'},
+      'meta': <String, Object?>{},
+    });
+    final recoveredRequest = await legacyReplacement.nextRequest();
+    legacyReplacement.respond({
+      'id': recoveredRequest['id'],
+      'result': 'recovered',
+      'meta': <String, Object?>{},
+    });
+    expect((await recovered).result, 'recovered');
+    expect(arguments, [
+      ['--token-stdin'],
+      ['--token', 'test-token'],
+      ['--token', 'test-token'],
+    ]);
+    expect(legacyReplacement.launchHandshake, isNull);
+  });
+
+  test('does not downgrade without the legacy exit code', () async {
+    final process = LegacyStdinLaunchSidecarProcess();
+    final arguments = <List<String>>[];
+    await expectLater(
+      SidecarClient.start(
+        executablePath: '/fake/sidecar',
+        token: 'test-token',
+        restartPolicy: const SidecarRestartPolicy.disabled(),
+        processStarter: (_, launchArguments) async {
+          arguments.add(List.of(launchArguments));
+          Timer.run(() => process.rejectStdinLaunch(exitCode: 1));
+          return process;
+        },
+      ),
+      throwsA(isA<BackendTransportException>()),
+    );
+
+    expect(arguments, [
+      ['--token-stdin'],
+    ]);
+  });
+
+  test('rejects invalid launch tokens before starting a process', () async {
+    var starts = 0;
+    for (final token in ['', 'x' * 1025]) {
+      await expectLater(
+        SidecarClient.start(
+          executablePath: '/fake/sidecar',
+          token: token,
+          processStarter: (_, _) async {
+            starts++;
+            return FakeSidecarProcess();
+          },
+        ),
+        throwsArgumentError,
+      );
+    }
+    expect(starts, 0);
+  });
+
   test(
     'diagnostics expose bounded state without credentials or paths',
     () async {
@@ -401,25 +552,22 @@ void main() {
     expect(process.receivedRequestCount, 0);
   });
 
-  test(
-    'write failures terminate the transport without leaking the call',
-    () async {
-      final process = FailingWriteSidecarProcess();
-      final client = await SidecarClient.start(
+  test('launch handshake write failures stop the process safely', () async {
+    final process = FailingWriteSidecarProcess();
+    await expectLater(
+      SidecarClient.start(
         executablePath: '/fake/sidecar',
         token: 'test-token',
         restartPolicy: const SidecarRestartPolicy.disabled(),
-        processStarter: (_, _) async => process,
-      );
-      addTearDown(client.close);
-
-      await expectLater(
-        client.call('write-failure'),
-        throwsA(isA<BackendTransportException>()),
-      );
-      expect(process.killCount, 1);
-    },
-  );
+        processStarter: (_, arguments) async {
+          expect(arguments, ['--token-stdin']);
+          return process;
+        },
+      ),
+      throwsA(isA<BackendTransportException>()),
+    );
+    expect(process.killCount, 1);
+  });
 
   test('restart policy applies exponential backoff with a cap', () {
     const policy = SidecarRestartPolicy(
@@ -976,18 +1124,23 @@ void main() {
 Future<SidecarClient> _startClient(
   FakeSidecarProcess process, {
   void Function(String line)? onLog,
-}) {
-  return SidecarClient.start(
+}) async {
+  final client = await SidecarClient.start(
     executablePath: '/fake/sidecar',
     token: 'test-token',
     onLog: onLog,
     restartPolicy: const SidecarRestartPolicy.disabled(),
     processStarter: (executablePath, arguments) async {
       expect(executablePath, '/fake/sidecar');
-      expect(arguments, ['--token', 'test-token']);
+      expect(arguments, ['--token-stdin']);
       return process;
     },
   );
+  expect(process.launchHandshake, {
+    'protocolVersion': 1,
+    'token': 'test-token',
+  });
+  return client;
 }
 
 class FakeSidecarProcess implements SidecarProcess {
@@ -1011,6 +1164,7 @@ class FakeSidecarProcess implements SidecarProcess {
 
   var killCount = 0;
   var _receivedRequestCount = 0;
+  Map<String, dynamic>? launchHandshake;
 
   int get receivedRequestCount => _receivedRequestCount;
 
@@ -1057,8 +1211,17 @@ class FakeSidecarProcess implements SidecarProcess {
   }
 
   void _receiveRequest(String line) {
-    _receivedRequestCount++;
     final request = Map<String, dynamic>.from(jsonDecode(line) as Map);
+    if (request.containsKey('protocolVersion') &&
+        request.containsKey('token') &&
+        !request.containsKey('method')) {
+      launchHandshake = request;
+      if (!_stderrController.isClosed) {
+        _stderrController.add(utf8.encode('sidecar: launch ready 1\n'));
+      }
+      return;
+    }
+    _receivedRequestCount++;
     if (_requestWaiters.isNotEmpty) {
       _requestWaiters.removeAt(0).complete(request);
     } else {
@@ -1078,7 +1241,7 @@ class FakeSidecarStarter {
     List<String> arguments,
   ) async {
     expect(executablePath, '/fake/sidecar');
-    expect(arguments, ['--token', 'test-token']);
+    expect(arguments, ['--token-stdin']);
     final index = callCount++;
     if (index >= _outcomes.length) {
       throw StateError('Unexpected sidecar start $callCount.');
@@ -1086,6 +1249,54 @@ class FakeSidecarStarter {
     final outcome = _outcomes[index];
     if (outcome is SidecarProcess) return outcome;
     throw outcome;
+  }
+}
+
+class LegacyStdinLaunchSidecarProcess implements SidecarProcess {
+  LegacyStdinLaunchSidecarProcess() {
+    stdin = IOSink(_inputController.sink);
+    _inputController.stream.listen((_) {});
+  }
+
+  final _inputController = StreamController<List<int>>();
+  final _stdoutController = StreamController<List<int>>();
+  final _stderrController = StreamController<List<int>>();
+  final _exitCode = Completer<int>();
+
+  @override
+  late final IOSink stdin;
+
+  var killCount = 0;
+
+  @override
+  Future<int> get exitCode => _exitCode.future;
+
+  @override
+  Stream<List<int>> get stderr => _stderrController.stream;
+
+  @override
+  Stream<List<int>> get stdout => _stdoutController.stream;
+
+  void rejectStdinLaunch({int exitCode = 2}) {
+    if (_exitCode.isCompleted) return;
+    _stderrController.add(
+      utf8.encode('flag provided but not defined: -token-stdin\n'),
+    );
+    scheduleMicrotask(() => _exit(exitCode));
+  }
+
+  void _exit(int code) {
+    if (_exitCode.isCompleted) return;
+    _exitCode.complete(code);
+    unawaited(_stdoutController.close());
+    unawaited(_stderrController.close());
+  }
+
+  @override
+  bool kill([ProcessSignal signal = ProcessSignal.sigterm]) {
+    killCount++;
+    _exit(signal == ProcessSignal.sigkill ? 137 : 143);
+    return true;
   }
 }
 

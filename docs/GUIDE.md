@@ -551,9 +551,14 @@ process-scoped, so multiple-isolate acquisition is unsupported. The operating
 system releases ownership after a crash; the next launch overwrites stale
 connection metadata and becomes primary.
 
-Each desktop launch creates a random 256-bit token, starts one Go child process,
-performs the protocol handshake, and closes the process with the Flutter
-gateway. Go reserves stdout for RPC and writes logs to stderr.
+Each desktop launch creates a random 256-bit token and starts one Go child
+process. Flutter sends that token as a bounded, versioned first line on stdin,
+waits for a token-free readiness marker on stderr, and then uses the remaining
+stdin stream for RPC. The token is absent from current Sidecar process
+arguments. If an older generated backend rejects this launch mode, Flutter
+retries it once through the legacy argument and uses that compatibility mode for
+later restarts; regenerate the backend to remove the fallback. Go reserves
+stdout for RPC and writes logs to stderr.
 
 The Sidecar also watches the identity of its operating-system parent. If the
 Flutter process is force-terminated, the Sidecar cancels active work, runs the

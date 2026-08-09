@@ -530,6 +530,13 @@ termination or inherited pipe handles.
 
 - Flutter owns exactly one Go child process per gateway.
 - Every launch receives a random 256-bit token.
+- Current Sidecars receive that token in a bounded, versioned JSON line written
+  to stdin after launch; it is absent from process arguments. The remaining
+  buffered stdin bytes become the RPC stream. Flutter waits for a token-free
+  readiness marker on stderr before exposing the client.
+- When an older generated Sidecar rejects the non-secret `--token-stdin` flag,
+  Flutter retries once with its legacy `--token` argument and keeps that mode
+  for later restarts. Regenerating the backend removes this compatibility path.
 - Closing stdin requests a graceful exit; signals are fallback cleanup.
 - Parent-process death cancels the stdio server and then runs reverse-order
   Application shutdown before the Sidecar exits.
@@ -551,8 +558,9 @@ termination or inherited pipe handles.
   store through the reserved `rpc.file_upload` control method.
 
 The launch token prevents accidental messages outside the parent's launch
-context. It is not an isolation boundary against another process running as the
-same OS user.
+context. Keeping it out of the current process argument list avoids routine
+process-list exposure, but it is not an isolation boundary against another
+process running as the same OS user.
 
 ## HTTP model
 

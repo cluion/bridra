@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -17,15 +16,17 @@ import (
 )
 
 func main() {
-	token := flag.String("token", "", "ephemeral token supplied by the Flutter parent")
-	flag.Parse()
-	if *token == "" {
-		fmt.Fprintln(os.Stderr, "sidecar: --token is required")
+	launch, err := framework.ReadSidecarLaunch(os.Args[1:], os.Stdin)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "sidecar: launch: %v\n", err)
 		os.Exit(2)
+	}
+	if launch.UsesStdinHandshake {
+		fmt.Fprintln(os.Stderr, framework.SidecarLaunchReadyMessage)
 	}
 
 	application, err := app.Build(app.Config{
-		Token:   *token,
+		Token:   launch.Token,
 		Logs:    os.Stderr,
 		Runtime: "Go sidecar",
 	}, framework.NewFileTransferServiceProvider(framework.FileTransferOptions{
@@ -43,7 +44,7 @@ func main() {
 		os.Exit(2)
 	}
 	defer stopParent()
-	runError := runSidecar(ctx, application, os.Stdin, os.Stdout, os.Stderr)
+	runError := runSidecar(ctx, application, launch.Input, os.Stdout, os.Stderr)
 	cause := context.Cause(ctx)
 	if cause != nil &&
 		!errors.Is(cause, context.Canceled) &&
