@@ -204,6 +204,10 @@ download_count() {
   backend_log_count '"http_method":"GET".*"surface":"file_transfer"'
 }
 
+download_resume_count() {
+  backend_log_count 'server: smoke download resumed at offset 32768'
+}
+
 upload_verify_count() {
   backend_log_count '"rpc_method":"bridra.smoke.upload.verify"'
 }
@@ -220,6 +224,7 @@ start_backend() {
     --token "$token" \
     --smoke-stream \
     --smoke-download \
+    --smoke-download-resume \
     --smoke-upload-resume \
     --cors-origin '*' >>"$smoke_log" 2>&1 &
   server_pid=$!
@@ -316,6 +321,10 @@ if ! wait_for_test_pattern \
   abort_test "Physical iPhone did not complete its initial verified managed download."
 fi
 if ! wait_for_test_pattern \
+  "$smoke_log" 'server: smoke download resumed at offset 32768' 3000; then
+  abort_test "Physical iPhone did not resume its interrupted managed download."
+fi
+if ! wait_for_test_pattern \
   "$smoke_log" 'server: smoke upload resumed at offset 32768' 3000; then
   abort_test "Physical iPhone did not resume its interrupted managed upload."
 fi
@@ -336,6 +345,7 @@ reconnect_health_baseline=$(health_count)
 reconnect_greeting_baseline=$(greeting_count)
 reconnect_stream_baseline=$(stream_count)
 reconnect_download_baseline=$(download_count)
+reconnect_download_resume_baseline=$(download_resume_count)
 reconnect_upload_verify_baseline=$(upload_verify_count)
 reconnect_upload_resume_baseline=$(upload_resume_count)
 echo "Restarting Go HTTP backend for the reconnect action..."
@@ -356,6 +366,7 @@ if [ "$(health_count)" -le "$reconnect_health_baseline" ] ||
   [ "$(greeting_count)" -le "$reconnect_greeting_baseline" ] ||
   [ "$(stream_count)" -le "$reconnect_stream_baseline" ] ||
   [ "$(download_count)" -le "$reconnect_download_baseline" ] ||
+  [ "$(download_resume_count)" -le "$reconnect_download_resume_baseline" ] ||
   [ "$(upload_verify_count)" -le "$reconnect_upload_verify_baseline" ] ||
   [ "$(upload_resume_count)" -le "$reconnect_upload_resume_baseline" ]; then
   cat "$smoke_log" >&2
@@ -418,4 +429,4 @@ cold_launch "Cold-launching Profile app without Flutter tooling"
 cold_launch "Cold-launching Profile app a second time"
 
 cat "$smoke_log"
-echo "Physical iPhone smoke passed: RPC, streaming, verified downloads, resumed uploads, reconnect, and two Profile cold launches."
+echo "Physical iPhone smoke passed: RPC, streaming, resumed downloads/uploads, reconnect, and two Profile cold launches."

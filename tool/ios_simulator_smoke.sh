@@ -82,6 +82,7 @@ echo "Starting Go HTTP backend on 127.0.0.1:$port..."
   --token "$token" \
   --smoke-stream \
   --smoke-download \
+  --smoke-download-resume \
   --smoke-upload-resume \
   --cors-origin '*' >"$smoke_log" 2>&1 &
 server_pid=$!
@@ -125,6 +126,8 @@ grep -Fq '"rpc_method":"greeting.hello"' "$smoke_log"
 grep -Fq '"rpc_method":"bridra.smoke.stream"' "$smoke_log"
 grep -Fq '"rpc_method":"bridra.smoke.download"' "$smoke_log"
 grep -Fq '"surface":"file_transfer"' "$smoke_log"
+grep -Fq 'server: smoke download interrupted at offset 32768' "$smoke_log"
+grep -Fq 'server: smoke download resumed at offset 32768' "$smoke_log"
 grep -Fq 'server: smoke upload interrupted at offset 32768' "$smoke_log"
 grep -Fq 'server: smoke upload resumed at offset 32768' "$smoke_log"
 grep -Fq '"rpc_method":"bridra.smoke.upload.verify"' "$smoke_log"

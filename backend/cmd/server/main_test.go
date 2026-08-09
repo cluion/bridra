@@ -211,6 +211,78 @@ func TestSmokeDownloadUsesApplicationAuthentication(t *testing.T) {
 	}
 }
 
+func TestSmokeDownloadResumeHandlerInterruptsAndContinuesWithRange(t *testing.T) {
+	store, err := framework.NewFileTransferStore(
+		framework.DefaultFileTransferOptions(),
+	)
+	if err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("close store: %v", err)
+		}
+	})
+	content := []byte(strings.Repeat(smokeDownloadBlock, smokeDownloadBlockCount))
+	reference, err := store.Stage(
+		context.Background(),
+		smokeDownloadName,
+		smokeDownloadMediaType,
+		bytes.NewReader(content),
+	)
+	if err != nil {
+		t.Fatalf("stage download: %v", err)
+	}
+	var logs bytes.Buffer
+	handler := &smokeDownloadResumeHandler{
+		handler: &framework.FileTransferHTTPHandler{
+			Store:  store,
+			Errors: &logs,
+		},
+		errorOutput: &logs,
+	}
+
+	download := func(byteRange string) *httptest.ResponseRecorder {
+		t.Helper()
+		request := httptest.NewRequest(
+			http.MethodGet,
+			"/rpc/files/"+reference.ID,
+			nil,
+		)
+		if byteRange != "" {
+			request.Header.Set("Range", byteRange)
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response
+	}
+
+	first := download("")
+	if first.Code != http.StatusOK ||
+		first.Body.Len() != int(smokeDownloadInterruptAt) {
+		t.Fatalf("interrupted response = %d, %d bytes", first.Code, first.Body.Len())
+	}
+	second := download(fmt.Sprintf("bytes=%d-", smokeDownloadInterruptAt))
+	if second.Code != http.StatusPartialContent ||
+		second.Body.Len() != len(content)-int(smokeDownloadInterruptAt) {
+		t.Fatalf("resumed response = %d, %d bytes", second.Code, second.Body.Len())
+	}
+	combined := append(first.Body.Bytes(), second.Body.Bytes()...)
+	if !bytes.Equal(combined, content) {
+		t.Fatalf("combined download = %d unexpected bytes", len(combined))
+	}
+	if _, err := store.OpenDownload(reference.ID, 0); !errors.Is(
+		err,
+		framework.ErrFileTransferNotFound,
+	) {
+		t.Fatalf("consumed download error = %v", err)
+	}
+	if !strings.Contains(logs.String(), "smoke download interrupted at offset 32768") ||
+		!strings.Contains(logs.String(), "smoke download resumed at offset 32768") {
+		t.Fatalf("logs = %s", logs.String())
+	}
+}
+
 func TestSmokeUploadResumeHandlerInterruptsAndContinuesAtStoredOffset(t *testing.T) {
 	store, err := framework.NewFileTransferStore(
 		framework.DefaultFileTransferOptions(),

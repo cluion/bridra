@@ -41,6 +41,11 @@ func main() {
 		false,
 		"enable the authenticated managed-download route used by platform smoke tests",
 	)
+	smokeDownloadResume := flag.Bool(
+		"smoke-download-resume",
+		false,
+		"interrupt the first smoke download so the client must resume with Range",
+	)
 	smokeUploadResume := flag.Bool(
 		"smoke-upload-resume",
 		false,
@@ -134,6 +139,12 @@ func main() {
 		Token:         backendToken,
 		Errors:        os.Stderr,
 	})
+	if *smokeDownloadResume {
+		fileTransferHandler = &smokeDownloadResumeHandler{
+			handler:     fileTransferHandler,
+			errorOutput: os.Stderr,
+		}
+	}
 	if *smokeUploadResume {
 		fileTransferHandler = &smokeUploadResumeHandler{
 			handler:     fileTransferHandler,
@@ -218,16 +229,19 @@ func buildApplication(token string, tokenProvided bool) (*framework.Application,
 const smokeStreamMethod = "bridra.smoke.stream"
 
 const (
-	smokeDownloadMethod     = "bridra.smoke.download"
-	smokeDownloadName       = "bridra-smoke.bin"
-	smokeDownloadMediaType  = "application/octet-stream"
-	smokeDownloadBlock      = "bridra-managed-download-smoke|"
-	smokeDownloadBlockCount = 2048
-	smokeUploadVerifyMethod = "bridra.smoke.upload.verify"
-	smokeUploadInterruptAt  = int64(32 << 10)
+	smokeDownloadMethod      = "bridra.smoke.download"
+	smokeDownloadName        = "bridra-smoke.bin"
+	smokeDownloadMediaType   = "application/octet-stream"
+	smokeDownloadBlock       = "bridra-managed-download-smoke|"
+	smokeDownloadBlockCount  = 2048
+	smokeDownloadInterruptAt = int64(32 << 10)
+	smokeUploadVerifyMethod  = "bridra.smoke.upload.verify"
+	smokeUploadInterruptAt   = int64(32 << 10)
 )
 
 var errSmokeUploadInterrupted = errors.New("smoke upload stream interrupted")
+
+var errSmokeDownloadInterrupted = errors.New("smoke download stream interrupted")
 
 func registerSmokeStream(router *framework.Router) {
 	router.Handle(smokeStreamMethod, func(ctx *framework.Context) (any, error) {
@@ -306,6 +320,65 @@ func registerSmokeUploadVerification(
 			"sha256": hex.EncodeToString(digest.Sum(nil)),
 		}, nil
 	})
+}
+
+type smokeDownloadResumeHandler struct {
+	handler     http.Handler
+	errorOutput io.Writer
+	interrupted atomic.Bool
+	resumed     atomic.Bool
+}
+
+func (handler *smokeDownloadResumeHandler) ServeHTTP(
+	writer http.ResponseWriter,
+	request *http.Request,
+) {
+	if request.Method == http.MethodGet &&
+		request.Header.Get("Range") == "" &&
+		handler.interrupted.CompareAndSwap(false, true) {
+		request.Close = true
+		writer.Header().Set("Connection", "close")
+		handler.handler.ServeHTTP(&smokeInterruptedResponseWriter{
+			ResponseWriter: writer,
+			remaining:      smokeDownloadInterruptAt,
+		}, request)
+		fmt.Fprintf(
+			handler.errorOutput,
+			"server: smoke download interrupted at offset %d\n",
+			smokeDownloadInterruptAt,
+		)
+		return
+	}
+	if request.Method == http.MethodGet &&
+		request.Header.Get("Range") == fmt.Sprintf("bytes=%d-", smokeDownloadInterruptAt) &&
+		handler.resumed.CompareAndSwap(false, true) {
+		fmt.Fprintf(
+			handler.errorOutput,
+			"server: smoke download resumed at offset %d\n",
+			smokeDownloadInterruptAt,
+		)
+	}
+	handler.handler.ServeHTTP(writer, request)
+}
+
+type smokeInterruptedResponseWriter struct {
+	http.ResponseWriter
+	remaining int64
+}
+
+func (writer *smokeInterruptedResponseWriter) Write(body []byte) (int, error) {
+	if writer.remaining == 0 {
+		return 0, errSmokeDownloadInterrupted
+	}
+	if int64(len(body)) > writer.remaining {
+		body = body[:writer.remaining]
+	}
+	written, err := writer.ResponseWriter.Write(body)
+	writer.remaining -= int64(written)
+	if err == nil && writer.remaining == 0 {
+		err = errSmokeDownloadInterrupted
+	}
+	return written, err
 }
 
 type smokeUploadResumeHandler struct {

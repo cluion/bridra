@@ -79,7 +79,7 @@ help:
 	@echo "make android-build Build an Android release APK (HTTPS URL required)"
 	@echo "make ios-run      Run on an iOS device (DEVICE=<id> optional)"
 	@echo "make ios-build    Build an unsigned iOS release (HTTPS URL required)"
-	@echo "make ios-simulator-smoke Exercise RPC, download, and upload resume on an iOS Simulator"
+	@echo "make ios-simulator-smoke Exercise RPC and transfer resume on an iOS Simulator"
 	@echo "make ios-device-smoke Exercise transfer/reconnect and Profile launches on an iPhone"
 	@echo "make web-run      Run the Web app in Chrome"
 	@echo "make web-build    Build a Web release (HTTPS URL required)"

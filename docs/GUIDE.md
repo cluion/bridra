@@ -663,8 +663,9 @@ make ios-build \
 `ios-simulator-smoke` automatically selects an available iPhone Simulator (or
 uses `DEVICE=<flutter-device-id>`), starts a temporary Go HTTP backend, and
 asserts real Health, Greeting, ordered Streaming／Progress, and a 60 KiB managed
-download through the running iOS app. The download must match its expected
-name, media type, byte count, SHA-256, and content. It also interrupts a 112 KiB
+download through the running iOS app. The download is interrupted after 32 KiB;
+Flutter must resume it with `Range: bytes=32768-`, then match its expected name,
+media type, byte count, SHA-256, and content. The test also interrupts a 112 KiB
 upload after 32 KiB, requires Flutter to recover the stored offset, resumes from
 that exact byte, then has Go consume and re-hash the result. The script shuts
 down only a Simulator that it booted itself.
@@ -682,11 +683,11 @@ and selects a free port starting at `18081`. It first drives Health and Greeting
 through a Debug integration test, stops the backend, verifies the unavailable
 state and successful reconnect, preserves the installed app so iOS keeps its
 local-network grant, verifies ordered Streaming／Progress before and after the
-reconnect, repeats the size/SHA-256-verified managed download after recovery,
-repeats the interrupted/resumed upload with Go-side size/SHA-256 verification,
-then installs a Profile build and verifies two cold launches without Flutter
-tooling. The authenticated smoke-only routes and fault injection are disabled
-unless the script passes `--smoke-stream`, `--smoke-download`, and
+reconnect, repeats byte-range download recovery and interrupted/resumed upload
+with Go-side size/SHA-256 verification, then installs a Profile build and
+verifies two cold launches without Flutter tooling. The authenticated smoke-only
+routes and fault injection are disabled unless the script passes
+`--smoke-stream`, `--smoke-download`, `--smoke-download-resume`, and
 `--smoke-upload-resume`. The script uses `flutter drive`, which handles wired
 and wireless iPhones, and stops the app and temporary backend when the test
 finishes. Keep the iPhone unlocked, in Developer Mode, trusted, and on a network
