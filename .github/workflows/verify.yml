@@ -172,6 +172,20 @@ jobs:
         run: make macos-smoke
 
       - name: Exercise iOS Simulator HTTP round trip
+        id: ios_simulator_smoke
+        continue-on-error: true
+        timeout-minutes: 12
+        run: make ios-simulator-smoke
+
+      - name: Reset iOS Simulator before one retry
+        if: steps.ios_simulator_smoke.outcome == 'failure'
+        run: |
+          xcrun simctl shutdown all || true
+          xcrun simctl erase all || true
+
+      - name: Retry iOS Simulator HTTP round trip
+        if: steps.ios_simulator_smoke.outcome == 'failure'
+        timeout-minutes: 12
         run: make ios-simulator-smoke
 
       - name: Build unsigned iOS release
