@@ -16,9 +16,10 @@ BUILD_MODE ?= release
 IOS_SIMULATOR_PORT ?= 18080
 IOS_DEVICE_PORT ?= 18081
 IOS_DEVICE_HOST ?=
+ANDROID_EMULATOR_PORT ?= 18082
 
 .PHONY: doctor generate codegen-check backend-build backend-serve run test analyze verify \
-	linux-build macos-build windows-build android-build ios-build ios-simulator-smoke ios-device-smoke web-build
+	linux-build macos-build windows-build android-build android-emulator-smoke ios-build ios-simulator-smoke ios-device-smoke web-build
 
 doctor:
 	cd backend && $(BRIDRA) doctor --root ..
@@ -70,6 +71,13 @@ windows-build:
 android-build:
 	cd backend && $(BRIDRA) build android --root .. --mode $(BUILD_MODE) \
 		--backend-url '$(BACKEND_URL)' --token '$(BACKEND_TOKEN)'
+
+android-emulator-smoke: backend-build
+	BRIDRA_SERVER_PATH='$(SERVER)' \
+		BRIDRA_FLUTTER='$(FLUTTER)' \
+		BRIDRA_ANDROID_EMULATOR_DEVICE='$(DEVICE)' \
+		BRIDRA_ANDROID_EMULATOR_PORT='$(ANDROID_EMULATOR_PORT)' \
+		./tool/android_emulator_smoke.sh
 
 ios-build:
 	cd backend && $(BRIDRA) build ios --root .. --mode $(BUILD_MODE) \

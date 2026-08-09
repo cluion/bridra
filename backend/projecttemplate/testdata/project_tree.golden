@@ -4,6 +4,8 @@
 Makefile
 README.md
 analysis_options.yaml
+android/app/src/debug/AndroidManifest.xml
+android/app/src/profile/AndroidManifest.xml
 backend/app/contracts/bridra.gen.go
 backend/app/controllers/greeting_controller.go
 backend/app/controllers/system_controller.go
@@ -18,7 +20,7 @@ backend/cmd/server/main.go
 backend/cmd/sidecar/main.go
 backend/framework/protocol_version.gen.go
 backend/go.mod
-integration_test/ios_http_smoke_test.dart
+integration_test/http_smoke_test.dart
 ios/Runner/Info.plist
 lib/api/backend_gateway.dart
 lib/api/generated/bridra_api.g.dart
@@ -27,5 +29,6 @@ pubspec.yaml
 schema/bridra.json
 test/widget_test.dart
 test_driver/integration_test.dart
+tool/android_emulator_smoke.sh
 tool/ios_device_smoke.sh
 tool/ios_simulator_smoke.sh

@@ -108,14 +108,14 @@ echo "Running iOS Simulator RPC, streaming, managed-download, and resumable-uplo
 test_status=0
 # BRIDRA_FLUTTER intentionally contains a command and optional wrapper argument.
 # shellcheck disable=SC2086
-$flutter_command test integration_test/ios_http_smoke_test.dart \
+$flutter_command test integration_test/http_smoke_test.dart \
   -d "$device" \
   --dart-define="BRIDRA_BACKEND_URL=http://127.0.0.1:$port/rpc" \
   --dart-define="BRIDRA_BACKEND_TOKEN=$token" \
-  --dart-define="BRIDRA_IOS_SMOKE_STREAM=true" \
-  --dart-define="BRIDRA_IOS_SMOKE_DOWNLOAD=true" \
-  --dart-define="BRIDRA_IOS_SMOKE_UPLOAD_RESUME=true" \
-  --dart-define="BRIDRA_IOS_SMOKE_CLIENT=iOS Simulator" || test_status=$?
+  --dart-define="BRIDRA_SMOKE_STREAM=true" \
+  --dart-define="BRIDRA_SMOKE_DOWNLOAD=true" \
+  --dart-define="BRIDRA_SMOKE_UPLOAD_RESUME=true" \
+  --dart-define="BRIDRA_SMOKE_CLIENT=iOS Simulator" || test_status=$?
 
 cat "$smoke_log"
 if [ "$test_status" -ne 0 ]; then

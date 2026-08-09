@@ -630,10 +630,19 @@ and profile variants allow cleartext HTTP; release builds explicitly block it.
 
 ```bash
 make android-run DEVICE=<flutter-device-id>
+make android-emulator-smoke
 make android-build \
   BACKEND_URL=https://api.example.com/rpc \
   BACKEND_TOKEN=replace-me
 ```
+
+`android-emulator-smoke` selects the only running Emulator unless `DEVICE=<id>`
+is provided. It starts a temporary Go backend on host loopback and reaches it
+through Android's `10.0.2.2` host alias. The integration test verifies Health,
+Greeting, ordered Streaming／Progress, interrupted and resumed downloads and
+uploads, forces the backend offline, then repeats the complete flow after
+reconnect. The script stops only its temporary backend; Emulator lifecycle stays
+with Android Studio or the CI runner.
 
 For a physical device, pass a reachable LAN or HTTPS URL:
 

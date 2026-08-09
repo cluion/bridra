@@ -24,6 +24,7 @@ BACKEND_URL ?=
 IOS_SIMULATOR_PORT ?= 18080
 IOS_DEVICE_PORT ?= 18081
 IOS_DEVICE_HOST ?=
+ANDROID_EMULATOR_PORT ?= 18082
 DART_DEFINES := --dart-define='BRIDRA_BACKEND_TOKEN=$(BACKEND_TOKEN)'
 ifneq ($(strip $(BACKEND_URL)),)
 DART_DEFINES += --dart-define='BRIDRA_BACKEND_URL=$(BACKEND_URL)'
@@ -48,7 +49,7 @@ RUNTIME_RESOURCE_MAX_RSS_GROWTH_MIB ?= 32
 .PHONY: help setup doctor generate codegen-check license-check format backend-build backend-server-build backend-serve backend-format backend-test backend-public-api-test backend-sql-store-test backend-sql-job-store-test backend-vet transport-benchmark \
 	flutter-format flutter-package-test flutter-web-test flutter-test analyze verify coverage backend-coverage flutter-package-coverage flutter-app-coverage coverage-check linux-check linux-run linux-build \
 	linux-smoke macos-check macos-run macos-build macos-smoke windows-run \
-	windows-build windows-smoke windows-verify android-run android-build \
+	windows-build windows-smoke windows-verify android-run android-build android-emulator-smoke \
 	ios-run ios-build ios-simulator-build ios-simulator-smoke ios-device-smoke web-run web-build remote-release-check \
 	release-prepare release-check cli-release runtime-fuzz runtime-resources runtime-stress run
 
@@ -77,6 +78,7 @@ help:
 	@echo "make backend-serve Run the Go HTTP backend for mobile and Web"
 	@echo "make android-run  Run on an Android device (DEVICE=<id> optional)"
 	@echo "make android-build Build an Android release APK (HTTPS URL required)"
+	@echo "make android-emulator-smoke Exercise HTTP recovery and transfers on an Android Emulator"
 	@echo "make ios-run      Run on an iOS device (DEVICE=<id> optional)"
 	@echo "make ios-build    Build an unsigned iOS release (HTTPS URL required)"
 	@echo "make ios-simulator-smoke Exercise RPC and transfer resume on an iOS Simulator"
@@ -289,6 +291,13 @@ android-run:
 android-build: remote-release-check
 	$(BRIDRA) build android --root .. \
 		--backend-url '$(BACKEND_URL)' --token '$(BACKEND_TOKEN)'
+
+android-emulator-smoke: backend-server-build
+	BRIDRA_SERVER_PATH='$(HTTP_SERVER)' \
+		BRIDRA_FLUTTER='$(FLUTTER)' \
+		BRIDRA_ANDROID_EMULATOR_DEVICE='$(DEVICE)' \
+		BRIDRA_ANDROID_EMULATOR_PORT='$(ANDROID_EMULATOR_PORT)' \
+		./tool/android_emulator_smoke.sh
 
 ios-run: macos-check
 	$(FLUTTER) run $(DEVICE_ARG) $(DART_DEFINES)

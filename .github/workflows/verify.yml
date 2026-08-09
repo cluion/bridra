@@ -105,6 +105,44 @@ jobs:
       - name: Build Web release
         run: make web-build BACKEND_URL=https://backend.example/rpc BACKEND_TOKEN=ci-token
 
+  android-emulator:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+
+      - name: Install FVM
+        run: |
+          curl -fsSL https://fvm.app/install.sh -o /tmp/fvm-install.sh
+          bash /tmp/fvm-install.sh 4.1.2
+          echo "$HOME/fvm/bin" >> "$GITHUB_PATH"
+
+      - name: Install project Flutter SDK
+        run: fvm install
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Exercise Android Emulator HTTP recovery and transfers
+        uses: reactivecircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2.37.0
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7
+          disable-animations: true
+          script: make android-emulator-smoke
+
   macos-ios:
     runs-on: macos-15
     timeout-minutes: 45

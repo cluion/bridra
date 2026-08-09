@@ -142,9 +142,9 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read generated iOS Simulator smoke script: %v", err)
 	}
-	if !strings.Contains(string(simulatorSource), "BRIDRA_IOS_SMOKE_STREAM=true") ||
-		!strings.Contains(string(simulatorSource), "BRIDRA_IOS_SMOKE_DOWNLOAD=true") ||
-		!strings.Contains(string(simulatorSource), "BRIDRA_IOS_SMOKE_UPLOAD_RESUME=true") ||
+	if !strings.Contains(string(simulatorSource), "BRIDRA_SMOKE_STREAM=true") ||
+		!strings.Contains(string(simulatorSource), "BRIDRA_SMOKE_DOWNLOAD=true") ||
+		!strings.Contains(string(simulatorSource), "BRIDRA_SMOKE_UPLOAD_RESUME=true") ||
 		!strings.Contains(string(simulatorSource), "--smoke-stream") ||
 		!strings.Contains(string(simulatorSource), "--smoke-download") ||
 		!strings.Contains(string(simulatorSource), "--smoke-download-resume") ||
@@ -163,21 +163,41 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read generated iOS device smoke script: %v", err)
 	}
-	if !strings.Contains(string(deviceSource), "BRIDRA_IOS_SMOKE_RECONNECT=true") ||
-		!strings.Contains(string(deviceSource), "BRIDRA_IOS_SMOKE_STREAM=true") ||
-		!strings.Contains(string(deviceSource), "BRIDRA_IOS_SMOKE_DOWNLOAD=true") ||
-		!strings.Contains(string(deviceSource), "BRIDRA_IOS_SMOKE_UPLOAD_RESUME=true") ||
+	if !strings.Contains(string(deviceSource), "BRIDRA_SMOKE_RECONNECT=true") ||
+		!strings.Contains(string(deviceSource), "BRIDRA_SMOKE_STREAM=true") ||
+		!strings.Contains(string(deviceSource), "BRIDRA_SMOKE_DOWNLOAD=true") ||
+		!strings.Contains(string(deviceSource), "BRIDRA_SMOKE_UPLOAD_RESUME=true") ||
 		!strings.Contains(string(deviceSource), "--smoke-download-resume") ||
 		!strings.Contains(string(deviceSource), "Stopping Go HTTP backend") ||
 		!strings.Contains(string(deviceSource), "--keep-app-running") ||
 		!strings.Contains(string(deviceSource), "--driver=test_driver/integration_test.dart") {
 		t.Fatalf("generated iOS device smoke script = %s", deviceSource)
 	}
+	androidScript := filepath.Join(root, "tool", "android_emulator_smoke.sh")
+	androidInfo, err := os.Stat(androidScript)
+	if err != nil {
+		t.Fatalf("stat generated Android Emulator smoke script: %v", err)
+	}
+	if runtime.GOOS != "windows" && androidInfo.Mode().Perm() != 0o755 {
+		t.Fatalf("generated Android Emulator smoke script mode = %o", androidInfo.Mode().Perm())
+	}
+	androidSource, err := os.ReadFile(androidScript)
+	if err != nil {
+		t.Fatalf("read generated Android Emulator smoke script: %v", err)
+	}
+	if !strings.Contains(string(androidSource), "BRIDRA_SMOKE_RECONNECT=true") ||
+		!strings.Contains(string(androidSource), "BRIDRA_SMOKE_STREAM=true") ||
+		!strings.Contains(string(androidSource), "BRIDRA_SMOKE_DOWNLOAD=true") ||
+		!strings.Contains(string(androidSource), "BRIDRA_SMOKE_UPLOAD_RESUME=true") ||
+		!strings.Contains(string(androidSource), "http://10.0.2.2:") ||
+		!strings.Contains(string(androidSource), "Stopping Go HTTP backend") {
+		t.Fatalf("generated Android Emulator smoke script = %s", androidSource)
+	}
 	smokeTest, err := os.ReadFile(
-		filepath.Join(root, "integration_test", "ios_http_smoke_test.dart"),
+		filepath.Join(root, "integration_test", "http_smoke_test.dart"),
 	)
 	if err != nil {
-		t.Fatalf("read generated iOS HTTP smoke test: %v", err)
+		t.Fatalf("read generated platform HTTP smoke test: %v", err)
 	}
 	if !strings.Contains(string(smokeTest), "package:starter_app/main.dart") ||
 		!strings.Contains(string(smokeTest), "Go core unavailable") ||
@@ -186,7 +206,7 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 		!strings.Contains(string(smokeTest), "client.download(reference)") ||
 		!strings.Contains(string(smokeTest), "RpcFileUpload(") ||
 		!strings.Contains(string(smokeTest), "expect(openedOffsets, [0, smokeUploadInterruptAt])") {
-		t.Fatalf("generated iOS HTTP smoke test = %s", smokeTest)
+		t.Fatalf("generated platform HTTP smoke test = %s", smokeTest)
 	}
 	driver, err := os.ReadFile(filepath.Join(root, "test_driver", "integration_test.dart"))
 	if err != nil {
@@ -194,6 +214,18 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 	}
 	if !strings.Contains(string(driver), "integrationDriver()") {
 		t.Fatalf("generated integration test driver = %s", driver)
+	}
+	for _, manifestPath := range []string{
+		filepath.Join(root, "android", "app", "src", "debug", "AndroidManifest.xml"),
+		filepath.Join(root, "android", "app", "src", "profile", "AndroidManifest.xml"),
+	} {
+		androidManifest, readErr := os.ReadFile(manifestPath)
+		if readErr != nil {
+			t.Fatalf("read generated Android development manifest: %v", readErr)
+		}
+		if !strings.Contains(string(androidManifest), `android:usesCleartextTraffic="true"`) {
+			t.Fatalf("generated Android development manifest = %s", androidManifest)
+		}
 	}
 	iosInfo, err := os.ReadFile(filepath.Join(root, "ios", "Runner", "Info.plist"))
 	if err != nil {

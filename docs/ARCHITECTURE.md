@@ -690,6 +690,8 @@ coverage failures remain inspectable.
 The GitHub Actions workflow is configured to build and verify:
 
 - Linux, Android, and Web on Ubuntu
+- a real Android Emulator HTTP recovery, Streaming／Progress, and resumable
+  transfer gate on Ubuntu with KVM acceleration
 - macOS plus real iOS Simulator Health／Greeting and Streaming／Progress HTTP
   round trips on macOS
 - Windows on Windows

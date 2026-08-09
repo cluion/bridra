@@ -1,21 +1,19 @@
 import 'dart:convert';
 
-import '{{.BridraDartImport}}';
+import 'package:bridra/main.dart' as app;
+import 'package:bridra_flutter/bridra_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:{{.ProjectName}}/main.dart' as app;
 
 const smokeClient = String.fromEnvironment(
-  'BRIDRA_IOS_SMOKE_CLIENT',
-  defaultValue: 'iOS',
+  'BRIDRA_SMOKE_CLIENT',
+  defaultValue: 'Platform',
 );
-const smokeReconnect = bool.fromEnvironment('BRIDRA_IOS_SMOKE_RECONNECT');
-const smokeStream = bool.fromEnvironment('BRIDRA_IOS_SMOKE_STREAM');
-const smokeDownload = bool.fromEnvironment('BRIDRA_IOS_SMOKE_DOWNLOAD');
-const smokeUploadResume = bool.fromEnvironment(
-  'BRIDRA_IOS_SMOKE_UPLOAD_RESUME',
-);
+const smokeReconnect = bool.fromEnvironment('BRIDRA_SMOKE_RECONNECT');
+const smokeStream = bool.fromEnvironment('BRIDRA_SMOKE_STREAM');
+const smokeDownload = bool.fromEnvironment('BRIDRA_SMOKE_DOWNLOAD');
+const smokeUploadResume = bool.fromEnvironment('BRIDRA_SMOKE_UPLOAD_RESUME');
 const smokeBackendUrl = String.fromEnvironment('BRIDRA_BACKEND_URL');
 const smokeBackendToken = String.fromEnvironment('BRIDRA_BACKEND_TOKEN');
 const smokeStreamMethod = 'bridra.smoke.stream';
@@ -37,7 +35,7 @@ const smokeUploadSha256 =
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('iOS completes HTTP smoke flow', (tester) async {
+  testWidgets('platform completes HTTP smoke flow', (tester) async {
     await app.main();
 
     if (smokeReconnect) {

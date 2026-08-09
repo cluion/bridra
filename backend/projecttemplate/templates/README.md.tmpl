@@ -38,6 +38,18 @@ go run {{.BridraGoModule}}/cmd/bridra dev --root .. --device chrome
 Mobile and custom devices require `--listen 0.0.0.0:<port>` plus an explicit
 `--backend-url` reachable from the device.
 
+With an Android Emulator already running, exercise the generated app and a real
+temporary Go backend without Android hardware:
+
+```bash
+make android-emulator-smoke
+```
+
+The gate uses Android's `10.0.2.2` host alias and verifies Health, Greeting,
+ordered Streaming/Progress, interrupted and resumed managed downloads/uploads,
+a backend outage, and the complete flow again after reconnect. Debug and Profile
+manifests allow local cleartext traffic; Release keeps Android's secure default.
+
 On macOS with full Xcode, exercise the generated iOS app and real Go HTTP
 backend in a Simulator or on a trusted physical iPhone:
 

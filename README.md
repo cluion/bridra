@@ -68,9 +68,9 @@ distribution channels.
 - Out-of-band large-file uploads and resumable downloads with short-lived HTTP
   capabilities, managed Desktop files, bounded retries, and end-to-end size
   plus SHA-256 verification
-- Simulator and physical-iPhone smoke coverage for verified HTTP managed
-  downloads/uploads interrupted at known offsets and resumed, including repeats
-  after backend recovery on the physical device
+- Android Emulator, iOS Simulator, and physical-iPhone smoke coverage for
+  verified HTTP managed downloads/uploads interrupted at known offsets and
+  resumed; Emulator and device gates repeat the flow after backend recovery
 - Real process, HTTP, browser, widget, race, public API, and coverage tests
 
 ## Platform model
@@ -142,6 +142,7 @@ make doctor
 make verify
 make coverage
 make runtime-stress
+make android-emulator-smoke
 make ios-simulator-smoke
 make ios-device-smoke
 ```
@@ -152,6 +153,9 @@ tests, and static analysis. `make coverage` enforces the committed
 non-regression floors. `make runtime-stress` runs the slower fuzz, repeated
 lifecycle, concurrency, persistence, Sidecar recovery, and bounded resource
 stability suite.
+`make android-emulator-smoke` uses a running Android Emulator to verify Health,
+Greeting, ordered Streaming／Progress, interrupted file-transfer resume, a real
+backend outage, and the complete flow again after reconnect.
 `make ios-simulator-smoke` boots an available iPhone Simulator when needed and
 verifies real `system.health`, `greeting.hello`, and ordered Streaming／Progress
 HTTP round trips.

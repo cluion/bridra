@@ -301,15 +301,15 @@ echo "Running physical iPhone RPC, streaming, managed-download, resumable-upload
 $flutter_command drive \
   --keep-app-running \
   --driver=test_driver/integration_test.dart \
-  --target=integration_test/ios_http_smoke_test.dart \
+  --target=integration_test/http_smoke_test.dart \
   -d "$device" \
   --dart-define="BRIDRA_BACKEND_URL=$backend_url" \
   --dart-define="BRIDRA_BACKEND_TOKEN=$token" \
-  --dart-define="BRIDRA_IOS_SMOKE_CLIENT=Physical iPhone" \
-  --dart-define="BRIDRA_IOS_SMOKE_STREAM=true" \
-  --dart-define="BRIDRA_IOS_SMOKE_DOWNLOAD=true" \
-  --dart-define="BRIDRA_IOS_SMOKE_UPLOAD_RESUME=true" \
-  --dart-define="BRIDRA_IOS_SMOKE_RECONNECT=true" >"$test_log" 2>&1 &
+  --dart-define="BRIDRA_SMOKE_CLIENT=Physical iPhone" \
+  --dart-define="BRIDRA_SMOKE_STREAM=true" \
+  --dart-define="BRIDRA_SMOKE_DOWNLOAD=true" \
+  --dart-define="BRIDRA_SMOKE_UPLOAD_RESUME=true" \
+  --dart-define="BRIDRA_SMOKE_RECONNECT=true" >"$test_log" 2>&1 &
 test_pid=$!
 
 if ! wait_for_test_pattern \
