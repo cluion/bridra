@@ -176,6 +176,8 @@ jobs:
         id: ios_simulator_smoke
         continue-on-error: true
         timeout-minutes: 12
+        env:
+          BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR: ${{ runner.temp }}/bridra-ios-simulator-diagnostics/initial
         run: make ios-simulator-smoke
 
       - name: Reset iOS Simulator before one retry
@@ -185,9 +187,21 @@ jobs:
           xcrun simctl erase all || true
 
       - name: Retry iOS Simulator HTTP round trip
+        id: ios_simulator_retry
         if: steps.ios_simulator_smoke.outcome == 'failure'
         timeout-minutes: 12
+        env:
+          BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR: ${{ runner.temp }}/bridra-ios-simulator-diagnostics/retry
         run: make ios-simulator-smoke
+
+      - name: Upload iOS Simulator failure diagnostics
+        if: ${{ always() && (steps.ios_simulator_smoke.outcome == 'failure' || steps.ios_simulator_retry.outcome == 'failure') }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-simulator-diagnostics-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: ${{ runner.temp }}/bridra-ios-simulator-diagnostics
 
       - name: Build unsigned iOS release
         run: make ios-build BACKEND_URL=https://backend.example/rpc BACKEND_TOKEN=ci-token

@@ -164,7 +164,9 @@ Greeting, ordered Streaming／Progress, interrupted file-transfer resume, a real
 backend outage, and the complete flow again after reconnect.
 `make ios-simulator-smoke` boots an available iPhone Simulator when needed and
 verifies real `system.health`, `greeting.hello`, ordered Streaming／Progress,
-and interrupted/resumed managed download and upload HTTP round trips.
+and interrupted/resumed managed download and upload HTTP round trips. Its
+Flutter phase stops after nine minutes total or four minutes without output;
+hosted CI preserves bounded failure diagnostics before one reset and retry.
 `make ios-device-smoke` exercises the same RPCs on a physical iPhone, forces a
 backend outage and verifies UI recovery, checks ordered Streaming／Progress both
 before and after reconnect, repeats the managed download/upload recovery flow,

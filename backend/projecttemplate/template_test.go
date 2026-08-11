@@ -145,6 +145,9 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 	if !strings.Contains(string(simulatorSource), "BRIDRA_SMOKE_STREAM=true") ||
 		!strings.Contains(string(simulatorSource), "BRIDRA_SMOKE_DOWNLOAD=true") ||
 		!strings.Contains(string(simulatorSource), "BRIDRA_SMOKE_UPLOAD_RESUME=true") ||
+		!strings.Contains(string(simulatorSource), "BRIDRA_IOS_SIMULATOR_TIMEOUT_SECONDS") ||
+		!strings.Contains(string(simulatorSource), "BRIDRA_IOS_SIMULATOR_NO_PROGRESS_SECONDS") ||
+		!strings.Contains(string(simulatorSource), "BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR") ||
 		!strings.Contains(string(simulatorSource), "--smoke-stream") ||
 		!strings.Contains(string(simulatorSource), "--smoke-download") ||
 		!strings.Contains(string(simulatorSource), "--smoke-download-resume") ||

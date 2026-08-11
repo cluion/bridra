@@ -701,7 +701,8 @@ The GitHub Actions workflow is configured to build and verify:
 - a real Android Emulator HTTP recovery, Streaming／Progress, and resumable
   transfer gate on Ubuntu with KVM acceleration
 - macOS plus real iOS Simulator Health／Greeting, Streaming／Progress, and
-  resumable managed download/upload HTTP round trips on macOS
+  resumable managed download/upload HTTP round trips on macOS, with bounded
+  total/no-progress watchdogs and uploaded failure diagnostics
 - Windows on Windows
 
 Verify runs on Pull Requests and the merged `main` commit. The protected tag

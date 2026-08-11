@@ -683,7 +683,13 @@ Flutter must resume it with `Range: bytes=32768-`, then match its expected name,
 media type, byte count, SHA-256, and content. The test also interrupts a 112 KiB
 upload after 32 KiB, requires Flutter to recover the stored offset, resumes from
 that exact byte, then has Go consume and re-hash the result. The script shuts
-down only a Simulator that it booted itself.
+down only a Simulator that it booted itself. The Flutter integration phase has
+a nine-minute total watchdog and a four-minute no-output watchdog. Override
+them with `BRIDRA_IOS_SIMULATOR_TIMEOUT_SECONDS` and
+`BRIDRA_IOS_SIMULATOR_NO_PROGRESS_SECONDS`. Set
+`BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR` to preserve the Flutter, backend,
+Simulator, device, and process snapshots after a failure; hosted CI uploads
+that directory before retaining its single reset-and-retry policy.
 
 For this repository, keep developer-only signing outside Git:
 
