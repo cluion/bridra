@@ -46,7 +46,7 @@ RUNTIME_RESOURCE_MAX_HEAP_GROWTH_MIB ?= 8
 RUNTIME_RESOURCE_MAX_FD_GROWTH ?= 4
 RUNTIME_RESOURCE_MAX_RSS_GROWTH_MIB ?= 32
 
-.PHONY: help setup doctor generate codegen-check license-check format backend-build backend-server-build backend-serve backend-format backend-test backend-public-api-test backend-sql-store-test backend-sql-job-store-test backend-vet transport-benchmark http-fault-test \
+.PHONY: help setup doctor generate codegen-check license-check format backend-build backend-server-build backend-serve backend-format backend-test backend-public-api-test backend-sql-store-test backend-sql-job-store-test backend-vet transport-benchmark http-fault-test ios-simulator-watchdog-test \
 	flutter-format flutter-package-test flutter-web-test flutter-test analyze verify coverage backend-coverage flutter-package-coverage flutter-app-coverage coverage-check linux-check linux-run linux-build \
 	linux-smoke macos-check macos-run macos-build macos-smoke windows-run \
 	windows-build windows-smoke windows-verify android-run android-build android-emulator-smoke \
@@ -64,6 +64,7 @@ help:
 	@echo "make runtime-resources Check Runtime resource growth and orphan processes"
 	@echo "make runtime-stress Repeat Runtime lifecycle, concurrency, and recovery checks"
 	@echo "make http-fault-test Exercise HTTP latency, timeout, backpressure, and resume"
+	@echo "make ios-simulator-watchdog-test Verify bounded iOS smoke failure diagnostics"
 	@echo "make transport-benchmark Measure JSON, binary-pipe, and managed-file transport costs"
 	@echo "make run          Run the starter on the current desktop platform"
 	@echo "make macos-run    Run the starter on macOS"
@@ -221,7 +222,10 @@ cli-release:
 		--commit '$(CLI_RELEASE_COMMIT)' \
 		--build-date '$(CLI_RELEASE_DATE)'
 
-verify: license-check release-check doctor codegen-check backend-format backend-vet backend-public-api-test backend-test backend-sql-store-test flutter-format flutter-package-test flutter-web-test flutter-test analyze
+ios-simulator-watchdog-test:
+	sh ./tool/ios_simulator_watchdog_test.sh
+
+verify: license-check release-check doctor codegen-check backend-format backend-vet backend-public-api-test backend-test backend-sql-store-test flutter-format flutter-package-test flutter-web-test flutter-test ios-simulator-watchdog-test analyze
 
 linux-check:
 	@test "$(HOST_OS)" = "Linux" || \
