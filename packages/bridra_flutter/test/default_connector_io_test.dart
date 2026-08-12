@@ -17,7 +17,23 @@ void main() {
       expect(await File(configuredPath!).exists(), isTrue);
       expect(await SidecarClient.resolveExecutable(), configuredPath);
 
-      final client = await connectDefaultRpcClient();
+      final logs = <String>[];
+      final stopwatch = Stopwatch()..start();
+      RpcClient client;
+      try {
+        client = await connectDefaultRpcClient(onLog: logs.add);
+      } on Object catch (error, stackTrace) {
+        Error.throwWithStackTrace(
+          StateError(
+            'Default Sidecar connector failed after '
+            '${stopwatch.elapsedMilliseconds}ms. '
+            'Error: $error. Logs: ${logs.join(' | ')}',
+          ),
+          stackTrace,
+        );
+      } finally {
+        stopwatch.stop();
+      }
       addTearDown(client.close);
 
       expect(client, isA<SidecarClient>());

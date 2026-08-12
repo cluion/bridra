@@ -166,6 +166,7 @@ runtime-stress: runtime-fuzz runtime-resources
 	cd backend/integration/sqljobstore && $(GO) test -race ./... -run '^(TestSQLiteStoresCoordinateReservationAndLifecycle|TestSQLiteSchedulerStoresCoordinateReservationAndLifecycle|TestPostgreSQLStoresCoordinateReservationAndLifecycle|TestPostgreSQLSchedulerStoresCoordinateReservationAndLifecycle)$$' -count='$(RUNTIME_STRESS_REPEATS)' -timeout=10m
 	cd backend && $(GO) test -race ./integration/redisjobstore -run '^(TestRedisStoresCoordinateReservationAndLifecycle|TestRedisSchedulerStoresCoordinateReservationAndLifecycle)$$' -count='$(RUNTIME_STRESS_REPEATS)' -timeout=10m
 	cd $(BRIDRA_FLUTTER_PACKAGE) && BRIDRA_STRESS=1 BRIDRA_STRESS_CYCLES='$(RUNTIME_STRESS_CYCLES)' $(FLUTTER) test test/sidecar_client_test.dart --plain-name 'stress repeatedly crashes and recovers without replay'
+	cd $(BRIDRA_FLUTTER_PACKAGE) && BRIDRA_SIDECAR_PATH=$(SIDECAR) BRIDRA_STRESS=1 BRIDRA_STRESS_CYCLES='$(RUNTIME_STRESS_CYCLES)' $(FLUTTER) test test/sidecar_launch_stress_test.dart --plain-name 'stress launches real desktop sidecars without handshake failures'
 
 flutter-format:
 	$(DART) format --output=none --set-exit-if-changed lib test integration_test $(BRIDRA_FLUTTER_PACKAGE)/lib $(BRIDRA_FLUTTER_PACKAGE)/test
