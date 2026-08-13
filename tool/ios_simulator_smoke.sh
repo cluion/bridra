@@ -19,6 +19,7 @@ port=${BRIDRA_IOS_SIMULATOR_PORT:-18080}
 token=ios-simulator-smoke-token
 test_timeout_seconds=${BRIDRA_IOS_SIMULATOR_TIMEOUT_SECONDS:-540}
 test_no_progress_seconds=${BRIDRA_IOS_SIMULATOR_NO_PROGRESS_SECONDS:-240}
+test_attach_timeout_seconds=${BRIDRA_IOS_SIMULATOR_ATTACH_TIMEOUT_SECONDS:-90}
 watchdog_interval_seconds=${BRIDRA_IOS_SIMULATOR_WATCHDOG_INTERVAL_SECONDS:-5}
 diagnostics_dir=${BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR:-}
 
@@ -39,6 +40,7 @@ require_positive_seconds() {
 
 require_positive_seconds "$test_timeout_seconds" BRIDRA_IOS_SIMULATOR_TIMEOUT_SECONDS
 require_positive_seconds "$test_no_progress_seconds" BRIDRA_IOS_SIMULATOR_NO_PROGRESS_SECONDS
+require_positive_seconds "$test_attach_timeout_seconds" BRIDRA_IOS_SIMULATOR_ATTACH_TIMEOUT_SECONDS
 require_positive_seconds "$watchdog_interval_seconds" BRIDRA_IOS_SIMULATOR_WATCHDOG_INTERVAL_SECONDS
 
 case "$port" in
@@ -76,9 +78,11 @@ fi
 booted_by_script=0
 server_pid=
 test_pid=
+runner_log_pid=
 watchdog_reason=
 smoke_log=${TMPDIR:-/tmp}/bridra-ios-simulator-smoke.$$.log
 flutter_log=${TMPDIR:-/tmp}/bridra-ios-simulator-flutter.$$.log
+runner_live_log=${TMPDIR:-/tmp}/bridra-ios-simulator-runner.$$.log
 
 terminate_process() {
   process_id=$1
@@ -111,6 +115,7 @@ collect_diagnostics() {
     echo "device=$device"
     echo "timeout_seconds=$test_timeout_seconds"
     echo "no_progress_seconds=$test_no_progress_seconds"
+    echo "attach_timeout_seconds=$test_attach_timeout_seconds"
   } >"$diagnostics_dir/summary.txt" 2>&1 || true
   if [ -f "$flutter_log" ]; then
     cp "$flutter_log" "$diagnostics_dir/flutter-test.log" 2>/dev/null || true
@@ -135,6 +140,9 @@ cleanup() {
   if [ -n "$test_pid" ]; then
     terminate_process "$test_pid"
   fi
+  if [ -n "$runner_log_pid" ]; then
+    terminate_process "$runner_log_pid"
+  fi
   if [ "$status" -ne 0 ]; then
     collect_diagnostics "$status"
   fi
@@ -144,7 +152,7 @@ cleanup() {
   if [ "$booted_by_script" -eq 1 ]; then
     xcrun simctl shutdown "$device" >/dev/null 2>&1 || true
   fi
-  rm -f "$smoke_log" "$flutter_log"
+  rm -f "$smoke_log" "$flutter_log" "$runner_live_log"
   exit "$status"
 }
 trap cleanup EXIT
@@ -187,6 +195,13 @@ while ! grep -Fq 'server: listening on ' "$smoke_log"; do
 done
 
 echo "Running iOS Simulator RPC, streaming, managed-download, and resumable-upload integration test on $device..."
+xcrun simctl spawn "$device" log stream \
+  --style compact \
+  --level debug \
+  --predicate 'process == "Runner" AND eventMessage CONTAINS "The Dart VM service is listening"' \
+  >"$runner_live_log" 2>&1 &
+runner_log_pid=$!
+
 test_status=0
 # BRIDRA_FLUTTER intentionally contains a command and optional wrapper argument.
 # shellcheck disable=SC2086
@@ -205,6 +220,8 @@ elapsed_seconds=0
 idle_seconds=0
 heartbeat_seconds=0
 last_log_size=0
+attach_elapsed_seconds=0
+attach_detected=0
 while kill -0 "$test_pid" 2>/dev/null; do
   sleep "$watchdog_interval_seconds"
   if ! kill -0 "$test_pid" 2>/dev/null; then
@@ -218,6 +235,30 @@ while kill -0 "$test_pid" 2>/dev/null; do
     idle_seconds=0
   else
     idle_seconds=$((idle_seconds + watchdog_interval_seconds))
+  fi
+  if [ "$attach_detected" -eq 0 ] && \
+    ! kill -0 "$runner_log_pid" 2>/dev/null; then
+    watchdog_reason="iOS Simulator Runner log monitor stopped before attach detection."
+    test_status=124
+    break
+  fi
+  if [ "$attach_detected" -eq 0 ]; then
+    if grep -Fq 'The Dart VM service is listening' "$runner_live_log"; then
+      attach_detected=1
+      attach_elapsed_seconds=0
+      echo "Dart VM service detected; waiting for the first smoke RPC."
+    fi
+  elif [ "$attach_detected" -eq 1 ]; then
+    if grep -Fq '"rpc_method":"system.health"' "$smoke_log"; then
+      attach_detected=2
+    else
+      attach_elapsed_seconds=$((attach_elapsed_seconds + watchdog_interval_seconds))
+      if [ "$attach_elapsed_seconds" -ge "$test_attach_timeout_seconds" ]; then
+        watchdog_reason="Flutter test driver did not attach within ${test_attach_timeout_seconds}s after the Dart VM service started."
+        test_status=124
+        break
+      fi
+    fi
   fi
   if [ "$elapsed_seconds" -ge "$test_timeout_seconds" ]; then
     watchdog_reason="Flutter integration test exceeded ${test_timeout_seconds}s."

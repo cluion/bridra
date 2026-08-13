@@ -12,6 +12,8 @@ backend_pid_file=$test_root/backend.pid
 backend_terminated_file=$test_root/backend.terminated
 flutter_pid_file=$test_root/flutter.pid
 flutter_terminated_file=$test_root/flutter.terminated
+runner_log_pid_file=$test_root/runner-log.pid
+runner_log_terminated_file=$test_root/runner-log.terminated
 
 cleanup_process() {
   pid_file=$1
@@ -29,6 +31,7 @@ cleanup_process() {
 
 cleanup() {
   cleanup_process "$flutter_pid_file"
+  cleanup_process "$runner_log_pid_file"
   cleanup_process "$backend_pid_file"
   if [ -n "$test_root" ] && [ -d "$test_root" ]; then
     rm -rf "$test_root"
@@ -56,6 +59,16 @@ case "$*" in
   "simctl spawn BRIDRA-TEST-DEVICE log show"*)
     echo "fake Runner diagnostic log"
     ;;
+  "simctl spawn BRIDRA-TEST-DEVICE log stream"*)
+    echo "$$" >"$BRIDRA_TEST_RUNNER_LOG_PID_FILE"
+    trap 'echo terminated >"$BRIDRA_TEST_RUNNER_LOG_TERMINATED_FILE"; exit 0' TERM INT
+    if [ "${BRIDRA_TEST_RUNNER_ATTACH:-0}" = "1" ]; then
+      echo "flutter: The Dart VM service is listening on http://127.0.0.1:12345/"
+    fi
+    while :; do
+      sleep 1
+    done
+    ;;
   *)
     echo "unexpected fake xcrun invocation: $*" >&2
     exit 1
@@ -81,6 +94,9 @@ echo "$$" >"$BRIDRA_TEST_FLUTTER_PID_FILE"
 trap 'echo terminated >"$BRIDRA_TEST_FLUTTER_TERMINATED_FILE"; exit 0' TERM INT
 echo "fake Flutter test started"
 while :; do
+  if [ "${BRIDRA_TEST_FLUTTER_PROGRESS:-0}" = "1" ]; then
+    echo "fake Flutter progress"
+  fi
   sleep 1
 done
 EOF
@@ -96,12 +112,15 @@ BRIDRA_FLUTTER="$fake_bin/flutter" \
 BRIDRA_IOS_SIMULATOR_DEVICE=BRIDRA-TEST-DEVICE \
 BRIDRA_IOS_SIMULATOR_TIMEOUT_SECONDS=20 \
 BRIDRA_IOS_SIMULATOR_NO_PROGRESS_SECONDS=2 \
+BRIDRA_IOS_SIMULATOR_ATTACH_TIMEOUT_SECONDS=10 \
 BRIDRA_IOS_SIMULATOR_WATCHDOG_INTERVAL_SECONDS=1 \
 BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR="$diagnostics_dir" \
 BRIDRA_TEST_BACKEND_PID_FILE="$backend_pid_file" \
 BRIDRA_TEST_BACKEND_TERMINATED_FILE="$backend_terminated_file" \
 BRIDRA_TEST_FLUTTER_PID_FILE="$flutter_pid_file" \
 BRIDRA_TEST_FLUTTER_TERMINATED_FILE="$flutter_terminated_file" \
+BRIDRA_TEST_RUNNER_LOG_PID_FILE="$runner_log_pid_file" \
+BRIDRA_TEST_RUNNER_LOG_TERMINATED_FILE="$runner_log_terminated_file" \
   "$smoke_script" >"$output_file" 2>&1
 status=$?
 set -e
@@ -149,13 +168,68 @@ if [ ! -f "$backend_terminated_file" ]; then
   echo "Watchdog cleanup did not terminate the fake backend process." >&2
   exit 1
 fi
+if [ ! -f "$runner_log_terminated_file" ]; then
+  echo "Watchdog cleanup did not terminate the fake Runner log stream." >&2
+  exit 1
+fi
 
-for pid_file in "$flutter_pid_file" "$backend_pid_file"; do
+for pid_file in "$flutter_pid_file" "$backend_pid_file" "$runner_log_pid_file"; do
   process_id=$(cat "$pid_file")
   if kill -0 "$process_id" 2>/dev/null; then
     echo "Watchdog left process $process_id running." >&2
     exit 1
   fi
 done
+
+rm -rf "$diagnostics_dir"
+rm -f \
+  "$backend_terminated_file" \
+  "$flutter_terminated_file" \
+  "$runner_log_terminated_file"
+
+started_at=$(date +%s)
+set +e
+PATH="$fake_bin:$PATH" \
+TMPDIR="$test_root/tmp" \
+BRIDRA_SERVER_PATH="$fake_bin/backend" \
+BRIDRA_FLUTTER="$fake_bin/flutter" \
+BRIDRA_IOS_SIMULATOR_DEVICE=BRIDRA-TEST-DEVICE \
+BRIDRA_IOS_SIMULATOR_TIMEOUT_SECONDS=20 \
+BRIDRA_IOS_SIMULATOR_NO_PROGRESS_SECONDS=10 \
+BRIDRA_IOS_SIMULATOR_ATTACH_TIMEOUT_SECONDS=2 \
+BRIDRA_IOS_SIMULATOR_WATCHDOG_INTERVAL_SECONDS=1 \
+BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR="$diagnostics_dir" \
+BRIDRA_TEST_BACKEND_PID_FILE="$backend_pid_file" \
+BRIDRA_TEST_BACKEND_TERMINATED_FILE="$backend_terminated_file" \
+BRIDRA_TEST_FLUTTER_PID_FILE="$flutter_pid_file" \
+BRIDRA_TEST_FLUTTER_TERMINATED_FILE="$flutter_terminated_file" \
+BRIDRA_TEST_RUNNER_LOG_PID_FILE="$runner_log_pid_file" \
+BRIDRA_TEST_RUNNER_LOG_TERMINATED_FILE="$runner_log_terminated_file" \
+BRIDRA_TEST_RUNNER_ATTACH=1 \
+BRIDRA_TEST_FLUTTER_PROGRESS=1 \
+  "$smoke_script" >"$output_file" 2>&1
+status=$?
+set -e
+elapsed_seconds=$(($(date +%s) - started_at))
+
+if [ "$status" -ne 124 ]; then
+  cat "$output_file" >&2
+  echo "iOS Simulator attach watchdog exit status = $status, want 124." >&2
+  exit 1
+fi
+if [ "$elapsed_seconds" -ge 15 ]; then
+  cat "$output_file" >&2
+  echo "iOS Simulator attach watchdog took ${elapsed_seconds}s, want less than 15s." >&2
+  exit 1
+fi
+
+grep -Fq "Dart VM service detected; waiting for the first smoke RPC." "$output_file"
+grep -Fq \
+  "Flutter test driver did not attach within 2s after the Dart VM service started." \
+  "$output_file"
+grep -Fq "attach_timeout_seconds=2" "$diagnostics_dir/summary.txt"
+grep -Fq \
+  "reason=Flutter test driver did not attach within 2s after the Dart VM service started." \
+  "$diagnostics_dir/summary.txt"
 
 echo "iOS Simulator watchdog regression test passed."
