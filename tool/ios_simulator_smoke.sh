@@ -86,11 +86,10 @@ fi
 booted_by_script=0
 server_pid=
 test_pid=
-runner_log_pid=
 watchdog_reason=
 smoke_log=${TMPDIR:-/tmp}/bridra-ios-simulator-smoke.$$.log
 flutter_log=${TMPDIR:-/tmp}/bridra-ios-simulator-flutter.$$.log
-runner_live_log=${TMPDIR:-/tmp}/bridra-ios-simulator-runner.$$.log
+runner_attach_log=${TMPDIR:-/tmp}/bridra-ios-simulator-attach.$$.log
 
 terminate_process() {
   process_id=$1
@@ -210,9 +209,6 @@ cleanup() {
   if [ -n "$test_pid" ]; then
     terminate_process_tree "$test_pid"
   fi
-  if [ -n "$runner_log_pid" ]; then
-    terminate_process "$runner_log_pid"
-  fi
   if [ "$status" -ne 0 ]; then
     collect_diagnostics "$status"
   fi
@@ -222,7 +218,7 @@ cleanup() {
   if [ "$booted_by_script" -eq 1 ]; then
     xcrun simctl shutdown "$device" >/dev/null 2>&1 || true
   fi
-  rm -f "$smoke_log" "$flutter_log" "$runner_live_log"
+  rm -f "$smoke_log" "$flutter_log" "$runner_attach_log"
   exit "$status"
 }
 trap cleanup EXIT
@@ -265,13 +261,7 @@ while ! grep -Fq 'server: listening on ' "$smoke_log"; do
 done
 
 echo "Running iOS Simulator RPC, streaming, managed-download, and resumable-upload integration test on $device..."
-xcrun simctl spawn "$device" log stream \
-  --style compact \
-  --level debug \
-  --predicate 'process == "Runner" AND eventMessage CONTAINS "The Dart VM service is listening"' \
-  >"$runner_live_log" 2>&1 &
-runner_log_pid=$!
-
+runner_attach_started_at=@$(date +%s)
 test_status=0
 # BRIDRA_FLUTTER intentionally contains a command and optional wrapper argument.
 # shellcheck disable=SC2086
@@ -306,14 +296,13 @@ while kill -0 "$test_pid" 2>/dev/null; do
   else
     idle_seconds=$((idle_seconds + watchdog_interval_seconds))
   fi
-  if [ "$attach_detected" -eq 0 ] && \
-    ! kill -0 "$runner_log_pid" 2>/dev/null; then
-    watchdog_reason="iOS Simulator Runner log monitor stopped before attach detection."
-    test_status=124
-    break
-  fi
   if [ "$attach_detected" -eq 0 ]; then
-    if grep -Fq 'The Dart VM service is listening' "$runner_live_log"; then
+    xcrun simctl spawn "$device" log show \
+      --style compact \
+      --start "$runner_attach_started_at" \
+      --predicate 'process == "Runner" AND eventMessage CONTAINS "The Dart VM service is listening"' \
+      >"$runner_attach_log" 2>&1 || true
+    if grep -Fq 'The Dart VM service is listening' "$runner_attach_log"; then
       attach_detected=1
       attach_elapsed_seconds=0
       echo "Dart VM service detected; waiting for the first smoke RPC."
