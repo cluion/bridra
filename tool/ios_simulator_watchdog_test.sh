@@ -12,6 +12,8 @@ backend_pid_file=$test_root/backend.pid
 backend_terminated_file=$test_root/backend.terminated
 flutter_pid_file=$test_root/flutter.pid
 flutter_terminated_file=$test_root/flutter.terminated
+flutter_child_pid_file=$test_root/flutter-child.pid
+flutter_child_terminated_file=$test_root/flutter-child.terminated
 runner_log_pid_file=$test_root/runner-log.pid
 runner_log_terminated_file=$test_root/runner-log.terminated
 
@@ -31,6 +33,7 @@ cleanup_process() {
 
 cleanup() {
   cleanup_process "$flutter_pid_file"
+  cleanup_process "$flutter_child_pid_file"
   cleanup_process "$runner_log_pid_file"
   cleanup_process "$backend_pid_file"
   if [ -n "$test_root" ] && [ -d "$test_root" ]; then
@@ -92,6 +95,7 @@ cat >"$fake_bin/flutter" <<'EOF'
 set -eu
 echo "$$" >"$BRIDRA_TEST_FLUTTER_PID_FILE"
 trap 'echo terminated >"$BRIDRA_TEST_FLUTTER_TERMINATED_FILE"; exit 0' TERM INT
+"$BRIDRA_TEST_FLUTTER_CHILD" &
 echo "fake Flutter test started"
 while :; do
   if [ "${BRIDRA_TEST_FLUTTER_PROGRESS:-0}" = "1" ]; then
@@ -101,7 +105,22 @@ while :; do
 done
 EOF
 
-chmod +x "$fake_bin/uname" "$fake_bin/xcrun" "$fake_bin/backend" "$fake_bin/flutter"
+cat >"$fake_bin/flutter-child" <<'EOF'
+#!/bin/sh
+set -eu
+echo "$$" >"$BRIDRA_TEST_FLUTTER_CHILD_PID_FILE"
+trap 'echo terminated >"$BRIDRA_TEST_FLUTTER_CHILD_TERMINATED_FILE"; exit 0' TERM INT
+while :; do
+  sleep 1
+done
+EOF
+
+chmod +x \
+  "$fake_bin/uname" \
+  "$fake_bin/xcrun" \
+  "$fake_bin/backend" \
+  "$fake_bin/flutter" \
+  "$fake_bin/flutter-child"
 
 started_at=$(date +%s)
 set +e
@@ -119,6 +138,9 @@ BRIDRA_TEST_BACKEND_PID_FILE="$backend_pid_file" \
 BRIDRA_TEST_BACKEND_TERMINATED_FILE="$backend_terminated_file" \
 BRIDRA_TEST_FLUTTER_PID_FILE="$flutter_pid_file" \
 BRIDRA_TEST_FLUTTER_TERMINATED_FILE="$flutter_terminated_file" \
+BRIDRA_TEST_FLUTTER_CHILD="$fake_bin/flutter-child" \
+BRIDRA_TEST_FLUTTER_CHILD_PID_FILE="$flutter_child_pid_file" \
+BRIDRA_TEST_FLUTTER_CHILD_TERMINATED_FILE="$flutter_child_terminated_file" \
 BRIDRA_TEST_RUNNER_LOG_PID_FILE="$runner_log_pid_file" \
 BRIDRA_TEST_RUNNER_LOG_TERMINATED_FILE="$runner_log_terminated_file" \
   "$smoke_script" >"$output_file" 2>&1
@@ -164,6 +186,14 @@ if [ ! -f "$flutter_terminated_file" ]; then
   echo "Watchdog did not terminate the fake Flutter process." >&2
   exit 1
 fi
+if [ ! -f "$flutter_child_terminated_file" ]; then
+  if [ -f "$flutter_child_pid_file" ]; then
+    child_process_id=$(cat "$flutter_child_pid_file")
+    ps -o pid=,ppid=,state=,command= -p "$child_process_id" >&2 || true
+  fi
+  echo "Watchdog did not terminate the fake Flutter child process." >&2
+  exit 1
+fi
 if [ ! -f "$backend_terminated_file" ]; then
   echo "Watchdog cleanup did not terminate the fake backend process." >&2
   exit 1
@@ -173,7 +203,11 @@ if [ ! -f "$runner_log_terminated_file" ]; then
   exit 1
 fi
 
-for pid_file in "$flutter_pid_file" "$backend_pid_file" "$runner_log_pid_file"; do
+for pid_file in \
+  "$flutter_pid_file" \
+  "$flutter_child_pid_file" \
+  "$backend_pid_file" \
+  "$runner_log_pid_file"; do
   process_id=$(cat "$pid_file")
   if kill -0 "$process_id" 2>/dev/null; then
     echo "Watchdog left process $process_id running." >&2
@@ -185,6 +219,7 @@ rm -rf "$diagnostics_dir"
 rm -f \
   "$backend_terminated_file" \
   "$flutter_terminated_file" \
+  "$flutter_child_terminated_file" \
   "$runner_log_terminated_file"
 
 started_at=$(date +%s)
@@ -203,6 +238,9 @@ BRIDRA_TEST_BACKEND_PID_FILE="$backend_pid_file" \
 BRIDRA_TEST_BACKEND_TERMINATED_FILE="$backend_terminated_file" \
 BRIDRA_TEST_FLUTTER_PID_FILE="$flutter_pid_file" \
 BRIDRA_TEST_FLUTTER_TERMINATED_FILE="$flutter_terminated_file" \
+BRIDRA_TEST_FLUTTER_CHILD="$fake_bin/flutter-child" \
+BRIDRA_TEST_FLUTTER_CHILD_PID_FILE="$flutter_child_pid_file" \
+BRIDRA_TEST_FLUTTER_CHILD_TERMINATED_FILE="$flutter_child_terminated_file" \
 BRIDRA_TEST_RUNNER_LOG_PID_FILE="$runner_log_pid_file" \
 BRIDRA_TEST_RUNNER_LOG_TERMINATED_FILE="$runner_log_terminated_file" \
 BRIDRA_TEST_RUNNER_ATTACH=1 \
@@ -231,5 +269,28 @@ grep -Fq "attach_timeout_seconds=2" "$diagnostics_dir/summary.txt"
 grep -Fq \
   "reason=Flutter test driver did not attach within 2s after the Dart VM service started." \
   "$diagnostics_dir/summary.txt"
+
+for terminated_file in \
+  "$flutter_terminated_file" \
+  "$flutter_child_terminated_file" \
+  "$backend_terminated_file" \
+  "$runner_log_terminated_file"; do
+  if [ ! -f "$terminated_file" ]; then
+    echo "Attach watchdog did not terminate process tracked by $terminated_file." >&2
+    exit 1
+  fi
+done
+
+for pid_file in \
+  "$flutter_pid_file" \
+  "$flutter_child_pid_file" \
+  "$backend_pid_file" \
+  "$runner_log_pid_file"; do
+  process_id=$(cat "$pid_file")
+  if kill -0 "$process_id" 2>/dev/null; then
+    echo "Attach watchdog left process $process_id running." >&2
+    exit 1
+  fi
+done
 
 echo "iOS Simulator watchdog regression test passed."

@@ -11,6 +11,14 @@ command -v xcrun >/dev/null 2>&1 || {
   echo "xcrun is required for iOS Simulator smoke tests." >&2
   exit 1
 }
+command -v pgrep >/dev/null 2>&1 || {
+  echo "pgrep is required for iOS Simulator smoke tests." >&2
+  exit 1
+}
+command -v ps >/dev/null 2>&1 || {
+  echo "ps is required for iOS Simulator smoke tests." >&2
+  exit 1
+}
 
 server_path=${BRIDRA_SERVER_PATH:?BRIDRA_SERVER_PATH is required}
 flutter_command=${BRIDRA_FLUTTER:-fvm flutter}
@@ -102,6 +110,68 @@ terminate_process() {
   wait "$process_id" 2>/dev/null || true
 }
 
+collect_process_tree() {
+  tree_parent_process=$1
+  if ! kill -0 "$tree_parent_process" 2>/dev/null; then
+    return
+  fi
+  kill -STOP "$tree_parent_process" 2>/dev/null || true
+  bridra_process_tree="$bridra_process_tree $tree_parent_process"
+  child_processes=$(pgrep -P "$tree_parent_process" 2>/dev/null || true)
+  for child_process in $child_processes; do
+    collect_process_tree "$child_process"
+  done
+}
+
+process_is_running() {
+  checked_process=$1
+  if ! kill -0 "$checked_process" 2>/dev/null; then
+    return 1
+  fi
+  process_state=$(ps -o state= -p "$checked_process" 2>/dev/null || true)
+  case "$process_state" in
+    ''|*Z*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+terminate_process_tree() {
+  tree_root_process=$1
+  bridra_process_tree=
+  collect_process_tree "$tree_root_process"
+  if [ -z "$bridra_process_tree" ]; then
+    wait "$tree_root_process" 2>/dev/null || true
+    return
+  fi
+  for tree_process in $bridra_process_tree; do
+    kill "$tree_process" 2>/dev/null || true
+  done
+  for tree_process in $bridra_process_tree; do
+    kill -CONT "$tree_process" 2>/dev/null || true
+  done
+  terminate_attempt=0
+  while [ "$terminate_attempt" -lt 10 ]; do
+    tree_running=0
+    for tree_process in $bridra_process_tree; do
+      if process_is_running "$tree_process"; then
+        tree_running=1
+        break
+      fi
+    done
+    if [ "$tree_running" -eq 0 ]; then
+      break
+    fi
+    terminate_attempt=$((terminate_attempt + 1))
+    sleep 1
+  done
+  for tree_process in $bridra_process_tree; do
+    if process_is_running "$tree_process"; then
+      kill -9 "$tree_process" 2>/dev/null || true
+    fi
+  done
+  wait "$tree_root_process" 2>/dev/null || true
+}
+
 collect_diagnostics() {
   failure_status=$1
   if [ -z "$diagnostics_dir" ]; then
@@ -138,7 +208,7 @@ cleanup() {
   status=$?
   trap - EXIT INT TERM
   if [ -n "$test_pid" ]; then
-    terminate_process "$test_pid"
+    terminate_process_tree "$test_pid"
   fi
   if [ -n "$runner_log_pid" ]; then
     terminate_process "$runner_log_pid"
@@ -280,7 +350,7 @@ if [ "$test_status" -eq 0 ]; then
   wait "$test_pid" || test_status=$?
 else
   echo "$watchdog_reason" >&2
-  terminate_process "$test_pid"
+  terminate_process_tree "$test_pid"
 fi
 test_pid=
 
