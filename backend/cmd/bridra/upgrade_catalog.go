@@ -125,6 +125,12 @@ var registeredUpgradeReleases = []upgradeRelease{
 		TemplateVersion:         2,
 		TemplateProtocolVersion: 1,
 	},
+	{
+		FrameworkVersion:        "0.13.0",
+		ProjectMetadataVersion:  2,
+		TemplateVersion:         2,
+		TemplateProtocolVersion: 1,
+	},
 }
 
 var registeredFrameworkMigrations = []frameworkMigration{
@@ -224,6 +230,13 @@ var registeredFrameworkMigrations = []frameworkMigration{
 		From:        "0.11.0",
 		To:          "0.12.0",
 		Description: "Update the Go and Flutter framework dependencies for bounded stdin Sidecar launch authentication; application-owned legacy entrypoints remain compatible.",
+		Automatic:   true,
+	},
+	{
+		ID:          "framework-0.12.0-to-0.13.0",
+		From:        "0.12.0",
+		To:          "0.13.0",
+		Description: "Update the Go and Flutter framework dependencies for RPC schema compatibility checking without changing application runtime contracts.",
 		Automatic:   true,
 	},
 }
