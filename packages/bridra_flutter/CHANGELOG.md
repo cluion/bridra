@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.13.0 - 2026-08-15
+
+- Aligned package metadata with Bridra 0.13.0's RPC schema compatibility
+  tooling. The public Dart runtime API and RPC protocol remain unchanged.
+
 ## 0.12.0 - 2026-08-09
 
 - Kept Desktop Sidecar launch tokens out of process arguments with a bounded

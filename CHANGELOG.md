@@ -5,12 +5,27 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-08-15
+
 ### Added
 
 - Added `bridra schema check` with human-readable and versioned JSON reports for
   comparing an application RPC schema with a reviewed baseline. The command
   rejects protocol regressions and breaking wire changes that do not increase
   the application-owned RPC protocol version.
+
+### Changed
+
+- Registered the automatic `0.12.0` to `0.13.0` dependency migration. The
+  public Go Codegen API additively exposes schema compatibility reports; the
+  public Dart runtime API, Project Template version `2`, project metadata
+  schema `2`, and template protocol baseline `1` remain unchanged.
+
+### Support
+
+- The latest `0.13.x` release receives best-effort security fixes until the next
+  minor line is published. The `0.12.x` line is no longer supported after this
+  release.
 
 ## [0.12.0] - 2026-08-09
 
