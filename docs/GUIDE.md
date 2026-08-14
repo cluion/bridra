@@ -497,6 +497,29 @@ make codegen-check
 Dart files. Generated files are committed, marked `DO NOT EDIT`, and compiled by
 normal tests. `make verify` fails when the schema and checked-in output differ.
 
+Before accepting an RPC contract change, compare it with the reviewed deployed
+or released schema:
+
+```bash
+bridra schema check \
+  --against path/to/released-schema.json \
+  --schema schema/bridra.json
+```
+
+Use `--json` for report schema `1` in CI. The command exits non-zero when the
+current `protocolVersion` regresses or when a breaking wire change keeps the
+baseline protocol. A greater protocol produces `versioned_break`: generated
+clients and servers will reject the old contract instead of exchanging
+incompatible payloads. The command does not modify either schema or generated
+code.
+
+Method removal, unary/streaming changes, request parameter and rule changes,
+field shape/nullability changes, and required response/meta field changes are
+breaking. New methods and nullable response/meta field additions or removals are
+wire-compatible. Ordering and generated Go/Dart identifiers do not affect JSON
+wire compatibility; identifier renames remain application source migrations
+that must be reviewed separately.
+
 Codegen v0.2 supports string, integer, and boolean fields, scalar arrays
 (including RFC 3339 date-time arrays), nullable fields, string enums, nested
 objects, and generated minimum-length/maximum-length/enum validation.

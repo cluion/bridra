@@ -640,6 +640,19 @@ Wire fields and stable error codes are not removed solely through a framework
 SemVer change. Their compatibility is governed by the protocol version and
 generated contract migration.
 
+Application maintainers can enforce that boundary before deployment with:
+
+```bash
+bridra schema check \
+  --against path/to/released-schema.json \
+  --schema schema/bridra.json
+```
+
+Keep the baseline immutable for the reviewed release or deployment. A
+`versioned_break` result is an intentional incompatible application contract
+protected by a higher RPC protocol; it still requires coordinated generation,
+deployment, and rollback planning. An `incompatible` result must not be deployed.
+
 Bridra has no LTS line before 1.0. Supported v0.x versions and any security-only
 maintenance window are stated per release; absence of such a statement means
 users should upgrade to the latest compatible patch.

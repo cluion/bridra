@@ -106,6 +106,19 @@ make generate
 make codegen-check
 ```
 
+Compare a proposed contract with the immutable schema from a reviewed release
+or deployment before regenerating clients and servers:
+
+```bash
+cd backend
+go run {{.BridraGoModule}}/cmd/bridra schema check \
+  --against path/to/released-schema.json \
+  --schema ../schema/bridra.json
+```
+
+Breaking wire changes require a higher application `protocolVersion`. Use
+`--json` for a machine-readable CI report.
+
 Set `"stream": true` on a schema method to generate a typed
 `Stream<RpcStreamEvent<ResultType>>`; use `framework.ProduceStream` in its Go
 Controller.

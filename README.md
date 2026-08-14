@@ -124,6 +124,7 @@ bridra make controller User
 bridra make service Billing
 bridra make request CreateUser
 bridra generate
+bridra schema check --against path/to/released-schema.json
 bridra dev
 bridra build linux
 bridra diagnose

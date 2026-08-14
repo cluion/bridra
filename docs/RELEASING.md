@@ -57,6 +57,10 @@ approval. CI success alone is not publication authorization.
   `docs/UPGRADING.md` match the release.
 - Confirm the release has an explicit support window and no undocumented
   breaking public API, protocol, project metadata, or template changes.
+- If `schema/bridra.json` changed, run `bridra schema check --json` against the
+  previous reviewed release schema. Attach the report and require either
+  `compatible` or a deliberately coordinated `versioned_break`; never release
+  an `incompatible` result.
 
 ## Prepare the release Pull Request
 

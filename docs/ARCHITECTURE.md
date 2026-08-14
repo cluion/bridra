@@ -43,6 +43,14 @@ Response DTOs, and the Dart typed client. Checked-in generated files act as
 golden outputs, while `make verify` runs `codegen-check` before compiling either
 language.
 
+`bridra schema check --against <baseline>` compares that reviewed wire contract
+with the current schema. Its deterministic report separates compatible changes,
+breaking changes isolated by a higher protocol version, and incompatible changes
+that reused or regressed the baseline protocol. The comparison follows actual
+Bridra decoding behavior: Requests enforce unknown-field, presence, nullability,
+and declared-rule contracts, while response/meta decoders tolerate unknown keys
+and nullable absence. Generated language identifiers are not wire identities.
+
 Generated Requests first validate wire presence so a missing field, explicit
 `null`, and a present zero value remain distinct. They then normalize declared
 `trim` fields and compose the same `RuleRegistry[T]` API available to

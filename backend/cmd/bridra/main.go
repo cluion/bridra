@@ -44,6 +44,7 @@ func newApplication(system doctorSystem) *application {
 		devCommand{system: defaultDevSystem()},
 		buildCommand{system: defaultBuildSystem()},
 		generateCommand{},
+		schemaCommand{},
 		doctorCommand{system: system},
 		newDiagnoseCommand(system),
 	}

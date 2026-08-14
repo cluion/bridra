@@ -3,6 +3,15 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
+## [Unreleased]
+
+### Added
+
+- Added `bridra schema check` with human-readable and versioned JSON reports for
+  comparing an application RPC schema with a reviewed baseline. The command
+  rejects protocol regressions and breaking wire changes that do not increase
+  the application-owned RPC protocol version.
+
 ## [0.12.0] - 2026-08-09
 
 ### Added
