@@ -114,6 +114,13 @@ func TestRenderInitializesSchemaBaselineOnce(t *testing.T) {
 	}
 }
 
+func TestInitializeSchemaBaselineRequiresCurrentSchema(t *testing.T) {
+	err := initializeSchemaBaseline(t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "read current schema for baseline") {
+		t.Fatalf("initialize baseline error = %v", err)
+	}
+}
+
 func TestRenderedCustomProtocolProjectVerifyEnforcesSchemaBaseline(t *testing.T) {
 	root := t.TempDir()
 	config := testConfig(t)
