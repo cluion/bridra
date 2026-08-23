@@ -27,6 +27,16 @@ var (
 	packageChangelogPattern = regexp.MustCompile(
 		`(?m)^## ([^\s]+) - (Unreleased|[0-9]{4}-[0-9]{2}-[0-9]{2})\r?$`,
 	)
+	supportCurrentReleasePattern = regexp.MustCompile(
+		`(?m)^Bridra ([0-9]+\.[0-9]+) is the current pre-1\.0 framework line\b`,
+	)
+	securityCurrentReleasePattern = regexp.MustCompile(
+		`(?m)^Bridra ([0-9]+\.[0-9]+) is a pre-1\.0 framework line\.`,
+	)
+	securityLatestReleasePattern = regexp.MustCompile(
+		"(?m)^\\| Latest `([0-9]+\\.[0-9]+)\\.x` patch \\|",
+	)
+	supportHeadingPattern = regexp.MustCompile(`(?m)^### Support\r?$`)
 )
 
 type releaseCommand struct{}
@@ -285,6 +295,8 @@ func checkRelease(root, expected string, final bool, output io.Writer) error {
 	fmt.Fprintf(output, "Flutter package: bridra_flutter %s\n", expected)
 	if final {
 		fmt.Fprintln(output, "Changelogs: finalized")
+		version, _ := parseSemanticVersion(expected)
+		fmt.Fprintf(output, "Support policy: latest %d.%d.x patch\n", version.major, version.minor)
 	}
 	fmt.Fprintln(output, "All managed release surfaces agree.")
 	return nil
@@ -400,6 +412,9 @@ func inspectReleaseSurfaces(root, expected string, final bool) []string {
 			)
 		}
 	}
+	if final {
+		diagnostics = append(diagnostics, inspectFinalReleasePolicy(root, expected)...)
+	}
 
 	packagePubspec, err := os.ReadFile(
 		filepath.Join(root, "packages", "bridra_flutter", "pubspec.yaml"),
@@ -421,6 +436,94 @@ func inspectReleaseSurfaces(root, expected string, final bool) []string {
 		diagnostics = append(diagnostics, "backend/go.mod has an unexpected module identity")
 	}
 	return diagnostics
+}
+
+func inspectFinalReleasePolicy(root, expected string) []string {
+	version, err := parseSemanticVersion(expected)
+	if err != nil {
+		return []string{fmt.Sprintf("release policy: %v", err)}
+	}
+	expectedLine := fmt.Sprintf("%d.%d", version.major, version.minor)
+	diagnostics := make([]string, 0)
+
+	supportContents, err := os.ReadFile(filepath.Join(root, "SUPPORT.md"))
+	if err != nil {
+		diagnostics = append(diagnostics, fmt.Sprintf("SUPPORT.md: %v", err))
+	} else {
+		diagnostics = append(
+			diagnostics,
+			inspectReleasePolicyVersion(
+				"SUPPORT.md current release line",
+				supportContents,
+				supportCurrentReleasePattern,
+				expectedLine,
+			)...,
+		)
+	}
+
+	securityContents, err := os.ReadFile(filepath.Join(root, "SECURITY.md"))
+	if err != nil {
+		diagnostics = append(diagnostics, fmt.Sprintf("SECURITY.md: %v", err))
+	} else {
+		for _, check := range []struct {
+			name    string
+			pattern *regexp.Regexp
+		}{
+			{name: "SECURITY.md current release line", pattern: securityCurrentReleasePattern},
+			{name: "SECURITY.md supported versions table", pattern: securityLatestReleasePattern},
+		} {
+			diagnostics = append(
+				diagnostics,
+				inspectReleasePolicyVersion(
+					check.name,
+					securityContents,
+					check.pattern,
+					expectedLine,
+				)...,
+			)
+		}
+	}
+
+	changelogContents, err := os.ReadFile(filepath.Join(root, "CHANGELOG.md"))
+	if err == nil {
+		section := currentReleaseChangelogSection(changelogContents)
+		if section != nil && !supportHeadingPattern.Match(section) {
+			diagnostics = append(
+				diagnostics,
+				fmt.Sprintf("CHANGELOG.md: release %s has no Support section", expected),
+			)
+		}
+	}
+	return diagnostics
+}
+
+func inspectReleasePolicyVersion(
+	name string,
+	contents []byte,
+	pattern *regexp.Regexp,
+	expected string,
+) []string {
+	matches := pattern.FindSubmatch(contents)
+	if matches == nil {
+		return []string{name + " not found"}
+	}
+	actual := string(matches[1])
+	if actual != expected {
+		return []string{fmt.Sprintf("%s is %s, expected %s", name, actual, expected)}
+	}
+	return nil
+}
+
+func currentReleaseChangelogSection(contents []byte) []byte {
+	heading := rootChangelogPattern.FindIndex(contents)
+	if heading == nil {
+		return nil
+	}
+	section := contents[heading[1]:]
+	if next := rootChangelogPattern.FindIndex(section); next != nil {
+		section = section[:next[0]]
+	}
+	return section
 }
 
 func managedSurfaceValue(matches [][]byte) string {
