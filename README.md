@@ -61,7 +61,8 @@ distribution channels.
 - Project creation, scaffolding, development supervision, builds, redacted
   support diagnostics, deterministic SPDX release SBOMs, GitHub build
   provenance, and transactional upgrades through one CLI
-- Single-instance desktop ownership with later-launch activation forwarding
+- Single-instance desktop ownership with later-launch activation forwarding and
+  reliable macOS secondary-process termination
 - Parent-bound desktop Sidecars that shut down when their Flutter owner exits
 - Generated Go `Application` ownership with exactly-once, bounded Sidecar
   shutdown across EOF, Serve failure, signal cancellation, and blocked stdin

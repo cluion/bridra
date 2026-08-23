@@ -49,7 +49,7 @@ RUNTIME_RESOURCE_MAX_RSS_GROWTH_MIB ?= 32
 
 .PHONY: help setup doctor generate schema-check codegen-check license-check format backend-build backend-server-build backend-serve backend-format backend-test backend-public-api-test backend-sql-store-test backend-sql-job-store-test backend-vet transport-benchmark http-fault-test ios-simulator-watchdog-test \
 	flutter-format flutter-package-test flutter-web-test flutter-test analyze verify coverage backend-coverage flutter-package-coverage flutter-app-coverage coverage-check linux-check linux-run linux-build \
-	linux-smoke macos-check macos-run macos-build macos-smoke windows-run \
+	linux-smoke macos-check macos-run macos-build macos-native-test macos-smoke windows-run \
 	windows-build windows-smoke windows-verify android-run android-build android-emulator-smoke \
 	ios-run ios-build ios-simulator-build ios-simulator-smoke ios-device-smoke web-run web-build remote-release-check \
 	release-prepare release-check cli-release runtime-fuzz runtime-resources runtime-stress run
@@ -71,6 +71,7 @@ help:
 	@echo "make run          Run the starter on the current desktop platform"
 	@echo "make macos-run    Run the starter on macOS"
 	@echo "make macos-build  Build a universal macOS app with its Go sidecar"
+	@echo "make macos-native-test Run the macOS application lifecycle tests"
 	@echo "make macos-smoke  Build the macOS app and exercise the bundled sidecar"
 	@echo "make linux-run    Run the starter on Linux"
 	@echo "make linux-build  Build a Linux release bundle with its Go sidecar"
@@ -274,6 +275,14 @@ macos-build: macos-check
 		echo "Go sidecar architectures: $$archs"; \
 		echo "$$archs" | grep -q arm64; \
 		echo "$$archs" | grep -q x86_64
+
+macos-native-test: macos-check
+	$(FLUTTER) build macos --debug --config-only
+	xcodebuild test \
+		-workspace macos/Runner.xcworkspace \
+		-scheme Runner \
+		-configuration Debug \
+		-destination 'platform=macOS'
 
 macos-smoke: macos-build
 	@response="$$(printf '%s\n' '{"id":"smoke","method":"system.health","meta":{"token":"smoke-token"}}' | \

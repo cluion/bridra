@@ -493,6 +493,15 @@ lock/forward decision for a bounded startup window so concurrent launches do not
 both become primary. The API is root-isolate only because Dart documents POSIX
 file locks as process-scoped.
 
+After a secondary receives the primary's acknowledgement, generated Flutter
+entrypoints call `DesktopSingleInstance.terminateSecondary` and return before
+`runApp`. Windows and Linux terminate through the normal Dart return path. A
+macOS Flutter process already owns an `NSApplication`, so the same API invokes
+an application-owned `dev.cluion.bridra/application` method channel whose
+generated `MainFlutterWindow` handler acknowledges the call and then invokes
+`NSApp.terminate`. The handler rejects unknown methods, and the generated native
+test target verifies acknowledgement ordering without terminating the test host.
+
 `SidecarClient` owns deployed desktop process recovery. An unexpected exit or
 terminal transport failure fails the active request set without replay, because
 the Go process may already have committed side effects. Replacement processes

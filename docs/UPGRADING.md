@@ -286,15 +286,24 @@ overwrite them:
    deadline. Preserve stable timeout diagnostics and do not call shutdown again.
 5. Add regression coverage for EOF, Serve failure, stdin that remains blocked
    after Close, and a provider that does not return before the shutdown deadline.
-6. Update both framework dependencies to `0.15.0`, record Template version `4`
+6. In the Flutter entrypoint, call and await
+   `DesktopSingleInstance.terminateSecondary(instance)` after an acknowledged
+   secondary acquisition, then return before `runApp`. On macOS, add the Template
+   v4 `dev.cluion.bridra/application` handler to
+   `macos/Runner/MainFlutterWindow.swift`; it must acknowledge
+   `terminateSecondary` before calling `NSApp.terminate`. Add the generated
+   `RunnerTests.swift` coverage and a `make macos-native-test` gate.
+7. Update both framework dependencies to `0.15.0`, record Template version `4`
    and Framework version `0.15.0` in `.bridra/project.json`, preserve the
-   application protocol, then run `make verify` and required Desktop builds.
+   application protocol, then run `make verify`, `make macos-native-test`, and
+   required Desktop builds.
 
 The generated Template v4 `application.go`, `router.go`, Sidecar entrypoint, and
 Sidecar tests are the reference implementation. Roll back by restoring the
-0.14.0 dependencies, lockfiles, Template version `3`, and the previous
-application／Sidecar wiring. If the application added terminable providers while
-adopting v4, restore an explicit product-owned cleanup path before rollback.
+0.14.0 dependencies, lockfiles, Template version `3`, the previous
+application／Sidecar wiring, and the previous Flutter／macOS secondary exit path.
+If the application added terminable providers while adopting v4, restore an
+explicit product-owned cleanup path before rollback.
 
 ## Framework 0.13.0 to 0.14.0
 

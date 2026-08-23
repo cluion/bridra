@@ -274,7 +274,7 @@ HTTP-security step, the `0.10.1` diagnostics and upgrade-planner patch, and the
 runtime-neutral `0.11.0` supply-chain release, the `0.12.0` secure Sidecar launch
 update, and the `0.13.0` RPC schema compatibility tooling release. Every path to
 `0.15.0` ends with manual application baseline-gate and generated Application
-lifecycle steps; adopting authentication, rate
+and macOS secondary lifecycle steps; adopting authentication, rate
 limiting, observability, and server limits in an existing application-owned HTTP
 entrypoint remains an explicit deployment decision. The public Dart API adds
 `RpcRateLimitedException` in `0.10.0` and `SidecarDiagnostics` in `0.10.1`;
@@ -283,8 +283,10 @@ application-owned Sidecar entrypoints; `0.13.0` additively exposes RPC schema
 compatibility reports through the CLI and public Go Codegen API. `0.14.0`
 advances Project Template version to `3`, adds the application-owned deployed
 schema baseline, and gates generated-project verification. `0.15.0` advances
-Project Template version to `4` and gives generated Sidecars exactly-once,
-bounded Application shutdown. Project metadata
+Project Template version to `4`, gives generated Sidecars exactly-once,
+bounded Application shutdown, and adds reliable macOS secondary-instance
+termination through the additive `DesktopSingleInstance.terminateSecondary`
+API plus a native runner gate. Project metadata
 schema `2` and template protocol baseline `1` remain unchanged; every migration
 preserves each application's internally consistent RPC protocol.
 

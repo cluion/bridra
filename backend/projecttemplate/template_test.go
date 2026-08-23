@@ -404,10 +404,50 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 		"Future<void> main([List<String> arguments = const []])",
 		"DesktopSingleInstance.acquire(",
 		"applicationId: 'com.example.starter_app'",
+		"await DesktopSingleInstance.terminateSecondary(instance)",
 		"instance.activations.listen(_handleActivation)",
 	} {
 		if !strings.Contains(string(mainDart), expected) {
 			t.Fatalf("generated main.dart does not contain %q:\n%s", expected, mainDart)
+		}
+	}
+	macOSWindow, err := os.ReadFile(
+		filepath.Join(root, "macos", "Runner", "MainFlutterWindow.swift"),
+	)
+	if err != nil {
+		t.Fatalf("read generated MainFlutterWindow.swift: %v", err)
+	}
+	for _, expected := range []string{
+		`static let channelName = "dev.cluion.bridra/application"`,
+		`guard call.method == "terminateSecondary"`,
+		"result(nil)",
+		"terminateApplication()",
+	} {
+		if !strings.Contains(string(macOSWindow), expected) {
+			t.Fatalf("generated MainFlutterWindow.swift does not contain %q:\n%s", expected, macOSWindow)
+		}
+	}
+	macOSTests, err := os.ReadFile(
+		filepath.Join(root, "macos", "RunnerTests", "RunnerTests.swift"),
+	)
+	if err != nil {
+		t.Fatalf("read generated RunnerTests.swift: %v", err)
+	}
+	if !strings.Contains(string(macOSTests), "@testable import starter_app") ||
+		!strings.Contains(string(macOSTests), `["result", "terminate"]`) {
+		t.Fatalf("generated RunnerTests.swift = %s", macOSTests)
+	}
+	generatedMakefile, err := os.ReadFile(filepath.Join(root, "Makefile"))
+	if err != nil {
+		t.Fatalf("read generated Makefile: %v", err)
+	}
+	for _, expected := range []string{
+		"macos-native-test:",
+		"$(FLUTTER) build macos --debug --config-only",
+		"xcodebuild test",
+	} {
+		if !strings.Contains(string(generatedMakefile), expected) {
+			t.Fatalf("generated Makefile does not contain %q:\n%s", expected, generatedMakefile)
 		}
 	}
 }

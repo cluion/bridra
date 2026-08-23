@@ -5,12 +5,146 @@ import 'dart:io';
 import 'package:bridra_flutter/bridra_flutter.dart';
 import 'package:bridra_flutter/src/single_instance/desktop_single_instance_io.dart'
     as single_instance_io;
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+const _applicationLifecycleChannel = MethodChannel(
+  'dev.cluion.bridra/application',
+);
+
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('reports desktop support on IO desktop platforms', () {
     expect(DesktopSingleInstance.isSupported, isTrue);
   });
+
+  test('terminates a macOS secondary after closing its session', () async {
+    final events = <String>[];
+    final session = _FakeSession(isPrimary: false, onClose: events.add);
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(_applicationLifecycleChannel, (
+      call,
+    ) async {
+      events.add(call.method);
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(
+        _applicationLifecycleChannel,
+        null,
+      ),
+    );
+
+    await single_instance_io.terminateSecondary(
+      session,
+      requiresNativeTermination: true,
+    );
+
+    expect(events, const ['close', 'terminateSecondary']);
+  });
+
+  test(
+    'public secondary termination follows the host lifecycle path',
+    () async {
+      final events = <String>[];
+      final session = _FakeSession(isPrimary: false, onClose: events.add);
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(_applicationLifecycleChannel, (
+        call,
+      ) async {
+        events.add(call.method);
+        return null;
+      });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(
+          _applicationLifecycleChannel,
+          null,
+        ),
+      );
+
+      await DesktopSingleInstance.terminateSecondary(session);
+
+      expect(
+        events,
+        Platform.isMacOS
+            ? const ['close', 'terminateSecondary']
+            : const ['close'],
+      );
+    },
+  );
+
+  test(
+    'closes non-macOS secondary without invoking native lifecycle',
+    () async {
+      final events = <String>[];
+      final session = _FakeSession(isPrimary: false, onClose: events.add);
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(
+        _applicationLifecycleChannel,
+        (_) async => fail('non-macOS secondary invoked native lifecycle'),
+      );
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(
+          _applicationLifecycleChannel,
+          null,
+        ),
+      );
+
+      await single_instance_io.terminateSecondary(
+        session,
+        requiresNativeTermination: false,
+      );
+
+      expect(events, const ['close']);
+    },
+  );
+
+  test('does not terminate or close the primary desktop instance', () async {
+    final session = _FakeSession(isPrimary: true);
+
+    await expectLater(
+      single_instance_io.terminateSecondary(
+        session,
+        requiresNativeTermination: true,
+      ),
+      throwsStateError,
+    );
+
+    expect(session.closeCount, 0);
+  });
+
+  test(
+    'reports a typed error when macOS native termination is unavailable',
+    () async {
+      final session = _FakeSession(isPrimary: false);
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(
+        _applicationLifecycleChannel,
+        (_) => throw PlatformException(code: 'unavailable'),
+      );
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(
+          _applicationLifecycleChannel,
+          null,
+        ),
+      );
+
+      await expectLater(
+        single_instance_io.terminateSecondary(
+          session,
+          requiresNativeTermination: true,
+        ),
+        throwsA(isA<DesktopSingleInstanceException>()),
+      );
+
+      expect(session.closeCount, 1);
+    },
+  );
 
   test('rejects unsafe application identities and invalid timeouts', () async {
     await expectLater(
@@ -527,4 +661,28 @@ final class _HelperProcessResult {
   final int exitCode;
   final String stdout;
   final String stderr;
+}
+
+final class _FakeSession implements DesktopSingleInstanceSession {
+  _FakeSession({required this.isPrimary, this.onClose});
+
+  @override
+  final bool isPrimary;
+
+  final void Function(String event)? onClose;
+  var closeCount = 0;
+
+  @override
+  DesktopActivation get initialActivation =>
+      DesktopActivation(workingDirectory: '/fake');
+
+  @override
+  Stream<DesktopActivation> get activations =>
+      const Stream<DesktopActivation>.empty();
+
+  @override
+  Future<void> close() async {
+    closeCount++;
+    onClose?.call('close');
+  }
 }

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'desktop_application_lifecycle.dart' as application_lifecycle;
 import 'desktop_single_instance_types.dart';
 
 const _protocolVersion = 1;
@@ -44,6 +45,27 @@ Future<bool> forwardDesktopActivationForTesting({
     ),
     deadline: DateTime.now().add(const Duration(seconds: 5)),
   );
+}
+
+Future<void> terminateSecondary(
+  DesktopSingleInstanceSession session, {
+  bool? requiresNativeTermination,
+}) async {
+  if (session.isPrimary) {
+    throw StateError('The primary desktop instance must remain running.');
+  }
+
+  await session.close();
+  if (!(requiresNativeTermination ?? Platform.isMacOS)) return;
+
+  try {
+    await application_lifecycle.terminateSecondary();
+  } on Object catch (error) {
+    throw DesktopSingleInstanceException(
+      'Could not terminate the secondary macOS application instance.',
+      error,
+    );
+  }
 }
 
 Future<DesktopSingleInstanceSession> acquire({

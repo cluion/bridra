@@ -169,6 +169,9 @@ jobs:
       - name: Install project Flutter SDK
         run: fvm install
 
+      - name: Test macOS application lifecycle
+        run: make macos-native-test
+
       - name: Build and smoke-test macOS bundle
         run: make macos-smoke
 

@@ -2,9 +2,12 @@
 
 ## 0.15.0 - Unreleased
 
+- Added `DesktopSingleInstance.terminateSecondary`, which closes the secondary
+  coordination session and uses an explicit native lifecycle bridge on macOS.
+  Generated runners provide the matching handler so the acknowledged secondary
+  exits before `runApp`; Windows and Linux retain their existing return path.
 - Aligned package metadata with Bridra 0.15.0's generated Go Application and
-  Sidecar shutdown lifecycle. The public Dart runtime API and RPC protocol remain
-  unchanged.
+  Sidecar shutdown lifecycle. The RPC protocol remains unchanged.
 
 ## 0.14.0 - 2026-08-23
 

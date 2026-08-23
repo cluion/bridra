@@ -568,7 +568,10 @@ Future<void> main([List<String> arguments = const []]) async {
       applicationId: 'com.example.my_app',
       arguments: arguments,
     );
-    if (!instance.isPrimary) return;
+    if (!instance.isPrimary) {
+      await DesktopSingleInstance.terminateSecondary(instance);
+      return;
+    }
     instance.activations.listen((activation) {
       openFilesAndLinks(activation.arguments);
     });
@@ -581,6 +584,14 @@ Call `acquire` once from the root isolate. Linux and macOS file locks are
 process-scoped, so multiple-isolate acquisition is unsupported. The operating
 system releases ownership after a crash; the next launch overwrites stale
 connection metadata and becomes primary.
+
+On macOS, returning from Dart does not terminate an already-started
+`NSApplication`. `terminateSecondary` therefore closes the session and invokes
+the generated `dev.cluion.bridra/application` native lifecycle handler. Generated
+projects cover that handler through `make macos-native-test`; existing projects
+must adopt the Template v4 `MainFlutterWindow.swift` handler before calling the
+new API. Windows and Linux close the session and return normally without a
+native channel call.
 
 Each desktop launch creates a random 256-bit token and starts one Go child
 process. Flutter sends that token as a bounded, versioned first line on stdin,

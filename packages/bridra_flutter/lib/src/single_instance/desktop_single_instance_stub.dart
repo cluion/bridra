@@ -2,6 +2,13 @@ import 'desktop_single_instance_types.dart';
 
 bool get isSupported => false;
 
+Future<void> terminateSecondary(DesktopSingleInstanceSession session) async {
+  if (session.isPrimary) {
+    throw StateError('The primary desktop instance must remain running.');
+  }
+  await session.close();
+}
+
 Future<DesktopSingleInstanceSession> acquire({
   required String applicationId,
   Iterable<String> arguments = const [],

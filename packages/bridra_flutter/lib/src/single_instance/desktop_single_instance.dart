@@ -23,4 +23,8 @@ abstract final class DesktopSingleInstance {
       startupTimeout: startupTimeout,
     );
   }
+
+  static Future<void> terminateSecondary(DesktopSingleInstanceSession session) {
+    return implementation.terminateSecondary(session);
+  }
 }

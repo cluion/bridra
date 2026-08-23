@@ -12,6 +12,9 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
   all execute application shutdown exactly once.
 - Added generated Sidecar regression tests for EOF, Serve errors, blocking stdin,
   and providers that do not return before the shutdown deadline.
+- Added `DesktopSingleInstance.terminateSecondary` plus a generated macOS
+  lifecycle channel and native regression tests so acknowledged secondary
+  launches terminate before they can enter `runApp`.
 
 ### Changed
 
@@ -20,9 +23,12 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
   provider cannot prevent the generated process from exiting. Existing projects
   require a manual migration because their app and Sidecar entrypoints are
   application-owned.
+- Generated macOS projects now expose `make macos-native-test`, and hosted macOS
+  verification runs it before the bundle smoke test.
 
-The public Dart API, project metadata schema `2`, and template RPC protocol
-baseline `1` remain unchanged.
+Project metadata schema `2` and template RPC protocol baseline `1` remain
+unchanged. The Dart API change is additive and does not alter the RPC wire
+protocol.
 
 ## [0.14.0] - 2026-08-23
 

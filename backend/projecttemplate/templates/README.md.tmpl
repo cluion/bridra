@@ -16,6 +16,10 @@ make verify
 make run
 ```
 
+On macOS, `make macos-native-test` verifies the native lifecycle bridge used to
+terminate an acknowledged secondary application instance before it enters
+`runApp`.
+
 `make run` builds the Go sidecar, exposes its path to Flutter, and starts the
 current Flutter desktop target. Mobile and Web use the HTTP backend:
 

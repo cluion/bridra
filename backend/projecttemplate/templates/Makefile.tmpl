@@ -20,7 +20,7 @@ IOS_DEVICE_HOST ?=
 ANDROID_EMULATOR_PORT ?= 18082
 
 .PHONY: doctor generate schema-check codegen-check backend-build backend-serve run test analyze verify \
-	linux-build macos-build windows-build android-build android-emulator-smoke ios-build ios-simulator-smoke ios-device-smoke web-build
+	linux-build macos-build macos-native-test windows-build android-build android-emulator-smoke ios-build ios-simulator-smoke ios-device-smoke web-build
 
 doctor:
 	cd backend && $(BRIDRA) doctor --root ..
@@ -70,6 +70,14 @@ linux-build:
 
 macos-build:
 	cd backend && $(BRIDRA) build macos --root .. --mode $(BUILD_MODE)
+
+macos-native-test:
+	$(FLUTTER) build macos --debug --config-only
+	xcodebuild test \
+		-workspace macos/Runner.xcworkspace \
+		-scheme Runner \
+		-configuration Debug \
+		-destination 'platform=macOS'
 
 windows-build:
 	cd backend && $(BRIDRA) build windows --root .. --mode $(BUILD_MODE)

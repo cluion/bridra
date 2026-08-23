@@ -27,6 +27,8 @@ ios/Runner/Info.plist
 lib/api/backend_gateway.dart
 lib/api/generated/bridra_api.g.dart
 lib/main.dart
+macos/Runner/MainFlutterWindow.swift
+macos/RunnerTests/RunnerTests.swift
 pubspec.yaml
 schema/bridra.baseline.json
 schema/bridra.json
