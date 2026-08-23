@@ -5,7 +5,7 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 
 ## [Unreleased]
 
-## [0.14.0] - Unreleased
+## [0.14.0] - 2026-08-23
 
 ### Added
 
