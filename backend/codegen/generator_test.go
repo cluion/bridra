@@ -263,6 +263,129 @@ func TestSchemaRejectsDuplicateMethods(t *testing.T) {
 	}
 }
 
+func TestSchemaExplainsValidMethodNames(t *testing.T) {
+	schema := Schema{
+		SchemaVersion:   SupportedSchemaVersion,
+		ProtocolVersion: 1,
+		Methods: []Method{{
+			Name:       "Users_Create",
+			ClientName: "createUser",
+			Result: Object{
+				GoType:   "Result",
+				DartType: "ResultModel",
+				Fields:   []Field{{Name: "ok", Type: "boolean"}},
+			},
+		}},
+	}
+
+	err := schema.Validate()
+	if err == nil {
+		t.Fatal("expected invalid method-name error")
+	}
+	for _, expected := range []string{
+		`methods[0].name "Users_Create" is invalid`,
+		"at least two lowercase dot-separated segments",
+		`for example, "users.create"`,
+	} {
+		if !strings.Contains(err.Error(), expected) {
+			t.Fatalf("error = %q, want %q", err, expected)
+		}
+	}
+}
+
+func TestLoadSchemaPreservesExplicitIntegerBounds(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "schema.json")
+	contents := []byte(`{
+  "schemaVersion": 1,
+  "protocolVersion": 1,
+  "methods": [{
+    "name": "jobs.retry",
+    "clientName": "retryJob",
+    "params": {
+      "goType": "RetryJobRequest",
+      "dartType": "RetryJobRequest",
+      "fields": [{"name": "attempt", "type": "integer", "minimum": -1, "maximum": 0}]
+    },
+    "result": {
+      "goType": "RetryJobResponse",
+      "dartType": "RetryJobResult",
+      "fields": [{"name": "accepted", "type": "boolean"}]
+    }
+  }]
+}`)
+	if err := os.WriteFile(path, contents, 0o644); err != nil {
+		t.Fatalf("write schema: %v", err)
+	}
+
+	schema, err := LoadSchema(path)
+	if err != nil {
+		t.Fatalf("load schema: %v", err)
+	}
+	field := schema.Methods[0].Params.Fields[0]
+	if field.Minimum == nil || *field.Minimum != -1 ||
+		field.Maximum == nil || *field.Maximum != 0 {
+		t.Fatalf("integer bounds = minimum %v, maximum %v", field.Minimum, field.Maximum)
+	}
+}
+
+func TestSchemaValidatesIntegerBounds(t *testing.T) {
+	base := func(field Field) Schema {
+		return Schema{
+			SchemaVersion:   SupportedSchemaVersion,
+			ProtocolVersion: 1,
+			Methods: []Method{{
+				Name:       "test.read",
+				ClientName: "read",
+				Result: Object{
+					GoType:   "Result",
+					DartType: "ResultModel",
+					Fields:   []Field{field},
+				},
+			}},
+		}
+	}
+
+	if err := base(Field{
+		Name: "offset", Type: "integer",
+		Minimum: integerPointer(-5), Maximum: integerPointer(0),
+	}).Validate(); err != nil {
+		t.Fatalf("validate explicit negative and zero bounds: %v", err)
+	}
+
+	tests := []struct {
+		name  string
+		field Field
+		want  string
+	}{
+		{
+			name:  "minimum on string",
+			field: Field{Name: "value", Type: "string", Minimum: integerPointer(0)},
+			want:  "minimum requires a scalar integer",
+		},
+		{
+			name:  "maximum on array",
+			field: Field{Name: "values", Type: "integer", Array: true, Maximum: integerPointer(5)},
+			want:  "maximum requires a scalar integer",
+		},
+		{
+			name: "reversed bounds",
+			field: Field{
+				Name: "value", Type: "integer",
+				Minimum: integerPointer(2), Maximum: integerPointer(1),
+			},
+			want: "minimum must not exceed maximum",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := base(test.field).Validate()
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestGenerateSupportsNullableEnumAndNestedObjects(t *testing.T) {
 	schema := Schema{
 		SchemaVersion:   SupportedSchemaVersion,

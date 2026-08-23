@@ -252,7 +252,8 @@ func writeGoRequestObject(output *strings.Builder, object Object) {
 			output.WriteString("\t),\n")
 			continue
 		}
-		if field.MinLength == 0 && field.MaxLength == 0 && len(field.Enum) == 0 {
+		if field.MinLength == 0 && field.MaxLength == 0 && field.Minimum == nil &&
+			field.Maximum == nil && len(field.Enum) == 0 {
 			continue
 		}
 		output.WriteString("\tframework.ForField(\n")
@@ -271,6 +272,22 @@ func writeGoRequestObject(output *strings.Builder, object Object) {
 				"framework.MaxLength(%d, %q)",
 				field.MaxLength,
 				fmt.Sprintf("%s must be %d %s or fewer.", humanName(field.Name), field.MaxLength, characterUnit(field.MaxLength)),
+			)
+			writeGoValueRule(output, field, rule)
+		}
+		if field.Minimum != nil {
+			rule := fmt.Sprintf(
+				"framework.Minimum(%d, %q)",
+				*field.Minimum,
+				fmt.Sprintf("%s must be at least %d.", humanName(field.Name), *field.Minimum),
+			)
+			writeGoValueRule(output, field, rule)
+		}
+		if field.Maximum != nil {
+			rule := fmt.Sprintf(
+				"framework.Maximum(%d, %q)",
+				*field.Maximum,
+				fmt.Sprintf("%s must be %d or less.", humanName(field.Name), *field.Maximum),
 			)
 			writeGoValueRule(output, field, rule)
 		}
@@ -1139,7 +1156,8 @@ func lowerIdentifier(name string) string {
 
 func objectHasValidation(object Object) bool {
 	for _, field := range object.Fields {
-		if field.MinLength > 0 || field.MaxLength > 0 || len(field.Enum) > 0 {
+		if field.MinLength > 0 || field.MaxLength > 0 || field.Minimum != nil ||
+			field.Maximum != nil || len(field.Enum) > 0 {
 			return true
 		}
 		if field.Object != nil && objectHasValidation(*field.Object) {

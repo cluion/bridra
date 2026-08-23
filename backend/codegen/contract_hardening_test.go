@@ -17,6 +17,7 @@ func TestGenerateHardensPayloadAndDateTimeArrays(t *testing.T) {
 				DartType: "SyncCalendarRequest",
 				Fields: []Field{
 					{Name: "name", Type: "string", MinLength: 1, MaxLength: 20, Trim: true},
+					{Name: "attempts", Type: "integer", Nullable: true, Minimum: integerPointer(0), Maximum: integerPointer(5)},
 					{Name: "starts", Type: "string", Format: "date-time", Array: true},
 					{Name: "optionalEnds", Type: "string", Format: "date-time", Array: true, Nullable: true},
 				},
@@ -42,6 +43,9 @@ func TestGenerateHardensPayloadAndDateTimeArrays(t *testing.T) {
 		"framework.ValidateRequestPayload[SyncCalendarRequest](payload)",
 		"func (request *SyncCalendarRequest) Normalize()",
 		"framework.MinLength(1",
+		"Attempts     *int",
+		"framework.Optional(framework.Minimum(0",
+		"framework.Optional(framework.Maximum(5",
 		"Starts       []string",
 		"OptionalEnds *[]string",
 	} {
@@ -64,6 +68,10 @@ func TestGenerateHardensPayloadAndDateTimeArrays(t *testing.T) {
 			t.Errorf("Dart client does not contain %q:\n%s", fragment, dart)
 		}
 	}
+}
+
+func integerPointer(value int) *int {
+	return &value
 }
 
 func TestSchemaRejectsInvalidMinimumLength(t *testing.T) {

@@ -305,6 +305,15 @@ application／Sidecar wiring, and the previous Flutter／macOS secondary exit pa
 If the application added terminable providers while adopting v4, restore an
 explicit product-owned cleanup path before rollback.
 
+Bridra 0.15.0 also additively accepts `minimum` and `maximum` on scalar integer
+schema fields and exposes public Go `framework.Minimum`／`Maximum` validation
+rules. Existing schemas require no edit. When adopting a bound, regenerate both
+contracts and review application behavior; changing any request bound is
+reported as `request_rules_changed`, so increase the application Protocol above
+the deployed baseline before deployment. Invalid method names now include the
+accepted lowercase dot-separated format and an example; this diagnostic change
+requires no migration.
+
 ## Framework 0.13.0 to 0.14.0
 
 Project Template v3 adds `schema/bridra.baseline.json` and makes `make verify`

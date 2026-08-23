@@ -15,6 +15,10 @@ var (
 	identifierPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*$`)
 )
 
+const methodNameGuidance = "use at least two lowercase dot-separated segments; " +
+	"each segment must start with a letter and contain only lowercase letters or digits " +
+	`(for example, "users.create")`
+
 type Schema struct {
 	SchemaVersion   int      `json:"schemaVersion"`
 	ProtocolVersion int      `json:"protocolVersion"`
@@ -46,6 +50,8 @@ type Field struct {
 	Object    *Object  `json:"object,omitempty"`
 	MinLength int      `json:"minLength,omitempty"`
 	MaxLength int      `json:"maxLength,omitempty"`
+	Minimum   *int     `json:"minimum,omitempty"`
+	Maximum   *int     `json:"maximum,omitempty"`
 	Trim      bool     `json:"trim,omitempty"`
 }
 
@@ -104,7 +110,12 @@ func (schema Schema) Validate() error {
 	for index, method := range schema.Methods {
 		path := fmt.Sprintf("methods[%d]", index)
 		if !methodPattern.MatchString(method.Name) {
-			return fmt.Errorf("codegen: %s.name %q is invalid", path, method.Name)
+			return fmt.Errorf(
+				"codegen: %s.name %q is invalid; %s",
+				path,
+				method.Name,
+				methodNameGuidance,
+			)
 		}
 		if _, exists := methods[method.Name]; exists {
 			return fmt.Errorf("codegen: duplicate method %q", method.Name)
@@ -233,6 +244,15 @@ func validateFields(
 		if field.MaxLength > 0 && field.MinLength > field.MaxLength {
 			return fmt.Errorf("codegen: %s.minLength must not exceed maxLength", fieldPath)
 		}
+		if field.Minimum != nil && (field.Type != "integer" || field.Array) {
+			return fmt.Errorf("codegen: %s.minimum requires a scalar integer", fieldPath)
+		}
+		if field.Maximum != nil && (field.Type != "integer" || field.Array) {
+			return fmt.Errorf("codegen: %s.maximum requires a scalar integer", fieldPath)
+		}
+		if field.Minimum != nil && field.Maximum != nil && *field.Minimum > *field.Maximum {
+			return fmt.Errorf("codegen: %s.minimum must not exceed maximum", fieldPath)
+		}
 		if field.Trim && (field.Type != "string" || field.Array) {
 			return fmt.Errorf("codegen: %s.trim requires a scalar string", fieldPath)
 		}
@@ -251,7 +271,9 @@ func validateFields(
 				values[value] = struct{}{}
 			}
 		}
-		if field.Type == "object" && (field.Format != "" || field.MinLength != 0 || field.MaxLength != 0 || field.Trim || len(field.Enum) > 0) {
+		if field.Type == "object" && (field.Format != "" || field.MinLength != 0 ||
+			field.MaxLength != 0 || field.Minimum != nil || field.Maximum != nil ||
+			field.Trim || len(field.Enum) > 0) {
 			return fmt.Errorf("codegen: %s object field has scalar-only options", fieldPath)
 		}
 	}

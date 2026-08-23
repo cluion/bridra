@@ -133,6 +133,48 @@ func TestCompareSchemasRequiresProtocolBumpForBreakingWireChanges(t *testing.T) 
 	}
 }
 
+func TestCompareSchemasRequiresProtocolBumpForIntegerRequestBoundChange(t *testing.T) {
+	tests := []struct {
+		name   string
+		change func(*Field)
+	}{
+		{
+			name: "tighten maximum",
+			change: func(field *Field) {
+				field.Maximum = integerPointer(5)
+			},
+		},
+		{
+			name: "add explicit zero minimum",
+			change: func(field *Field) {
+				field.Minimum = integerPointer(0)
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			baseline := compatibilityTestSchema(1)
+			current := compatibilityTestSchema(1)
+			for _, schema := range []*Schema{&baseline, &current} {
+				schema.Methods[0].Params.Fields = append(
+					schema.Methods[0].Params.Fields,
+					Field{Name: "attempts", Type: "integer", Maximum: integerPointer(10)},
+				)
+			}
+			test.change(&current.Methods[0].Params.Fields[1])
+
+			report, err := CompareSchemas(baseline, current)
+			if err != nil {
+				t.Fatalf("compare schemas: %v", err)
+			}
+			if report.Status != SchemaIncompatible ||
+				!compatibilityHasChange(report, "request_rules_changed") {
+				t.Fatalf("report = %#v, want integer request rule change", report)
+			}
+		})
+	}
+}
+
 func TestCompareSchemasAcceptsNullableResponseFieldRemoval(t *testing.T) {
 	baseline := compatibilityTestSchema(1)
 	current := compatibilityTestSchema(1)

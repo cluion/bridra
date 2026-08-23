@@ -80,6 +80,12 @@ func (rule ValueRuleFunc[T]) ValidateValue(value T) *ValueViolation {
 	return rule(value)
 }
 
+type orderedNumber interface {
+	~int | ~int8 | ~int16 | ~int32 | ~int64 |
+		~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~uintptr |
+		~float32 | ~float64
+}
+
 type RuleRegistry[T any] struct {
 	mu    sync.RWMutex
 	rules []Rule[T]
@@ -194,6 +200,32 @@ func MinLength(minimum int, message string) ValueRule[string] {
 			Rule:       "min_length",
 			Message:    message,
 			Parameters: map[string]any{"min": minimum},
+		}
+	})
+}
+
+func Minimum[T orderedNumber](minimum T, message string) ValueRule[T] {
+	return ValueRuleFunc[T](func(value T) *ValueViolation {
+		if value >= minimum {
+			return nil
+		}
+		return &ValueViolation{
+			Rule:       "minimum",
+			Message:    message,
+			Parameters: map[string]any{"min": minimum},
+		}
+	})
+}
+
+func Maximum[T orderedNumber](maximum T, message string) ValueRule[T] {
+	return ValueRuleFunc[T](func(value T) *ValueViolation {
+		if value <= maximum {
+			return nil
+		}
+		return &ValueViolation{
+			Rule:       "maximum",
+			Message:    message,
+			Parameters: map[string]any{"max": maximum},
 		}
 	})
 }

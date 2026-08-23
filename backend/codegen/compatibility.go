@@ -238,6 +238,8 @@ func compareField(
 	}
 	if direction == requestFields && (baseline.MinLength != current.MinLength ||
 		baseline.MaxLength != current.MaxLength ||
+		!equalOptionalInt(baseline.Minimum, current.Minimum) ||
+		!equalOptionalInt(baseline.Maximum, current.Maximum) ||
 		baseline.Trim != current.Trim ||
 		!equalStringSet(baseline.Enum, current.Enum)) {
 		*changes = append(*changes, breakingChange(
@@ -250,6 +252,13 @@ func compareField(
 		return
 	}
 	compareObject(path+".object", *baseline.Object, *current.Object, direction, changes)
+}
+
+func equalOptionalInt(left, right *int) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
 }
 
 func equalStringSet(left, right []string) bool {

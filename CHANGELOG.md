@@ -15,6 +15,9 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 - Added `DesktopSingleInstance.terminateSecondary` plus a generated macOS
   lifecycle channel and native regression tests so acknowledged secondary
   launches terminate before they can enter `runApp`.
+- Added scalar integer `minimum`／`maximum` schema constraints, generated Go
+  request validation through public `framework.Minimum`／`Maximum` rules, and
+  compatibility checks that require a Protocol bump when request bounds change.
 
 ### Changed
 
@@ -25,10 +28,12 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
   application-owned.
 - Generated macOS projects now expose `make macos-native-test`, and hosted macOS
   verification runs it before the bundle smoke test.
+- Invalid RPC method names now report the required lowercase dot-separated
+  format and a valid example instead of only reporting that the value is invalid.
 
 Project metadata schema `2` and template RPC protocol baseline `1` remain
-unchanged. The Dart API change is additive and does not alter the RPC wire
-protocol.
+unchanged. The Dart and Go public API changes are additive and do not alter the
+RPC wire protocol.
 
 ## [0.14.0] - 2026-08-23
 

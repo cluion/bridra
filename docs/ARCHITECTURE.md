@@ -57,10 +57,14 @@ and nullable absence. Generated language identifiers are not wire identities.
 Generated Requests first validate wire presence so a missing field, explicit
 `null`, and a present zero value remain distinct. They then normalize declared
 `trim` fields and compose the same `RuleRegistry[T]` API available to
-applications. Field rules, nested validators, and cross-field `RuleFunc[T]`
-errors are aggregated into structured violations. The Router passes every
-returned error through its `ExceptionRenderer`; an `ExceptionRegistry` can map
-typed domain errors while retaining the framework's safe fallback behavior.
+applications. Integer `minimum`／`maximum` use pointers in the Schema AST so an
+omitted bound remains distinct from an explicit zero; Codegen emits inclusive
+`Minimum`／`Maximum` rules and wraps nullable fields with `Optional`. Any request
+bound change is a compatibility-visible validation-rule change. Field rules,
+nested validators, and cross-field `RuleFunc[T]` errors are aggregated into
+structured violations. The Router passes every returned error through its
+`ExceptionRenderer`; an `ExceptionRegistry` can map typed domain errors while
+retaining the framework's safe fallback behavior.
 
 ## Framework CLI
 

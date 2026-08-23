@@ -99,6 +99,36 @@ func TestOptionalRulesIgnoreNilValues(t *testing.T) {
 	}
 }
 
+func TestNumericBoundsReportStableViolations(t *testing.T) {
+	registry := NewRuleRegistry[validationWindow](
+		ForField(
+			"start",
+			func(window validationWindow) int { return window.Start },
+			Minimum(1, "Start must be at least 1."),
+		),
+		ForField(
+			"end",
+			func(window validationWindow) int { return window.End },
+			Maximum(10, "End must be 10 or less."),
+		),
+	)
+
+	err := registry.Validate(validationWindow{Start: 0, End: 11})
+	var validationErrors *ValidationErrors
+	if !errors.As(err, &validationErrors) {
+		t.Fatalf("error = %v, want ValidationErrors", err)
+	}
+	violations := validationErrors.Violations
+	if len(violations) != 2 || violations[0].Rule != "minimum" ||
+		violations[1].Rule != "maximum" {
+		t.Fatalf("violations = %#v", violations)
+	}
+	if violations[0].Parameters["min"] != 1 ||
+		violations[1].Parameters["max"] != 10 {
+		t.Fatalf("violations = %#v, want numeric parameters", violations)
+	}
+}
+
 func TestRuleRegistryRejectsTypedNilRuleWithoutMutation(t *testing.T) {
 	registry := NewRuleRegistry[validationWindow]()
 	var invalid RuleFunc[validationWindow]

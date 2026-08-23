@@ -47,7 +47,8 @@ distribution channels.
   Response application layers
 - Typed Config and dependency injection with singleton, transient, scoped, and
   aliased services
-- Validation, structured exceptions, route groups, policies, and lifecycle hooks
+- Validation including string and integer bounds, structured exceptions, route
+  groups, policies, and lifecycle hooks
 - HTTP Bearer authentication, request Principals, and permission policies with
   stable unauthenticated/forbidden errors
 - Bounded per-Principal/IP HTTP rate limiting with a pluggable limiter interface

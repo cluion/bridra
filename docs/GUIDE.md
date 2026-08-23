@@ -527,9 +527,32 @@ wire-compatible. Ordering and generated Go/Dart identifiers do not affect JSON
 wire compatibility; identifier renames remain application source migrations
 that must be reviewed separately.
 
-Codegen v0.2 supports string, integer, and boolean fields, scalar arrays
+RPC method names use at least two lowercase dot-separated segments. Every
+segment starts with a letter and then contains only lowercase letters or digits,
+for example `users.create` or `reports.v2status`. Invalid names report this rule
+and example directly.
+
+Codegen supports string, integer, and boolean fields, scalar arrays
 (including RFC 3339 date-time arrays), nullable fields, string enums, nested
-objects, and generated minimum-length/maximum-length/enum validation.
+objects, and generated minimum-length／maximum-length, integer-bound, and enum
+validation. Scalar integer request fields accept inclusive `minimum` and
+`maximum` values, including explicit zero or negative bounds:
+
+```json
+{
+  "name": "attempt",
+  "type": "integer",
+  "nullable": true,
+  "minimum": 0,
+  "maximum": 10
+}
+```
+
+The generator composes `framework.Minimum` and `framework.Maximum`; nullable
+fields wrap those rules with `framework.Optional`. Bounds are not accepted on
+arrays or non-integer fields. Adding, removing, tightening, or loosening a
+request bound is conservatively treated as `request_rules_changed` and requires
+a higher application `protocolVersion` than the deployed baseline.
 Non-nullable generated Request fields are required on the wire and reject
 explicit `null`; nullable fields are omitted from Flutter JSON when absent.
 `trim` normalizes the Go DTO before validation and before the Controller receives

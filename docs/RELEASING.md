@@ -286,7 +286,9 @@ schema baseline, and gates generated-project verification. `0.15.0` advances
 Project Template version to `4`, gives generated Sidecars exactly-once,
 bounded Application shutdown, and adds reliable macOS secondary-instance
 termination through the additive `DesktopSingleInstance.terminateSecondary`
-API plus a native runner gate. Project metadata
+API plus a native runner gate. It also adds scalar integer schema bounds,
+generated public Go validation rules, compatibility coverage, and actionable
+method-name diagnostics. Project metadata
 schema `2` and template protocol baseline `1` remain unchanged; every migration
 preserves each application's internally consistent RPC protocol.
 
