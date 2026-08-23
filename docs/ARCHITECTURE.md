@@ -32,7 +32,7 @@ Models, Services, Responses, Controllers, and route registration remain under
 `backend/app`. `packages/bridra_flutter` owns transport-neutral RPC, HTTP, and
 desktop Sidecar clients. The generated `BridraRpcApi` owns the application RPC
 contract; `lib/api/backend_gateway.dart` adds connection lifecycle and health
-caching. Both packages remain in one Git repository and use Bridra 0.14.0.
+caching. Both packages remain in one Git repository and use Bridra 0.15.0.
 
 ## Contract generation
 
@@ -46,7 +46,7 @@ while `make verify` runs both `schema-check` and `codegen-check` before compilin
 either language.
 
 `bridra schema check --against <baseline>` compares that reviewed wire contract
-with the current schema. Project Template v3 wires this check into generated
+with the current schema. Project Template v4 wires this check into generated
 projects' default verification gate. Its deterministic report separates compatible changes,
 breaking changes isolated by a higher protocol version, and incompatible changes
 that reused or regressed the baseline protocol. The comparison follows actual
@@ -81,7 +81,7 @@ Template, and project metadata versions remain independent compatibility
 contracts; neither command tags or publishes a release.
 
 `create` asks Flutter to generate the native six-platform runners inside a
-same-parent staging directory, then renders Project Template manifest v3 and
+same-parent staging directory, then renders Project Template manifest v4 and
 generates the typed contract. Go consumer tests, Flutter dependency resolution,
 and Dart formatting must succeed before one atomic rename exposes the destination;
 every earlier failure removes the staging directory.
@@ -228,8 +228,11 @@ executes them once in reverse registration order, including the provider whose
 Register failed and providers registered but not yet booted. Concurrent callers
 coalesce onto one shutdown run; provider failures are collected rather than stopping
 later cleanup and remain inspectable through `ApplicationShutdownErrors`. A completed
-shutdown is terminal for the Application. Both stdio and HTTP entrypoints stop their
-transport before invoking this lifecycle.
+shutdown is terminal for the Application. Project Template v4 makes the generated
+Sidecar own this Application, stops accepting stdio before invoking shutdown, and
+bounds the transport-stop and provider-shutdown waits independently. A reader or
+provider that ignores cancellation therefore cannot prevent the generated process
+from exiting; the timeout remains visible as a stable diagnostic.
 
 The mixed eager/lazy model is deliberate: startup-critical services can fail fast,
 while singleton, transient, and scoped bindings support larger applications without
@@ -551,6 +554,9 @@ termination or inherited pipe handles.
 - Closing stdin requests a graceful exit; signals are fallback cleanup.
 - Parent-process death cancels the stdio server and then runs reverse-order
   Application shutdown before the Sidecar exits.
+- Generated Sidecars initiate Application shutdown exactly once after EOF, Serve
+  failure, signal cancellation, or parent death. Blocking stdin and provider
+  shutdown each have a separate exit deadline.
 - Unexpected exits and malformed stdout fail all pending calls.
 - Go drains accepted requests after stdin closes, serializes concurrent replies,
   and may return them out of order. Flutter correlates replies by ID and ignores

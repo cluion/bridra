@@ -6,6 +6,7 @@ README.md
 analysis_options.yaml
 android/app/src/debug/AndroidManifest.xml
 android/app/src/profile/AndroidManifest.xml
+backend/app/application.go
 backend/app/contracts/bridra.gen.go
 backend/app/controllers/greeting_controller.go
 backend/app/controllers/system_controller.go
@@ -18,6 +19,7 @@ backend/app/router_test.go
 backend/app/services/greeting_service.go
 backend/cmd/server/main.go
 backend/cmd/sidecar/main.go
+backend/cmd/sidecar/main_test.go
 backend/framework/protocol_version.gen.go
 backend/go.mod
 integration_test/http_smoke_test.dart

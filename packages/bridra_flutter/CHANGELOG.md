@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.15.0 - Unreleased
+
+- Aligned package metadata with Bridra 0.15.0's generated Go Application and
+  Sidecar shutdown lifecycle. The public Dart runtime API and RPC protocol remain
+  unchanged.
+
 ## 0.14.0 - 2026-08-23
 
 - Aligned package metadata with Bridra 0.14.0's generated-project RPC schema

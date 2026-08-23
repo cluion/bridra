@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "files": [
     {"source": "project.json.tmpl", "destination": ".bridra/project.json", "mode": "0644"},
     {"source": "README.md.tmpl", "destination": "README.md", "mode": "0644"},
@@ -21,6 +21,7 @@
     {"source": "ios_simulator_smoke.sh.tmpl", "destination": "tool/ios_simulator_smoke.sh", "mode": "0755"},
     {"source": "ios_device_smoke.sh.tmpl", "destination": "tool/ios_device_smoke.sh", "mode": "0755"},
     {"source": "go.mod.tmpl", "destination": "backend/go.mod", "mode": "0644"},
+    {"source": "application.go.tmpl", "destination": "backend/app/application.go", "mode": "0644"},
     {"source": "router.go.tmpl", "destination": "backend/app/router.go", "mode": "0644"},
     {"source": "router_test.go.tmpl", "destination": "backend/app/router_test.go", "mode": "0644"},
     {"source": "system_controller.go.tmpl", "destination": "backend/app/controllers/system_controller.go", "mode": "0644"},
@@ -29,6 +30,7 @@
     {"source": "greeting_service.go.tmpl", "destination": "backend/app/services/greeting_service.go", "mode": "0644"},
     {"source": "greeting_response.go.tmpl", "destination": "backend/app/responses/greeting_response.go", "mode": "0644"},
     {"source": "sidecar.go.tmpl", "destination": "backend/cmd/sidecar/main.go", "mode": "0644"},
+    {"source": "sidecar_test.go.tmpl", "destination": "backend/cmd/sidecar/main_test.go", "mode": "0644"},
     {"source": "server.go.tmpl", "destination": "backend/cmd/server/main.go", "mode": "0644"}
   ]
 }

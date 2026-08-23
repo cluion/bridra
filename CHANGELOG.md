@@ -3,7 +3,26 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
-## [Unreleased]
+## [0.15.0] - Unreleased
+
+### Added
+
+- Generated Go applications now expose `app.Build`, and generated Sidecars own
+  the resulting `Application` lifecycle. EOF, Serve failures, and cancellation
+  all execute application shutdown exactly once.
+- Added generated Sidecar regression tests for EOF, Serve errors, blocking stdin,
+  and providers that do not return before the shutdown deadline.
+
+### Changed
+
+- Advanced the Project Template to version `4`. Sidecar stdio stop and
+  `Application.Shutdown` waits are independently bounded so a blocking reader or
+  provider cannot prevent the generated process from exiting. Existing projects
+  require a manual migration because their app and Sidecar entrypoints are
+  application-owned.
+
+The public Dart API, project metadata schema `2`, and template RPC protocol
+baseline `1` remain unchanged.
 
 ## [0.14.0] - 2026-08-23
 

@@ -1,0 +1,206 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"io"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"{{.BridraGoModule}}/framework"
+	"{{.GoModule}}/app"
+)
+
+type sidecarShutdownProvider struct {
+	terminate func(context.Context) error
+	count     int
+	mu        sync.Mutex
+}
+
+func (*sidecarShutdownProvider) Register(*framework.Application) error {
+	return nil
+}
+
+func (provider *sidecarShutdownProvider) Terminate(
+	ctx context.Context,
+	_ *framework.Application,
+) error {
+	provider.mu.Lock()
+	provider.count++
+	provider.mu.Unlock()
+	if provider.terminate == nil {
+		return nil
+	}
+	return provider.terminate(ctx)
+}
+
+func (provider *sidecarShutdownProvider) terminationCount() int {
+	provider.mu.Lock()
+	defer provider.mu.Unlock()
+	return provider.count
+}
+
+func TestRunSidecarShutsDownApplicationOnEOF(t *testing.T) {
+	provider, application := buildSidecarTestApplication(t)
+	err := runSidecar(
+		context.Background(),
+		application,
+		"secret",
+		strings.NewReader(""),
+		nil,
+		io.Discard,
+		io.Discard,
+	)
+	if err != nil {
+		t.Fatalf("run sidecar: %v", err)
+	}
+	if provider.terminationCount() != 1 || !application.ShutdownComplete() {
+		t.Fatal("sidecar should terminate the application exactly once")
+	}
+}
+
+type sidecarErrorReader struct {
+	err error
+}
+
+func (reader sidecarErrorReader) Read([]byte) (int, error) {
+	return 0, reader.err
+}
+
+func TestRunSidecarShutsDownApplicationOnServeError(t *testing.T) {
+	readError := errors.New("read failed")
+	provider, application := buildSidecarTestApplication(t)
+	err := runSidecar(
+		context.Background(),
+		application,
+		"secret",
+		sidecarErrorReader{err: readError},
+		nil,
+		io.Discard,
+		io.Discard,
+	)
+	if !errors.Is(err, readError) {
+		t.Fatalf("run sidecar error = %v, want %v", err, readError)
+	}
+	if provider.terminationCount() != 1 || !application.ShutdownComplete() {
+		t.Fatal("serve error should terminate the application exactly once")
+	}
+}
+
+type stuckSidecarInput struct {
+	started   chan struct{}
+	release   chan struct{}
+	stopped   chan struct{}
+	startOnce sync.Once
+	stopOnce  sync.Once
+}
+
+func (input *stuckSidecarInput) Read([]byte) (int, error) {
+	input.startOnce.Do(func() { close(input.started) })
+	<-input.release
+	input.stopOnce.Do(func() { close(input.stopped) })
+	return 0, io.EOF
+}
+
+func (*stuckSidecarInput) Close() error {
+	return nil
+}
+
+func TestRunSidecarCancellationDoesNotWaitForBlockingInput(t *testing.T) {
+	provider, application := buildSidecarTestApplication(t)
+	input := &stuckSidecarInput{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+		stopped: make(chan struct{}),
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		result <- runSidecarWithTimeouts(
+			ctx,
+			application,
+			"secret",
+			input,
+			input,
+			io.Discard,
+			io.Discard,
+			20*time.Millisecond,
+			time.Second,
+		)
+	}()
+
+	<-input.started
+	cancel()
+	select {
+	case err := <-result:
+		if !errors.Is(err, errSidecarServerStopTimeout) {
+			t.Fatalf("run sidecar error = %v, want stop timeout", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("run sidecar waited for blocking input")
+	}
+	if provider.terminationCount() != 1 || !application.ShutdownComplete() {
+		t.Fatal("cancellation should terminate the application exactly once")
+	}
+	close(input.release)
+	<-input.stopped
+}
+
+func TestRunSidecarBoundsApplicationShutdown(t *testing.T) {
+	release := make(chan struct{})
+	terminated := make(chan struct{})
+	provider, application := buildSidecarTestApplicationWithProvider(
+		t,
+		&sidecarShutdownProvider{terminate: func(context.Context) error {
+			<-release
+			close(terminated)
+			return nil
+		}},
+	)
+	err := runSidecarWithTimeouts(
+		context.Background(),
+		application,
+		"secret",
+		strings.NewReader(""),
+		nil,
+		io.Discard,
+		io.Discard,
+		time.Second,
+		20*time.Millisecond,
+	)
+	if err == nil || !strings.Contains(err.Error(), "application shutdown did not stop") {
+		t.Fatalf("run sidecar error = %v, want shutdown timeout", err)
+	}
+	if provider.terminationCount() != 1 {
+		t.Fatalf("termination count = %d, want 1", provider.terminationCount())
+	}
+	close(release)
+	<-terminated
+	if err := application.Shutdown(context.Background()); err != nil {
+		t.Fatalf("wait for application shutdown: %v", err)
+	}
+	if provider.terminationCount() != 1 {
+		t.Fatalf("final termination count = %d, want 1", provider.terminationCount())
+	}
+}
+
+func buildSidecarTestApplication(
+	t *testing.T,
+) (*sidecarShutdownProvider, *framework.Application) {
+	t.Helper()
+	return buildSidecarTestApplicationWithProvider(t, &sidecarShutdownProvider{})
+}
+
+func buildSidecarTestApplicationWithProvider(
+	t *testing.T,
+	provider *sidecarShutdownProvider,
+) (*sidecarShutdownProvider, *framework.Application) {
+	t.Helper()
+	application, err := app.Build(app.Config{Token: "secret"}, provider)
+	if err != nil {
+		t.Fatalf("build application: %v", err)
+	}
+	return provider, application
+}

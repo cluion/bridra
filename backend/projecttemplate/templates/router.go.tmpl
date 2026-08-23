@@ -1,16 +1,21 @@
 package app
 
 import (
+	"fmt"
 	"io"
 
+	"{{.BridraGoModule}}/framework"
 	"{{.GoModule}}/app/contracts"
 	"{{.GoModule}}/app/controllers"
 	"{{.GoModule}}/app/services"
-	"{{.BridraGoModule}}/framework"
 )
 
 func NewRouter(token string, logs io.Writer, runtime string) *framework.Router {
-	return NewRouterWithFileTransfers(token, logs, runtime, nil)
+	application, err := Build(Config{Token: token, Logs: logs, Runtime: runtime})
+	if err != nil {
+		panic(fmt.Errorf("app: build: %w", err))
+	}
+	return application.Router()
 }
 
 func NewRouterWithFileTransfers(
@@ -19,10 +24,6 @@ func NewRouterWithFileTransfers(
 	runtime string,
 	fileTransfers *framework.FileTransferStore,
 ) *framework.Router {
-	greetingService := services.NewGreetingService()
-	greetingController := controllers.NewGreetingController(greetingService)
-	systemController := controllers.NewSystemController(runtime)
-
 	container := framework.NewContainer()
 	if fileTransfers != nil {
 		if err := framework.Instance(
@@ -34,6 +35,20 @@ func NewRouterWithFileTransfers(
 		}
 	}
 	router := framework.NewRouterWithContainer(container)
+	configureRouter(router, token, logs, runtime)
+	return router
+}
+
+func configureRouter(
+	router *framework.Router,
+	token string,
+	logs io.Writer,
+	runtime string,
+) {
+	greetingService := services.NewGreetingService()
+	greetingController := controllers.NewGreetingController(greetingService)
+	systemController := controllers.NewSystemController(runtime)
+
 	middlewares := []framework.Middleware{
 		framework.Traced("recovery", framework.Recovery()),
 		framework.Traced("request-id", framework.RequireRequestID()),
@@ -50,5 +65,4 @@ func NewRouterWithFileTransfers(
 	router.Use(middlewares...)
 	router.Handle(contracts.MethodSystemHealth, systemController.Health)
 	router.Handle(contracts.MethodGreetingHello, greetingController.Hello)
-	return router
 }

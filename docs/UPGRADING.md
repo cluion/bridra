@@ -9,8 +9,8 @@ Run the read-only planner from a project root before changing dependencies:
 
 ```bash
 bridra upgrade
-bridra upgrade --plan --to 0.14.0
-bridra upgrade --plan --to 0.14.0 --json
+bridra upgrade --plan --to 0.15.0
+bridra upgrade --plan --to 0.15.0 --json
 ```
 
 When invoking the CLI through the backend dependency, use:
@@ -79,8 +79,8 @@ adding the necessary path fails verification.
 | Identity | Current | Compatibility rule |
 | --- | ---: | --- |
 | Project metadata schema | 2 | Schema 1 remains readable by core project commands but requires a metadata migration. A newer schema requires a newer CLI. |
-| Framework SemVer | 0.14.0 | The project and selected target must match. An older version requires a complete registered migration path; downgrade plans are rejected. |
-| Project Template | 3 | Template v3 adds the application-owned deployed-schema baseline and automatic `make verify` compatibility gate. Older templates require manual review. |
+| Framework SemVer | 0.15.0 | The project and selected target must match. An older version requires a complete registered migration path; downgrade plans are rejected. |
+| Project Template | 4 | Template v4 adds generated `Application` ownership and bounded Sidecar shutdown while retaining the v3 deployed-schema baseline gate. Older templates require manual review. |
 | Application RPC protocol | Application-owned | `.bridra/project.json`, `schema/bridra.json`, and generated Go/Dart contracts must agree exactly. It may be newer than the selected release's Project Template baseline. |
 
 Framework SemVer, the Project Template protocol baseline, and an application's
@@ -232,16 +232,17 @@ the Go and Flutter dependencies together, add the version contract:
   "projectName": "your_app",
   "goModule": "example.com/your/app",
   "frameworkModule": "github.com/cluion/bridra/backend",
-  "frameworkVersion": "0.14.0",
-  "templateVersion": 3,
+  "frameworkVersion": "0.15.0",
+  "templateVersion": 4,
   "protocolVersion": 1
 }
 ```
 
 Keep the existing project identity and module values. Template 2 introduced this
-upgrade contract; Template 3 adds the deployed-schema baseline gate described
-below. Neither replaces Controllers, Services, Models, configuration, UI, or
-native runner files. Record the application's existing `schema/bridra.json`
+upgrade contract; Template 3 adds the deployed-schema baseline gate and Template
+4 adds the generated Application shutdown lifecycle described below. Neither
+replaces Controllers, Services, Models, configuration, UI, or native runner
+files. Record the application's existing `schema/bridra.json`
 protocol value; `1` above is only the default for an unchanged generated project.
 
 ## Upgrade workflow
@@ -258,6 +259,42 @@ protocol value; `1` above is only the default for an unchanged generated project
    template, and any explicit RPC changes it records have actually been applied.
 6. Run any platform builds required by the application before committing the
    upgrade.
+
+## Framework 0.14.0 to 0.15.0
+
+Project Template v4 makes the generated Go Sidecar own a booted
+`framework.Application`. It executes `Application.Shutdown` exactly once after
+normal EOF, a Serve failure, or context cancellation. Stdio stop and application
+shutdown waits are independently bounded so a reader or provider that ignores
+cancellation cannot prevent the process from exiting.
+
+This transition is manual because `backend/app` and
+`backend/cmd/sidecar/main.go` are application-owned and Bridra upgrades never
+overwrite them:
+
+1. Preserve the application's existing providers, configuration, routes, token
+   handling, logging, file-transfer options, and product-specific cleanup.
+2. Add an application `Config` and `Build` boundary that creates one
+   `framework.Application`, registers every provider, configures its Router, and
+   boots it. On a registration or boot failure, shut down the partial
+   application before returning the build error.
+3. Make the Sidecar construct the file-transfer Store through
+   `NewFileTransferServiceProvider`, resolve it from the Application container,
+   and run `Server.Serve` in a controlled goroutine.
+4. On cancellation, attempt to close the underlying stdin, wait only for the
+   documented stdio stop deadline, then execute Application shutdown with its own
+   deadline. Preserve stable timeout diagnostics and do not call shutdown again.
+5. Add regression coverage for EOF, Serve failure, stdin that remains blocked
+   after Close, and a provider that does not return before the shutdown deadline.
+6. Update both framework dependencies to `0.15.0`, record Template version `4`
+   and Framework version `0.15.0` in `.bridra/project.json`, preserve the
+   application protocol, then run `make verify` and required Desktop builds.
+
+The generated Template v4 `application.go`, `router.go`, Sidecar entrypoint, and
+Sidecar tests are the reference implementation. Roll back by restoring the
+0.14.0 dependencies, lockfiles, Template version `3`, and the previous
+application／Sidecar wiring. If the application added terminable providers while
+adopting v4, restore an explicit product-owned cleanup path before rollback.
 
 ## Framework 0.13.0 to 0.14.0
 

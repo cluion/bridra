@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
-	"{{.GoModule}}/app"
 	"{{.BridraGoModule}}/framework"
+	"{{.GoModule}}/app"
 )
 
 func main() {
@@ -21,26 +23,16 @@ func main() {
 	if launch.UsesStdinHandshake {
 		fmt.Fprintln(os.Stderr, framework.SidecarLaunchReadyMessage)
 	}
-	fileTransfers, err := framework.NewFileTransferStore(
-		framework.FileTransferOptions{ExposeLocalPath: true},
-	)
+	application, err := app.Build(app.Config{
+		Token:   launch.Token,
+		Logs:    os.Stderr,
+		Runtime: "Go sidecar",
+	}, framework.NewFileTransferServiceProvider(framework.FileTransferOptions{
+		ExposeLocalPath: true,
+	}))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "sidecar: file transfers: %v\n", err)
+		fmt.Fprintf(os.Stderr, "sidecar: configure: %v\n", err)
 		os.Exit(2)
-	}
-	defer fileTransfers.Close()
-	server := framework.Server{
-		Router: app.NewRouterWithFileTransfers(
-			launch.Token,
-			os.Stderr,
-			"Go sidecar",
-			fileTransfers,
-		),
-		Input:         launch.Input,
-		Output:        os.Stdout,
-		Errors:        os.Stderr,
-		FileTransfers: fileTransfers,
-		Token:         launch.Token,
 	}
 	signalContext, stopSignals := signal.NotifyContext(
 		context.Background(),
@@ -54,19 +46,146 @@ func main() {
 		os.Exit(2)
 	}
 	defer stopParent()
-	go func() {
-		<-ctx.Done()
-		_ = os.Stdin.Close()
-	}()
-	serveError := server.Serve(ctx)
+	runError := runSidecar(
+		ctx,
+		application,
+		launch.Token,
+		launch.Input,
+		os.Stdin,
+		os.Stdout,
+		os.Stderr,
+	)
 	cause := context.Cause(ctx)
 	if cause != nil &&
 		!errors.Is(cause, context.Canceled) &&
 		!errors.Is(cause, framework.ErrParentProcessExited) {
-		serveError = errors.Join(serveError, cause)
+		runError = errors.Join(runError, cause)
 	}
-	if serveError != nil {
-		fmt.Fprintf(os.Stderr, "sidecar: %v\n", serveError)
+	if runError != nil {
+		fmt.Fprintf(os.Stderr, "sidecar: %v\n", runError)
 		os.Exit(1)
+	}
+}
+
+const (
+	sidecarServerStopTimeout  = 250 * time.Millisecond
+	sidecarAppShutdownTimeout = 5 * time.Second
+)
+
+var errSidecarServerStopTimeout = errors.New(
+	"stdio server did not stop before application shutdown",
+)
+
+func runSidecar(
+	ctx context.Context,
+	application *framework.Application,
+	token string,
+	input io.Reader,
+	inputCloser io.Closer,
+	output io.Writer,
+	logs io.Writer,
+) error {
+	return runSidecarWithTimeouts(
+		ctx,
+		application,
+		token,
+		input,
+		inputCloser,
+		output,
+		logs,
+		sidecarServerStopTimeout,
+		sidecarAppShutdownTimeout,
+	)
+}
+
+func runSidecarWithTimeouts(
+	ctx context.Context,
+	application *framework.Application,
+	token string,
+	input io.Reader,
+	inputCloser io.Closer,
+	output io.Writer,
+	logs io.Writer,
+	serverStopTimeout time.Duration,
+	applicationShutdownTimeout time.Duration,
+) error {
+	fileTransfers, _ := framework.Resolve(
+		application.Container(),
+		framework.FileTransferStoreKey,
+	)
+	server := &framework.Server{
+		Router:        application.Router(),
+		Input:         input,
+		Output:        output,
+		Errors:        logs,
+		FileTransfers: fileTransfers,
+		Token:         token,
+	}
+	serveErrors := make(chan error, 1)
+	go func() {
+		serveErrors <- server.Serve(ctx)
+	}()
+
+	var serveError error
+	select {
+	case serveError = <-serveErrors:
+	case <-ctx.Done():
+		if inputCloser != nil {
+			if err := inputCloser.Close(); err != nil {
+				serveError = fmt.Errorf("close input: %w", err)
+			}
+		}
+		serveError = errors.Join(
+			serveError,
+			waitForSidecarServer(serveErrors, serverStopTimeout),
+		)
+	}
+	shutdownError := shutdownSidecarApplication(
+		application,
+		applicationShutdownTimeout,
+	)
+	return errors.Join(serveError, shutdownError)
+}
+
+func waitForSidecarServer(serveErrors <-chan error, timeout time.Duration) error {
+	timer := time.NewTimer(timeout)
+	defer stopSidecarTimer(timer)
+	select {
+	case <-serveErrors:
+		return nil
+	case <-timer.C:
+		return errSidecarServerStopTimeout
+	}
+}
+
+func shutdownSidecarApplication(
+	application *framework.Application,
+	timeout time.Duration,
+) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	shutdownErrors := make(chan error, 1)
+	go func() {
+		shutdownErrors <- application.Shutdown(ctx)
+	}()
+	select {
+	case err := <-shutdownErrors:
+		return err
+	case <-ctx.Done():
+		select {
+		case err := <-shutdownErrors:
+			return err
+		default:
+			return fmt.Errorf("application shutdown did not stop: %w", ctx.Err())
+		}
+	}
+}
+
+func stopSidecarTimer(timer *time.Timer) {
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
 	}
 }

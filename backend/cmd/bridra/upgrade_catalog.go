@@ -137,6 +137,12 @@ var registeredUpgradeReleases = []upgradeRelease{
 		TemplateVersion:         3,
 		TemplateProtocolVersion: 1,
 	},
+	{
+		FrameworkVersion:        "0.15.0",
+		ProjectMetadataVersion:  2,
+		TemplateVersion:         4,
+		TemplateProtocolVersion: 1,
+	},
 }
 
 var registeredFrameworkMigrations = []frameworkMigration{
@@ -250,6 +256,13 @@ var registeredFrameworkMigrations = []frameworkMigration{
 		From:        "0.13.0",
 		To:          "0.14.0",
 		Description: "Adopt the application-owned deployed RPC schema baseline and automatic make verify compatibility gate, then update both framework dependencies.",
+		Automatic:   false,
+	},
+	{
+		ID:          "framework-0.14.0-to-0.15.0",
+		From:        "0.14.0",
+		To:          "0.15.0",
+		Description: "Adopt the application-owned generated Sidecar and Application shutdown lifecycle, then update both framework dependencies.",
 		Automatic:   false,
 	},
 }

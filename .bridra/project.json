@@ -3,7 +3,7 @@
   "projectName": "bridra",
   "goModule": "github.com/cluion/bridra/backend",
   "frameworkModule": "github.com/cluion/bridra/backend",
-  "frameworkVersion": "0.14.0",
-  "templateVersion": 3,
+  "frameworkVersion": "0.15.0",
+  "templateVersion": 4,
   "protocolVersion": 1
 }

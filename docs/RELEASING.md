@@ -76,8 +76,8 @@ commits or Pull Requests.
    changelogs, and live documentation from one version:
 
    ```bash
-   make release-prepare VERSION=0.14.0
-   make release-check VERSION=0.14.0
+   make release-prepare VERSION=0.15.0
+   make release-check VERSION=0.15.0
    ```
 
    The prepare command never creates a tag, publishes a package, or creates a
@@ -89,7 +89,7 @@ commits or Pull Requests.
    verification rejects a new current version without a complete path from each
    older registered release.
 4. Replace `Unreleased` in both changelogs with the intended release date, then
-   run `make release-check VERSION=0.14.0 FINAL=1`. The protected release workflow
+   run `make release-check VERSION=0.15.0 FINAL=1`. The protected release workflow
    repeats this final check and refuses an unfinished changelog.
 5. Run the full local verification and workflow lint. From the clean release
    commit, require a zero-warning Dart publish dry run, build the CLI artifacts
@@ -106,9 +106,9 @@ tagging it.
 Windows maintainers use:
 
 ```powershell
-.\tool\windows.ps1 -Task release-prepare -Version 0.14.0
-.\tool\windows.ps1 -Task release-check -Version 0.14.0
-.\tool\windows.ps1 -Task release-check -Version 0.14.0 -Final
+.\tool\windows.ps1 -Task release-prepare -Version 0.15.0
+.\tool\windows.ps1 -Task release-check -Version 0.15.0
+.\tool\windows.ps1 -Task release-check -Version 0.15.0 -Final
 ```
 
 Security fixes under embargo use a private advisory and private fork until the
@@ -121,7 +121,7 @@ Request before the agreed disclosure time.
 make cli-release
 ```
 
-This produces the following under `build/bridra/cli/0.14.0/`:
+This produces the following under `build/bridra/cli/0.15.0/`:
 
 - macOS amd64 and arm64 `tar.gz` archives
 - Linux amd64 and arm64 `tar.gz` archives
@@ -134,7 +134,7 @@ The source commit and commit timestamp are embedded into each binary. Confirm
 the native archive before publishing:
 
 ```bash
-(cd build/bridra/cli/0.14.0 && shasum -a 256 -c SHA256SUMS)
+(cd build/bridra/cli/0.15.0 && shasum -a 256 -c SHA256SUMS)
 bridra version --json
 ```
 
@@ -152,13 +152,13 @@ by these attestations.
 
 ## Tag and publish
 
-For Bridra 0.14.0, create the annotated Go submodule tag only after the release
+For Bridra 0.15.0, create the annotated Go submodule tag only after the release
 Pull Request is merged and the repository owner gives final authorization:
 
 ```bash
 git fetch origin main
-git tag -a backend/v0.14.0 <verified-main-sha> -m "Bridra 0.14.0"
-git push origin backend/v0.14.0
+git tag -a backend/v0.15.0 <verified-main-sha> -m "Bridra 0.15.0"
+git push origin backend/v0.15.0
 ```
 
 The protected GitHub workflow requires the tag to point at the current `main`
@@ -204,7 +204,7 @@ approval is not an administrative bypass.
 Verify installation without a repository checkout:
 
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.14.0
+go install github.com/cluion/bridra/backend/cmd/bridra@v0.15.0
 bridra version --json
 bridra create release_smoke --module example.com/acme/release-smoke
 ```
@@ -256,8 +256,8 @@ version instead.
 Users choose upgrades explicitly:
 
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.14.0
-bridra upgrade --plan --to 0.14.0
+go install github.com/cluion/bridra/backend/cmd/bridra@v0.15.0
+bridra upgrade --plan --to 0.15.0
 ```
 
 Bridra has no silent CLI auto-update. Breaking changes require release notes,
@@ -273,7 +273,8 @@ opt-in file-, SQL-, and Redis-backed persistence releases, the `0.10.0`
 HTTP-security step, the `0.10.1` diagnostics and upgrade-planner patch, and the
 runtime-neutral `0.11.0` supply-chain release, the `0.12.0` secure Sidecar launch
 update, and the `0.13.0` RPC schema compatibility tooling release. Every path to
-`0.14.0` ends with a manual application baseline-gate step; adopting authentication, rate
+`0.15.0` ends with manual application baseline-gate and generated Application
+lifecycle steps; adopting authentication, rate
 limiting, observability, and server limits in an existing application-owned HTTP
 entrypoint remains an explicit deployment decision. The public Dart API adds
 `RpcRateLimitedException` in `0.10.0` and `SidecarDiagnostics` in `0.10.1`;
@@ -281,7 +282,9 @@ entrypoint remains an explicit deployment decision. The public Dart API adds
 application-owned Sidecar entrypoints; `0.13.0` additively exposes RPC schema
 compatibility reports through the CLI and public Go Codegen API. `0.14.0`
 advances Project Template version to `3`, adds the application-owned deployed
-schema baseline, and gates generated-project verification. Project metadata
+schema baseline, and gates generated-project verification. `0.15.0` advances
+Project Template version to `4` and gives generated Sidecars exactly-once,
+bounded Application shutdown. Project metadata
 schema `2` and template protocol baseline `1` remain unchanged; every migration
 preserves each application's internally consistent RPC protocol.
 

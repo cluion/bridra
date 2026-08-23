@@ -9,7 +9,7 @@ import (
 const (
 	SchemaVersion             = 1
 	ProjectMetadataVersion    = 2
-	ProjectTemplateVersion    = 3
+	ProjectTemplateVersion    = 4
 	GoModule                  = "github.com/cluion/bridra/backend"
 	CLIInstallPath            = GoModule + "/cmd/bridra"
 	FlutterPackage            = "bridra_flutter"

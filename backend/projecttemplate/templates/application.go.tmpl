@@ -1,0 +1,50 @@
+package app
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"time"
+
+	"{{.BridraGoModule}}/framework"
+)
+
+const applicationBuildShutdownTimeout = 5 * time.Second
+
+type Config struct {
+	Token   string
+	Logs    io.Writer
+	Runtime string
+}
+
+func Build(
+	config Config,
+	additionalProviders ...framework.ServiceProvider,
+) (*framework.Application, error) {
+	application := framework.NewApplication(nil)
+	if err := application.Register(additionalProviders...); err != nil {
+		return nil, abortBuild(application, fmt.Errorf("app: register providers: %w", err))
+	}
+	configureRouter(application.Router(), config.Token, config.Logs, config.Runtime)
+	if err := application.Boot(); err != nil {
+		return nil, abortBuild(application, fmt.Errorf("app: boot providers: %w", err))
+	}
+	return application, nil
+}
+
+func abortBuild(application *framework.Application, buildError error) error {
+	ctx, cancel := context.WithTimeout(
+		context.Background(),
+		applicationBuildShutdownTimeout,
+	)
+	defer cancel()
+	shutdownError := application.Shutdown(ctx)
+	if shutdownError == nil {
+		return buildError
+	}
+	return errors.Join(
+		buildError,
+		fmt.Errorf("app: shutdown failed application: %w", shutdownError),
+	)
+}
