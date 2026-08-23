@@ -21,6 +21,7 @@
     {"source": "macos_runner_tests.swift.tmpl", "destination": "macos/RunnerTests/RunnerTests.swift", "mode": "0644", "platforms": ["macos"]},
     {"source": "android_emulator_smoke.sh.tmpl", "destination": "tool/android_emulator_smoke.sh", "mode": "0755", "platforms": ["android"]},
     {"source": "ios_simulator_smoke.sh.tmpl", "destination": "tool/ios_simulator_smoke.sh", "mode": "0755", "platforms": ["ios"]},
+    {"source": "ios_simulator_xcrun.sh.tmpl", "destination": "tool/ios_simulator_xcrun.sh", "mode": "0755", "platforms": ["ios"]},
     {"source": "ios_device_smoke.sh.tmpl", "destination": "tool/ios_device_smoke.sh", "mode": "0755", "platforms": ["ios"]},
     {"source": "go.mod.tmpl", "destination": "backend/go.mod", "mode": "0644"},
     {"source": "application.go.tmpl", "destination": "backend/app/application.go", "mode": "0644"},

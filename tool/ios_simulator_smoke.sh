@@ -2,6 +2,9 @@
 
 set -eu
 
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+xcrun_wrapper=$script_dir/ios_simulator_xcrun.sh
+
 if [ "$(uname -s)" != "Darwin" ]; then
   echo "iOS Simulator smoke tests must run on macOS." >&2
   exit 1
@@ -19,6 +22,10 @@ command -v ps >/dev/null 2>&1 || {
   echo "ps is required for iOS Simulator smoke tests." >&2
   exit 1
 }
+if [ ! -x "$xcrun_wrapper" ]; then
+  echo "iOS Simulator xcrun wrapper is not executable: $xcrun_wrapper" >&2
+  exit 1
+fi
 
 server_path=${BRIDRA_SERVER_PATH:?BRIDRA_SERVER_PATH is required}
 flutter_command=${BRIDRA_FLUTTER:-fvm flutter}
@@ -28,6 +35,7 @@ token=ios-simulator-smoke-token
 test_timeout_seconds=${BRIDRA_IOS_SIMULATOR_TIMEOUT_SECONDS:-540}
 test_no_progress_seconds=${BRIDRA_IOS_SIMULATOR_NO_PROGRESS_SECONDS:-240}
 test_attach_timeout_seconds=${BRIDRA_IOS_SIMULATOR_ATTACH_TIMEOUT_SECONDS:-90}
+launch_delay_seconds=${BRIDRA_IOS_SIMULATOR_LAUNCH_DELAY_SECONDS:-5}
 watchdog_interval_seconds=${BRIDRA_IOS_SIMULATOR_WATCHDOG_INTERVAL_SECONDS:-5}
 diagnostics_dir=${BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR:-}
 
@@ -50,6 +58,13 @@ require_positive_seconds "$test_timeout_seconds" BRIDRA_IOS_SIMULATOR_TIMEOUT_SE
 require_positive_seconds "$test_no_progress_seconds" BRIDRA_IOS_SIMULATOR_NO_PROGRESS_SECONDS
 require_positive_seconds "$test_attach_timeout_seconds" BRIDRA_IOS_SIMULATOR_ATTACH_TIMEOUT_SECONDS
 require_positive_seconds "$watchdog_interval_seconds" BRIDRA_IOS_SIMULATOR_WATCHDOG_INTERVAL_SECONDS
+
+case "$launch_delay_seconds" in
+  ''|*[!0-9]*)
+    echo "BRIDRA_IOS_SIMULATOR_LAUNCH_DELAY_SECONDS must be a non-negative integer." >&2
+    exit 1
+    ;;
+esac
 
 case "$port" in
   ''|*[!0-9]*)
@@ -90,6 +105,10 @@ watchdog_reason=
 smoke_log=${TMPDIR:-/tmp}/bridra-ios-simulator-smoke.$$.log
 flutter_log=${TMPDIR:-/tmp}/bridra-ios-simulator-flutter.$$.log
 runner_attach_log=${TMPDIR:-/tmp}/bridra-ios-simulator-attach.$$.log
+launch_marker=${TMPDIR:-/tmp}/bridra-ios-simulator-launch.$$.marker
+xcrun_wrapper_dir=$(mktemp -d "${TMPDIR:-/tmp}/bridra-ios-xcrun.XXXXXX")
+real_xcrun=$(command -v xcrun)
+ln -s "$xcrun_wrapper" "$xcrun_wrapper_dir/xcrun"
 
 terminate_process() {
   process_id=$1
@@ -218,7 +237,8 @@ cleanup() {
   if [ "$booted_by_script" -eq 1 ]; then
     xcrun simctl shutdown "$device" >/dev/null 2>&1 || true
   fi
-  rm -f "$smoke_log" "$flutter_log" "$runner_attach_log"
+  rm -f "$smoke_log" "$flutter_log" "$runner_attach_log" "$launch_marker"
+  rm -rf "$xcrun_wrapper_dir"
   exit "$status"
 }
 trap cleanup EXIT
@@ -265,7 +285,11 @@ runner_attach_started_at=@$(date +%s)
 test_status=0
 # BRIDRA_FLUTTER intentionally contains a command and optional wrapper argument.
 # shellcheck disable=SC2086
-$flutter_command test integration_test/http_smoke_test.dart \
+PATH="$xcrun_wrapper_dir:$PATH" \
+BRIDRA_IOS_SIMULATOR_REAL_XCRUN="$real_xcrun" \
+BRIDRA_IOS_SIMULATOR_LAUNCH_DELAY_SECONDS="$launch_delay_seconds" \
+BRIDRA_IOS_SIMULATOR_LAUNCH_MARKER="$launch_marker" \
+  $flutter_command test integration_test/http_smoke_test.dart \
   -d "$device" \
   --dart-define="BRIDRA_BACKEND_URL=http://127.0.0.1:$port/rpc" \
   --dart-define="BRIDRA_BACKEND_TOKEN=$token" \
@@ -347,6 +371,10 @@ cat "$flutter_log"
 cat "$smoke_log"
 if [ "$test_status" -ne 0 ]; then
   exit "$test_status"
+fi
+if [ "$launch_delay_seconds" -gt 0 ] && [ ! -f "$launch_marker" ]; then
+  echo "Flutter bypassed the iOS Simulator launch barrier." >&2
+  exit 1
 fi
 grep -Fq '"rpc_method":"system.health"' "$smoke_log"
 grep -Fq '"rpc_method":"greeting.hello"' "$smoke_log"

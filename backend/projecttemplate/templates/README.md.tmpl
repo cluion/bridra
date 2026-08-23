@@ -71,6 +71,9 @@ after 32 KiB and requires a byte-range resume while preserving known size,
 SHA-256, and content. It also interrupts an upload at the same offset, requires
 resume from that exact byte, and has Go consume and re-hash the completed upload.
 Its Flutter phase stops after nine minutes total or four minutes without output.
+It also delays only `simctl launch` by five seconds to avoid Flutter 3.44's
+upstream Simulator log-reader startup race; override that bounded barrier with
+`BRIDRA_IOS_SIMULATOR_LAUNCH_DELAY_SECONDS`.
 Set `BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR` to preserve bounded failure evidence.
 It is suitable for hosted macOS CI.
 

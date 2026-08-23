@@ -265,12 +265,29 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 		!strings.Contains(string(simulatorSource), "BRIDRA_SMOKE_UPLOAD_RESUME=true") ||
 		!strings.Contains(string(simulatorSource), "BRIDRA_IOS_SIMULATOR_TIMEOUT_SECONDS") ||
 		!strings.Contains(string(simulatorSource), "BRIDRA_IOS_SIMULATOR_NO_PROGRESS_SECONDS") ||
+		!strings.Contains(string(simulatorSource), "BRIDRA_IOS_SIMULATOR_LAUNCH_DELAY_SECONDS") ||
 		!strings.Contains(string(simulatorSource), "BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR") ||
 		!strings.Contains(string(simulatorSource), "--smoke-stream") ||
 		!strings.Contains(string(simulatorSource), "--smoke-download") ||
 		!strings.Contains(string(simulatorSource), "--smoke-download-resume") ||
 		!strings.Contains(string(simulatorSource), "--smoke-upload-resume") {
 		t.Fatalf("generated iOS Simulator smoke script = %s", simulatorSource)
+	}
+	simulatorXcrun := filepath.Join(root, "tool", "ios_simulator_xcrun.sh")
+	simulatorXcrunInfo, err := os.Stat(simulatorXcrun)
+	if err != nil {
+		t.Fatalf("stat generated iOS Simulator xcrun wrapper: %v", err)
+	}
+	if runtime.GOOS != "windows" && simulatorXcrunInfo.Mode().Perm() != 0o755 {
+		t.Fatalf("generated iOS Simulator xcrun wrapper mode = %o", simulatorXcrunInfo.Mode().Perm())
+	}
+	simulatorXcrunSource, err := os.ReadFile(simulatorXcrun)
+	if err != nil {
+		t.Fatalf("read generated iOS Simulator xcrun wrapper: %v", err)
+	}
+	if !strings.Contains(string(simulatorXcrunSource), "flutter/flutter#181771") ||
+		!strings.Contains(string(simulatorXcrunSource), "simctl\" ] && [ \"${2:-}\" = \"launch") {
+		t.Fatalf("generated iOS Simulator xcrun wrapper = %s", simulatorXcrunSource)
 	}
 	deviceScript := filepath.Join(root, "tool", "ios_device_smoke.sh")
 	deviceInfo, err := os.Stat(deviceScript)

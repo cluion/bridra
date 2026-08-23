@@ -806,7 +806,10 @@ that exact byte, then has Go consume and re-hash the result. The script shuts
 down only a Simulator that it booted itself. The Flutter integration phase has
 a nine-minute total watchdog and a four-minute no-output watchdog. Override
 them with `BRIDRA_IOS_SIMULATOR_TIMEOUT_SECONDS` and
-`BRIDRA_IOS_SIMULATOR_NO_PROGRESS_SECONDS`. Set
+`BRIDRA_IOS_SIMULATOR_NO_PROGRESS_SECONDS`. Flutter 3.44 has an upstream
+Simulator log-reader startup race, so the smoke command delays only
+`simctl launch` by five seconds; override that bounded barrier with
+`BRIDRA_IOS_SIMULATOR_LAUNCH_DELAY_SECONDS`. Set
 `BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR` to preserve the Flutter, backend,
 Simulator, device, and process snapshots after a failure; hosted CI uploads
 that directory before retaining its single reset-and-retry policy.

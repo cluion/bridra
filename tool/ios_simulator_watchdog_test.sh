@@ -14,6 +14,7 @@ flutter_pid_file=$test_root/flutter.pid
 flutter_terminated_file=$test_root/flutter.terminated
 flutter_child_pid_file=$test_root/flutter-child.pid
 flutter_child_terminated_file=$test_root/flutter-child.terminated
+xcrun_launch_file=$test_root/xcrun-launched
 
 cleanup_process() {
   pid_file=$1
@@ -56,6 +57,9 @@ case "$*" in
     ;;
   "simctl bootstatus BRIDRA-TEST-DEVICE -b")
     ;;
+  "simctl launch BRIDRA-TEST-DEVICE com.example.bridra")
+    echo launched >"$BRIDRA_TEST_XCRUN_LAUNCH_FILE"
+    ;;
   "simctl spawn BRIDRA-TEST-DEVICE log show"*Dart*VM*service*)
     case " $* " in
       *" --start @"*) ;;
@@ -94,6 +98,7 @@ cat >"$fake_bin/flutter" <<'EOF'
 set -eu
 echo "$$" >"$BRIDRA_TEST_FLUTTER_PID_FILE"
 trap 'echo terminated >"$BRIDRA_TEST_FLUTTER_TERMINATED_FILE"; exit 0' TERM INT
+xcrun simctl launch BRIDRA-TEST-DEVICE com.example.bridra
 "$BRIDRA_TEST_FLUTTER_CHILD" &
 echo "fake Flutter test started"
 while :; do
@@ -129,8 +134,9 @@ BRIDRA_SERVER_PATH="$fake_bin/backend" \
 BRIDRA_FLUTTER="$fake_bin/flutter" \
 BRIDRA_IOS_SIMULATOR_DEVICE=BRIDRA-TEST-DEVICE \
 BRIDRA_IOS_SIMULATOR_TIMEOUT_SECONDS=20 \
-BRIDRA_IOS_SIMULATOR_NO_PROGRESS_SECONDS=2 \
+BRIDRA_IOS_SIMULATOR_NO_PROGRESS_SECONDS=4 \
 BRIDRA_IOS_SIMULATOR_ATTACH_TIMEOUT_SECONDS=10 \
+BRIDRA_IOS_SIMULATOR_LAUNCH_DELAY_SECONDS=1 \
 BRIDRA_IOS_SIMULATOR_WATCHDOG_INTERVAL_SECONDS=1 \
 BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR="$diagnostics_dir" \
 BRIDRA_TEST_BACKEND_PID_FILE="$backend_pid_file" \
@@ -140,6 +146,7 @@ BRIDRA_TEST_FLUTTER_TERMINATED_FILE="$flutter_terminated_file" \
 BRIDRA_TEST_FLUTTER_CHILD="$fake_bin/flutter-child" \
 BRIDRA_TEST_FLUTTER_CHILD_PID_FILE="$flutter_child_pid_file" \
 BRIDRA_TEST_FLUTTER_CHILD_TERMINATED_FILE="$flutter_child_terminated_file" \
+BRIDRA_TEST_XCRUN_LAUNCH_FILE="$xcrun_launch_file" \
   "$smoke_script" >"$output_file" 2>&1
 status=$?
 set -e
@@ -156,7 +163,7 @@ if [ "$elapsed_seconds" -ge 15 ]; then
   exit 1
 fi
 
-grep -Fq "Flutter integration test produced no output for 2s." "$output_file"
+grep -Fq "Flutter integration test produced no output for 4s." "$output_file"
 grep -Fq "Saved iOS Simulator diagnostics to $diagnostics_dir" "$output_file"
 
 for diagnostic_file in \
@@ -173,11 +180,17 @@ for diagnostic_file in \
 done
 
 grep -Fq "exit_status=124" "$diagnostics_dir/summary.txt"
-grep -Fq "reason=Flutter integration test produced no output for 2s." \
+grep -Fq "reason=Flutter integration test produced no output for 4s." \
   "$diagnostics_dir/summary.txt"
 grep -Fq "fake Flutter test started" "$diagnostics_dir/flutter-test.log"
+grep -Fq "Delaying iOS Simulator launch by 1s for Flutter log reader readiness." \
+  "$diagnostics_dir/flutter-test.log"
 grep -Fq "server: listening on 127.0.0.1" "$diagnostics_dir/backend.log"
 grep -Fq "fake Runner diagnostic log" "$diagnostics_dir/runner.log"
+if [ ! -f "$xcrun_launch_file" ]; then
+  echo "Flutter did not delegate Simulator launch through the xcrun wrapper." >&2
+  exit 1
+fi
 
 if [ ! -f "$flutter_terminated_file" ]; then
   echo "Watchdog did not terminate the fake Flutter process." >&2
@@ -222,6 +235,7 @@ BRIDRA_IOS_SIMULATOR_DEVICE=BRIDRA-TEST-DEVICE \
 BRIDRA_IOS_SIMULATOR_TIMEOUT_SECONDS=20 \
 BRIDRA_IOS_SIMULATOR_NO_PROGRESS_SECONDS=10 \
 BRIDRA_IOS_SIMULATOR_ATTACH_TIMEOUT_SECONDS=2 \
+BRIDRA_IOS_SIMULATOR_LAUNCH_DELAY_SECONDS=1 \
 BRIDRA_IOS_SIMULATOR_WATCHDOG_INTERVAL_SECONDS=1 \
 BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR="$diagnostics_dir" \
 BRIDRA_TEST_BACKEND_PID_FILE="$backend_pid_file" \
@@ -231,6 +245,7 @@ BRIDRA_TEST_FLUTTER_TERMINATED_FILE="$flutter_terminated_file" \
 BRIDRA_TEST_FLUTTER_CHILD="$fake_bin/flutter-child" \
 BRIDRA_TEST_FLUTTER_CHILD_PID_FILE="$flutter_child_pid_file" \
 BRIDRA_TEST_FLUTTER_CHILD_TERMINATED_FILE="$flutter_child_terminated_file" \
+BRIDRA_TEST_XCRUN_LAUNCH_FILE="$xcrun_launch_file" \
 BRIDRA_TEST_RUNNER_ATTACH=1 \
 BRIDRA_TEST_FLUTTER_PROGRESS=1 \
   "$smoke_script" >"$output_file" 2>&1
