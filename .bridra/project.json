@@ -1,9 +1,10 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "projectName": "bridra",
   "goModule": "github.com/cluion/bridra/backend",
   "frameworkModule": "github.com/cluion/bridra/backend",
   "frameworkVersion": "0.15.0",
-  "templateVersion": 4,
-  "protocolVersion": 1
+  "templateVersion": 5,
+  "protocolVersion": 1,
+  "platforms": ["android", "ios", "linux", "macos", "windows", "web"]
 }

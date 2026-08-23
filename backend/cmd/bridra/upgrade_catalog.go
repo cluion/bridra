@@ -139,8 +139,8 @@ var registeredUpgradeReleases = []upgradeRelease{
 	},
 	{
 		FrameworkVersion:        "0.15.0",
-		ProjectMetadataVersion:  2,
-		TemplateVersion:         4,
+		ProjectMetadataVersion:  3,
+		TemplateVersion:         5,
 		TemplateProtocolVersion: 1,
 	},
 }

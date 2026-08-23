@@ -78,9 +78,9 @@ adding the necessary path fails verification.
 
 | Identity | Current | Compatibility rule |
 | --- | ---: | --- |
-| Project metadata schema | 2 | Schema 1 remains readable by core project commands but requires a metadata migration. A newer schema requires a newer CLI. |
+| Project metadata schema | 3 | Schemas 1 and 2 remain readable and conservatively imply all six platforms. A newer schema requires a newer CLI. |
 | Framework SemVer | 0.15.0 | The project and selected target must match. An older version requires a complete registered migration path; downgrade plans are rejected. |
-| Project Template | 4 | Template v4 adds generated `Application` ownership and bounded Sidecar shutdown while retaining the v3 deployed-schema baseline gate. Older templates require manual review. |
+| Project Template | 5 | Template v5 adds persisted platform scope and conditional runners, targets, checks, and documentation while retaining v4 lifecycle ownership. Older templates require manual review. |
 | Application RPC protocol | Application-owned | `.bridra/project.json`, `schema/bridra.json`, and generated Go/Dart contracts must agree exactly. It may be newer than the selected release's Project Template baseline. |
 
 Framework SemVer, the Project Template protocol baseline, and an application's
@@ -245,6 +245,30 @@ replaces Controllers, Services, Models, configuration, UI, or native runner
 files. Record the application's existing `schema/bridra.json`
 protocol value; `1` above is only the default for an unchanged generated project.
 
+## Project metadata schema 2 to 3
+
+Schema 3 adds the canonical `platforms` list. Upgrading schema 1 or 2 defaults to
+all six platforms so an automatic metadata migration cannot silently remove a
+runner or release target:
+
+```json
+{
+  "schemaVersion": 3,
+  "projectName": "your_app",
+  "goModule": "example.com/your/app",
+  "frameworkModule": "github.com/cluion/bridra/backend",
+  "frameworkVersion": "0.15.0",
+  "templateVersion": 5,
+  "protocolVersion": 1,
+  "platforms": ["android", "ios", "linux", "macos", "windows", "web"]
+}
+```
+
+New projects may select a narrower scope through `bridra create --platforms`.
+For an existing project, narrow the metadata only after reviewing and removing
+the corresponding application-owned runners, Make targets, CI jobs, signing,
+and release expectations. Bridra does not delete existing runner directories.
+
 ## Upgrade workflow
 
 1. Start from a clean version-control state and keep the current lockfiles.
@@ -267,6 +291,11 @@ Project Template v4 makes the generated Go Sidecar own a booted
 normal EOF, a Serve failure, or context cancellation. Stdio stop and application
 shutdown waits are independently bounded so a reader or provider that ignores
 cancellation cannot prevent the process from exiting.
+
+Project Template v5 and metadata schema 3 add canonical platform scope. New
+projects can select runners during `bridra create`; existing schema 1／2 projects
+upgrade conservatively to all six platforms. This does not change the RPC
+Protocol and does not authorize automatic runner deletion.
 
 This transition is manual because `backend/app` and
 `backend/cmd/sidecar/main.go` are application-owned and Bridra upgrades never

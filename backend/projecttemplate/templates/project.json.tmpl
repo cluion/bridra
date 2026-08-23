@@ -1,9 +1,10 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "projectName": "{{.ProjectName}}",
   "goModule": "{{.GoModule}}",
   "frameworkModule": "{{.BridraGoModule}}",
   "frameworkVersion": "{{.FrameworkVersion}}",
   "templateVersion": {{.TemplateVersion}},
-  "protocolVersion": {{.ProtocolVersion}}
+  "protocolVersion": {{.ProtocolVersion}},
+  "platforms": [{{range $index, $platform := .Platforms}}{{if $index}}, {{end}}{{quote $platform}}{{end}}]
 }

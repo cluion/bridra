@@ -2,7 +2,8 @@
 
 {{.Description}}
 
-This project was created with Bridra 0.1 Project Template v2. It keeps Flutter
+This project was created with Bridra {{.FrameworkVersion}} Project Template
+v{{.TemplateVersion}} for: {{range $index, $platform := .Platforms}}{{if $index}}, {{end}}`{{$platform}}`{{end}}. It keeps Flutter
 responsible for the cross-platform interface and Go responsible for middleware,
 request validation, controllers, services, models, and transports.
 
@@ -16,12 +17,14 @@ make verify
 make run
 ```
 
-On macOS, `make macos-native-test` verifies the native lifecycle bridge used to
+{{if hasPlatform "macos"}}On macOS, `make macos-native-test` verifies the native lifecycle bridge used to
 terminate an acknowledged secondary application instance before it enters
 `runApp`.
 
+{{end}}
 `make run` builds the Go sidecar, exposes its path to Flutter, and starts the
-current Flutter desktop target. Mobile and Web use the HTTP backend:
+current Flutter target. Desktop uses the Sidecar by default; selected Mobile and
+Web targets use the HTTP backend:
 
 ```bash
 make backend-serve
@@ -42,7 +45,7 @@ go run {{.BridraGoModule}}/cmd/bridra dev --root .. --device chrome
 Mobile and custom devices require `--listen 0.0.0.0:<port>` plus an explicit
 `--backend-url` reachable from the device.
 
-With an Android Emulator already running, exercise the generated app and a real
+{{if hasPlatform "android"}}With an Android Emulator already running, exercise the generated app and a real
 temporary Go backend without Android hardware:
 
 ```bash
@@ -54,7 +57,7 @@ ordered Streaming/Progress, interrupted and resumed managed downloads/uploads,
 a backend outage, and the complete flow again after reconnect. Debug and Profile
 manifests allow local cleartext traffic; Release keeps Android's secure default.
 
-On macOS with full Xcode, exercise the generated iOS app and real Go HTTP
+{{end}}{{if hasPlatform "ios"}}On macOS with full Xcode, exercise the generated iOS app and real Go HTTP
 backend in a Simulator or on a trusted physical iPhone:
 
 ```bash
@@ -80,19 +83,22 @@ Configure an Apple Development Team before running it and accept the one-time
 Local Network prompt for a new bundle identifier; signing remains
 application-owned.
 
+{{end}}
 ## Builds
 
-Build desktop Sidecar bundles or mobile/Web HTTP artifacts through the same local
+Build selected desktop Sidecar bundles or mobile/Web HTTP artifacts through the same local
 Bridra CLI dependency:
 
 ```bash
-make macos-build
-make linux-build
-make windows-build
-
-make web-build \
+{{if hasPlatform "macos"}}make macos-build
+{{end}}{{if hasPlatform "linux"}}make linux-build
+{{end}}{{if hasPlatform "windows"}}make windows-build
+{{end}}{{if hasPlatform "android"}}make android-build BACKEND_URL=https://api.example.com/rpc
+{{end}}{{if hasPlatform "ios"}}make ios-build BACKEND_URL=https://api.example.com/rpc
+{{end}}{{if hasPlatform "web"}}make web-build \
   BACKEND_URL=https://api.example.com/rpc \
   BACKEND_TOKEN=replace-me
+{{end}}
 ```
 
 Set `BUILD_MODE=debug`, `profile`, or `release`. Profile and release HTTP builds

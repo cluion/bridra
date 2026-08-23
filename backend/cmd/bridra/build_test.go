@@ -387,6 +387,34 @@ func TestBuildRejectsInvalidOptions(t *testing.T) {
 	}
 }
 
+func TestBuildRejectsTargetOutsideProjectPlatformScope(t *testing.T) {
+	root := buildProjectRoot(t)
+	metadata := `{
+  "schemaVersion": 3,
+  "projectName": "example",
+  "goModule": "example.test/app",
+  "frameworkModule": "github.com/cluion/bridra/backend",
+  "frameworkVersion": "0.15.0",
+  "templateVersion": 5,
+  "protocolVersion": 1,
+  "platforms": ["web"]
+}
+`
+	if err := os.WriteFile(
+		filepath.Join(root, ".bridra", "project.json"),
+		[]byte(metadata),
+		0o644,
+	); err != nil {
+		t.Fatalf("write metadata: %v", err)
+	}
+	_, err := (buildCommand{system: buildTestSystem("linux", "amd64")}).resolveOptions(
+		buildOptions{root: root, target: buildTargetLinux, mode: buildModeRelease},
+	)
+	if !errors.Is(err, errBuildInvalid) || !strings.Contains(err.Error(), "not selected") {
+		t.Fatalf("error = %v, want unselected target", err)
+	}
+}
+
 func TestBuildInvalidProjectPreservesProjectError(t *testing.T) {
 	root := makeProjectRoot(t, validProjectMetadata+"{}")
 	command := buildCommand{system: buildTestSystem("linux", "amd64")}

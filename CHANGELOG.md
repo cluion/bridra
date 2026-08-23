@@ -25,6 +25,9 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 - Added public Go `framework.NestedListField` and
   `framework.OptionalNestedListField` rules for generated and application-owned
   structured lists.
+- Added `bridra create --platforms` with `all`, `desktop`, `mobile`, and custom
+  selections. Generated projects persist the canonical scope and conditionally
+  include platform-owned runner patches, smoke scripts, Make targets, and docs.
 
 ### Changed
 
@@ -38,9 +41,9 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 - Invalid RPC method names now report the required lowercase dot-separated
   format and a valid example instead of only reporting that the value is invalid.
 
-Project metadata schema `2` and template RPC protocol baseline `1` remain
-unchanged. The Dart and Go public API changes are additive and do not alter the
-RPC wire protocol.
+Project metadata schema advances to `3` and Project Template to `5` for persisted
+platform scope; template RPC protocol baseline `1` remains unchanged. The Dart
+and Go public API changes are additive and do not alter the RPC wire protocol.
 
 ## [0.14.0] - 2026-08-23
 

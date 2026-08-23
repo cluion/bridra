@@ -324,8 +324,8 @@ publication.
 
 ## Create a Bridra project
 
-`bridra create` builds a new six-platform Flutter application and Go backend in
-a staging directory, verifies the generated Go consumer, resolves Flutter
+`bridra create` builds a Flutter application and Go backend in a staging
+directory, verifies the generated Go consumer, resolves Flutter
 dependencies, and only then atomically publishes the destination:
 
 ```bash
@@ -333,6 +333,22 @@ bridra create hello_app \
   --module example.com/your-name/hello-backend \
   --directory ../hello_app
 ```
+
+All six Flutter platforms remain the backward-compatible default. Select a
+preset or explicit subset when needed:
+
+```bash
+bridra create desktop_app --module example.com/acme/desktop --platforms desktop
+bridra create mobile_app --module example.com/acme/mobile --platforms mobile
+bridra create focused_app --module example.com/acme/focused --platforms macos,web
+```
+
+`desktop` expands to Linux, macOS, and Windows; `mobile` expands to Android and
+iOS. Custom lists accept `android`, `ios`, `linux`, `macos`, `windows`, and
+`web`, reject duplicates, and are stored in canonical order. The selection
+drives Flutter runner creation, platform-owned template patches and smoke
+scripts, Make targets, project documentation, build authorization, diagnostics,
+and host-tool checks.
 
 Framework contributors can explicitly use the current checkout while developing
 or testing unreleased changes:
@@ -347,7 +363,7 @@ go run ./cmd/bridra create hello_app \
 
 The generated starter includes:
 
-- Flutter runners for Android, iOS, Linux, macOS, Windows, and Web
+- Flutter runners for the selected platforms
 - Go Sidecar and HTTP server entrypoints
 - Middleware, Controller, Service, Model, and Response examples
 - schema-driven Go/Dart contracts
@@ -368,8 +384,8 @@ make doctor
 make verify
 ```
 
-Generated projects record project metadata schema, framework, template, and RPC
-protocol versions in `.bridra/project.json`. `bridra upgrade` defaults to a
+Generated projects record project metadata schema, framework, template, RPC
+protocol, and selected platforms in `.bridra/project.json`. `bridra upgrade` defaults to a
 read-only plan; `--to` selects a known target and the CLI refuses incomplete
 cross-version paths without modifying any project file. `--apply` is available
 only when every step is automatic; it synchronizes Go, Flutter, lockfiles, and

@@ -15,6 +15,7 @@ import (
 	"text/template"
 
 	"github.com/cluion/bridra/backend/codegen"
+	"github.com/cluion/bridra/backend/internal/projectplatform"
 	"github.com/cluion/bridra/backend/internal/releaseinfo"
 )
 
@@ -45,6 +46,8 @@ type Config struct {
 	TemplateVersion      int
 	ProtocolVersion      int
 	LocalDependencies    bool
+	Platforms            []string
+	PlatformSummary      string
 }
 
 type Manifest struct {
@@ -53,9 +56,10 @@ type Manifest struct {
 }
 
 type ManifestFile struct {
-	Source      string `json:"source"`
-	Destination string `json:"destination"`
-	Mode        string `json:"mode"`
+	Source      string   `json:"source"`
+	Destination string   `json:"destination"`
+	Mode        string   `json:"mode"`
+	Platforms   []string `json:"platforms,omitempty"`
 }
 
 func LoadManifest() (Manifest, error) {
@@ -76,11 +80,25 @@ func LoadManifest() (Manifest, error) {
 	if len(manifest.Files) == 0 {
 		return Manifest{}, errors.New("project template: manifest contains no files")
 	}
+	for _, file := range manifest.Files {
+		if len(file.Platforms) == 0 {
+			continue
+		}
+		if _, err := projectplatform.Normalize(file.Platforms); err != nil {
+			return Manifest{}, fmt.Errorf(
+				"project template: invalid platforms for %s: %w",
+				file.Destination,
+				err,
+			)
+		}
+	}
 	return manifest, nil
 }
 
 func Render(root string, config Config) error {
-	if err := validateConfig(config); err != nil {
+	var err error
+	config, err = normalizeConfig(config)
+	if err != nil {
 		return err
 	}
 	manifest, err := LoadManifest()
@@ -88,6 +106,9 @@ func Render(root string, config Config) error {
 		return err
 	}
 	for _, file := range manifest.Files {
+		if !manifestFileSelected(file, config.Platforms) {
+			continue
+		}
 		if err := renderFile(root, file, config); err != nil {
 			return err
 		}
@@ -158,7 +179,12 @@ func renderFile(root string, file ManifestFile, config Config) error {
 	}
 	parsed, err := template.New(file.Source).
 		Option("missingkey=error").
-		Funcs(template.FuncMap{"quote": strconv.Quote}).
+		Funcs(template.FuncMap{
+			"quote": strconv.Quote,
+			"hasPlatform": func(platform string) bool {
+				return projectplatform.Contains(config.Platforms, platform)
+			},
+		}).
 		Parse(string(source))
 	if err != nil {
 		return fmt.Errorf("project template: parse %s: %w", file.Source, err)
@@ -185,7 +211,7 @@ func renderFile(root string, file ManifestFile, config Config) error {
 	return nil
 }
 
-func validateConfig(config Config) error {
+func normalizeConfig(config Config) (Config, error) {
 	values := map[string]string{
 		"project name": config.ProjectName, "display name": config.DisplayName,
 		"organization": config.Organization, "Go module": config.GoModule,
@@ -198,30 +224,52 @@ func validateConfig(config Config) error {
 	}
 	for name, value := range values {
 		if strings.TrimSpace(value) == "" {
-			return fmt.Errorf("%w: %s is required", ErrInvalidConfiguration, name)
+			return Config{}, fmt.Errorf("%w: %s is required", ErrInvalidConfiguration, name)
 		}
 	}
 	if config.TemplateVersion < 1 {
-		return fmt.Errorf("%w: template version must be positive", ErrInvalidConfiguration)
+		return Config{}, fmt.Errorf("%w: template version must be positive", ErrInvalidConfiguration)
 	}
 	if config.ProtocolVersion < 1 {
-		return fmt.Errorf("%w: protocol version must be positive", ErrInvalidConfiguration)
+		return Config{}, fmt.Errorf("%w: protocol version must be positive", ErrInvalidConfiguration)
 	}
 	if config.LocalDependencies {
 		if strings.TrimSpace(config.BridraGoPath) == "" {
-			return fmt.Errorf("%w: Bridra Go path is required in local dependency mode", ErrInvalidConfiguration)
+			return Config{}, fmt.Errorf("%w: Bridra Go path is required in local dependency mode", ErrInvalidConfiguration)
 		}
 		if strings.TrimSpace(config.BridraFlutterPath) == "" {
-			return fmt.Errorf("%w: Bridra Flutter path is required in local dependency mode", ErrInvalidConfiguration)
+			return Config{}, fmt.Errorf("%w: Bridra Flutter path is required in local dependency mode", ErrInvalidConfiguration)
 		}
 	} else if strings.TrimSpace(config.BridraGoPath) != "" ||
 		strings.TrimSpace(config.BridraFlutterPath) != "" {
-		return fmt.Errorf(
+		return Config{}, fmt.Errorf(
 			"%w: local dependency paths require local dependency mode",
 			ErrInvalidConfiguration,
 		)
 	}
-	return nil
+	if len(config.Platforms) == 0 {
+		config.Platforms = projectplatform.CloneAll()
+	} else {
+		platforms, err := projectplatform.Normalize(config.Platforms)
+		if err != nil {
+			return Config{}, fmt.Errorf("%w: platforms: %v", ErrInvalidConfiguration, err)
+		}
+		config.Platforms = platforms
+	}
+	config.PlatformSummary = projectplatform.Summary(config.Platforms)
+	return config, nil
+}
+
+func manifestFileSelected(file ManifestFile, platforms []string) bool {
+	if len(file.Platforms) == 0 {
+		return true
+	}
+	for _, platform := range file.Platforms {
+		if projectplatform.Contains(platforms, platform) {
+			return true
+		}
+	}
+	return false
 }
 
 func safeRelativePath(path string) bool {

@@ -9,19 +9,21 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/cluion/bridra/backend/internal/projectplatform"
 	"github.com/cluion/bridra/backend/internal/releaseinfo"
 )
 
 var errProjectInvalid = errors.New("invalid Bridra project")
 
 type projectMetadata struct {
-	SchemaVersion    int    `json:"schemaVersion"`
-	ProjectName      string `json:"projectName"`
-	GoModule         string `json:"goModule"`
-	FrameworkModule  string `json:"frameworkModule"`
-	FrameworkVersion string `json:"frameworkVersion,omitempty"`
-	TemplateVersion  int    `json:"templateVersion,omitempty"`
-	ProtocolVersion  int    `json:"protocolVersion,omitempty"`
+	SchemaVersion    int      `json:"schemaVersion"`
+	ProjectName      string   `json:"projectName"`
+	GoModule         string   `json:"goModule"`
+	FrameworkModule  string   `json:"frameworkModule"`
+	FrameworkVersion string   `json:"frameworkVersion,omitempty"`
+	TemplateVersion  int      `json:"templateVersion,omitempty"`
+	ProtocolVersion  int      `json:"protocolVersion,omitempty"`
+	Platforms        []string `json:"platforms,omitempty"`
 }
 
 func loadProjectMetadata(root string) (projectMetadata, error) {
@@ -42,6 +44,17 @@ func loadProjectMetadata(root string) (projectMetadata, error) {
 			err,
 		)
 	}
+	metadata, err := decodeProjectMetadata(contents)
+	if err != nil {
+		return projectMetadata{}, err
+	}
+	if err := validateProjectLayout(root); err != nil {
+		return projectMetadata{}, err
+	}
+	return metadata, nil
+}
+
+func decodeProjectMetadata(contents []byte) (projectMetadata, error) {
 	var metadata projectMetadata
 	decoder := json.NewDecoder(strings.NewReader(string(contents)))
 	decoder.DisallowUnknownFields()
@@ -54,7 +67,8 @@ func loadProjectMetadata(root string) (projectMetadata, error) {
 			errProjectInvalid,
 		)
 	}
-	if metadata.SchemaVersion != 1 && metadata.SchemaVersion != releaseinfo.ProjectMetadataVersion {
+	if metadata.SchemaVersion != 1 && metadata.SchemaVersion != 2 &&
+		metadata.SchemaVersion != releaseinfo.ProjectMetadataVersion {
 		return projectMetadata{}, fmt.Errorf(
 			"%w: unsupported project metadata version %d",
 			errProjectInvalid,
@@ -62,13 +76,20 @@ func loadProjectMetadata(root string) (projectMetadata, error) {
 		)
 	}
 	if metadata.SchemaVersion == 1 && (metadata.FrameworkVersion != "" ||
-		metadata.TemplateVersion != 0 || metadata.ProtocolVersion != 0) {
+		metadata.TemplateVersion != 0 || metadata.ProtocolVersion != 0 ||
+		len(metadata.Platforms) != 0) {
 		return projectMetadata{}, fmt.Errorf(
 			"%w: project metadata version 1 cannot declare version contract fields",
 			errProjectInvalid,
 		)
 	}
-	if metadata.SchemaVersion == releaseinfo.ProjectMetadataVersion {
+	if metadata.SchemaVersion == 2 && len(metadata.Platforms) != 0 {
+		return projectMetadata{}, fmt.Errorf(
+			"%w: project metadata version 2 cannot declare platforms",
+			errProjectInvalid,
+		)
+	}
+	if metadata.SchemaVersion >= 2 {
 		if _, err := parseSemanticVersion(metadata.FrameworkVersion); err != nil {
 			return projectMetadata{}, fmt.Errorf(
 				"%w: frameworkVersion must be a semantic version: %v",
@@ -83,6 +104,19 @@ func loadProjectMetadata(root string) (projectMetadata, error) {
 			)
 		}
 	}
+	if metadata.SchemaVersion < releaseinfo.ProjectMetadataVersion {
+		metadata.Platforms = projectplatform.CloneAll()
+	} else {
+		platforms, err := projectplatform.Normalize(metadata.Platforms)
+		if err != nil {
+			return projectMetadata{}, fmt.Errorf(
+				"%w: platforms: %v",
+				errProjectInvalid,
+				err,
+			)
+		}
+		metadata.Platforms = platforms
+	}
 	if strings.TrimSpace(metadata.ProjectName) == "" ||
 		strings.TrimSpace(metadata.GoModule) == "" ||
 		strings.TrimSpace(metadata.FrameworkModule) == "" {
@@ -90,9 +124,6 @@ func loadProjectMetadata(root string) (projectMetadata, error) {
 			"%w: projectName, goModule, and frameworkModule are required",
 			errProjectInvalid,
 		)
-	}
-	if err := validateProjectLayout(root); err != nil {
-		return projectMetadata{}, err
 	}
 	return metadata, nil
 }

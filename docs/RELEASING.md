@@ -290,8 +290,9 @@ API plus a native runner gate. It also adds scalar integer schema bounds,
 generated public Go validation rules, compatibility coverage, and actionable
 method-name diagnostics. Reusable named schema objects and structured object
 arrays generate deduplicated Go／Dart models, indexed nested validation, and
-reference-resolved compatibility reports. Project metadata
-schema `2` and template protocol baseline `1` remain unchanged; every migration
+reference-resolved compatibility reports. Project Template `5` and project
+metadata schema `3` add canonical platform scope for generated runners, targets,
+checks, and documentation. Template protocol baseline `1` remains unchanged; every migration
 preserves each application's internally consistent RPC protocol.
 
 The project-facing compatibility matrix, deprecation window, manual migration

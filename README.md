@@ -118,6 +118,11 @@ make verify
 make run
 ```
 
+The six-platform scope remains the default. Use `--platforms desktop`,
+`--platforms mobile`, or a custom list such as `--platforms macos,web` when the
+product intentionally supports a smaller set. The selected scope is committed
+in `.bridra/project.json` and drives generated runners, targets, and checks.
+
 The generated project owns its Flutter UI, Go application layers, current RPC
 schema, immutable deployed-schema baseline, native runners, and tests. Framework
 packages remain versioned dependencies, so application code can evolve

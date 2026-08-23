@@ -17,6 +17,7 @@ import (
 	"unicode"
 
 	"github.com/cluion/bridra/backend/framework"
+	"github.com/cluion/bridra/backend/internal/projectplatform"
 	"github.com/cluion/bridra/backend/internal/releaseinfo"
 	"github.com/cluion/bridra/backend/projecttemplate"
 )
@@ -97,6 +98,7 @@ Options:
   --display-name text Product display name (default derived from <name>)
   --description text  Project description
   --organization id   Reverse-domain application organization (default com.example)
+  --platforms value   all, desktop, mobile, or a comma-separated platform list (default all)
 
 Default dependencies:
   %s %s
@@ -126,6 +128,7 @@ func (item createCommand) run(arguments []string, stdout, stderr io.Writer) erro
 	displayName := flags.String("display-name", "", "product display name")
 	description := flags.String("description", "A Go-powered Flutter application.", "project description")
 	organization := flags.String("organization", "com.example", "reverse-domain application organization")
+	platforms := flags.String("platforms", "all", "platform preset or comma-separated list")
 	if err := flags.Parse(flagArguments); err != nil {
 		return fmt.Errorf("%w: %v", errUsage, err)
 	}
@@ -143,6 +146,7 @@ func (item createCommand) run(arguments []string, stdout, stderr io.Writer) erro
 		displayName:  *displayName,
 		description:  *description,
 		organization: *organization,
+		platforms:    *platforms,
 	})
 	if err != nil {
 		return err
@@ -151,14 +155,16 @@ func (item createCommand) run(arguments []string, stdout, stderr io.Writer) erro
 }
 
 type createOptions struct {
-	projectName  string
-	module       string
-	bridraRoot   string
-	directory    string
-	displayName  string
-	description  string
-	organization string
-	source       bridraSource
+	projectName       string
+	module            string
+	bridraRoot        string
+	directory         string
+	displayName       string
+	description       string
+	organization      string
+	platforms         string
+	selectedPlatforms []string
+	source            bridraSource
 }
 
 func (item createCommand) resolveOptions(options createOptions) (createOptions, error) {
@@ -186,6 +192,11 @@ func (item createCommand) resolveOptions(options createOptions) (createOptions, 
 	if strings.TrimSpace(options.displayName) == "" {
 		return createOptions{}, fmt.Errorf("%w: display name cannot be empty", errCreateInvalid)
 	}
+	selectedPlatforms, err := projectplatform.Resolve(options.platforms)
+	if err != nil {
+		return createOptions{}, fmt.Errorf("%w: --platforms: %v", errCreateInvalid, err)
+	}
+	options.selectedPlatforms = selectedPlatforms
 	if options.directory == "" {
 		options.directory = options.projectName
 	}
@@ -264,7 +275,7 @@ func (item createCommand) create(options createOptions, stdout io.Writer) (resul
 		"flutter", "create", "--no-pub",
 		"--project-name", options.projectName,
 		"--org", options.organization,
-		"--platforms", "android,ios,linux,macos,windows,web",
+		"--platforms", strings.Join(options.selectedPlatforms, ","),
 		".",
 	); err != nil {
 		return fmt.Errorf("create: Flutter runners: %w", err)
@@ -287,6 +298,7 @@ func (item createCommand) create(options createOptions, stdout io.Writer) (resul
 		TemplateVersion:      releaseinfo.ProjectTemplateVersion,
 		ProtocolVersion:      framework.ProtocolVersion,
 		LocalDependencies:    options.source.localDependencies,
+		Platforms:            options.selectedPlatforms,
 	}); err != nil {
 		return fmt.Errorf("create: render project: %w", err)
 	}

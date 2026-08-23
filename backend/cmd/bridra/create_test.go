@@ -59,7 +59,11 @@ func TestCreateBuildsAndAtomicallyPublishesProject(t *testing.T) {
 		)
 	}
 	if invocations[0].name != "fvm" ||
-		!containsArguments(invocations[0].arguments, "flutter", "create", "--no-pub") {
+		!containsArguments(invocations[0].arguments, "flutter", "create", "--no-pub") ||
+		!containsArguments(
+			invocations[0].arguments,
+			"--platforms", "android,ios,linux,macos,windows,web",
+		) {
 		t.Fatalf("Flutter create invocation = %#v", invocations[0])
 	}
 	if invocations[1].name != "go" ||
@@ -116,6 +120,76 @@ func TestCreateBuildsAndAtomicallyPublishesProject(t *testing.T) {
 	}
 	if len(entries) != 1 || entries[0].Name() != "hello_app" {
 		t.Fatalf("parent entries = %#v", entries)
+	}
+}
+
+func TestCreateSupportsDesktopAndCustomPlatformSelection(t *testing.T) {
+	tests := []struct {
+		name           string
+		selection      string
+		wantFlutter    string
+		wantMetadata   string
+		wantTarget     string
+		unwantedTarget string
+	}{
+		{
+			name: "desktop preset", selection: "desktop",
+			wantFlutter: "linux,macos,windows", wantMetadata: `"platforms": ["linux", "macos", "windows"]`,
+			wantTarget: "macos-build:", unwantedTarget: "android-build:",
+		},
+		{
+			name: "custom canonical order", selection: "web,macos",
+			wantFlutter: "macos,web", wantMetadata: `"platforms": ["macos", "web"]`,
+			wantTarget: "web-build:", unwantedTarget: "ios-build:",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			parent := t.TempDir()
+			destination := filepath.Join(parent, "selected_app")
+			var invocations []createInvocation
+			system := testCreateSystem(func(
+				_ context.Context,
+				directory string,
+				name string,
+				arguments ...string,
+			) ([]byte, error) {
+				invocations = append(invocations, createInvocation{
+					directory: directory,
+					name:      name,
+					arguments: append([]string(nil), arguments...),
+				})
+				return nil, nil
+			})
+			err := (createCommand{system: system}).run([]string{
+				"selected_app",
+				"--module", "example.test/acme/selected",
+				"--bridra-root", repositoryRoot(t),
+				"--directory", destination,
+				"--platforms", test.selection,
+			}, &bytes.Buffer{}, &bytes.Buffer{})
+			if err != nil {
+				t.Fatalf("create: %v", err)
+			}
+			if !containsArguments(invocations[0].arguments, "--platforms", test.wantFlutter) {
+				t.Fatalf("Flutter create invocation = %#v", invocations[0])
+			}
+			metadata, err := os.ReadFile(filepath.Join(destination, ".bridra", "project.json"))
+			if err != nil {
+				t.Fatalf("read metadata: %v", err)
+			}
+			if !strings.Contains(string(metadata), test.wantMetadata) {
+				t.Fatalf("metadata = %s", metadata)
+			}
+			makefile, err := os.ReadFile(filepath.Join(destination, "Makefile"))
+			if err != nil {
+				t.Fatalf("read Makefile: %v", err)
+			}
+			if !strings.Contains(string(makefile), test.wantTarget) ||
+				strings.Contains(string(makefile), test.unwantedTarget) {
+				t.Fatalf("Makefile = %s", makefile)
+			}
+		})
 	}
 }
 
@@ -352,6 +426,30 @@ func TestCreateRejectsInvalidNameAndExistingDestination(t *testing.T) {
 				t.Fatalf("error = %v, want %q", err, test.want)
 			}
 		})
+	}
+}
+
+func TestCreateRejectsInvalidPlatformSelectionBeforeStartingProcesses(t *testing.T) {
+	parent := t.TempDir()
+	system := testCreateSystem(func(
+		context.Context,
+		string,
+		string,
+		...string,
+	) ([]byte, error) {
+		t.Fatal("process runner must not be called")
+		return nil, nil
+	})
+	for _, selection := range []string{"linux,linux", "visionos", "linux,"} {
+		err := (createCommand{system: system}).run([]string{
+			"invalid_platform_app",
+			"--module", "example.test/acme/app",
+			"--directory", filepath.Join(parent, strings.ReplaceAll(selection, ",", "_")),
+			"--platforms", selection,
+		}, &bytes.Buffer{}, &bytes.Buffer{})
+		if !errors.Is(err, errCreateInvalid) || !strings.Contains(err.Error(), "--platforms") {
+			t.Fatalf("selection %q error = %v", selection, err)
+		}
 	}
 }
 

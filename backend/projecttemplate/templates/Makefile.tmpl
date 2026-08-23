@@ -14,13 +14,20 @@ SERVER := $(CURDIR)/build/server/bridra_server$(EXECUTABLE_SUFFIX)
 BACKEND_TOKEN ?= dev-token
 BACKEND_URL ?=
 BUILD_MODE ?= release
-IOS_SIMULATOR_PORT ?= 18080
+{{if hasPlatform "ios"}}IOS_SIMULATOR_PORT ?= 18080
 IOS_DEVICE_PORT ?= 18081
 IOS_DEVICE_HOST ?=
-ANDROID_EMULATOR_PORT ?= 18082
+{{end}}{{if hasPlatform "android"}}ANDROID_EMULATOR_PORT ?= 18082
+{{end}}
 
-.PHONY: doctor generate schema-check codegen-check backend-build backend-serve run test analyze verify \
-	linux-build macos-build macos-native-test windows-build android-build android-emulator-smoke ios-build ios-simulator-smoke ios-device-smoke web-build
+.PHONY: doctor generate schema-check codegen-check backend-build backend-serve run test analyze verify
+{{if hasPlatform "linux"}}.PHONY: linux-build
+{{end}}{{if hasPlatform "macos"}}.PHONY: macos-build macos-native-test
+{{end}}{{if hasPlatform "windows"}}.PHONY: windows-build
+{{end}}{{if hasPlatform "android"}}.PHONY: android-build android-emulator-smoke
+{{end}}{{if hasPlatform "ios"}}.PHONY: ios-build ios-simulator-smoke ios-device-smoke
+{{end}}{{if hasPlatform "web"}}.PHONY: web-build
+{{end}}
 
 doctor:
 	cd backend && $(BRIDRA) doctor --root ..
@@ -65,10 +72,10 @@ analyze:
 
 verify: doctor schema-check codegen-check test analyze
 
-linux-build:
+{{if hasPlatform "linux"}}linux-build:
 	cd backend && $(BRIDRA) build linux --root .. --mode $(BUILD_MODE)
 
-macos-build:
+{{end}}{{if hasPlatform "macos"}}macos-build:
 	cd backend && $(BRIDRA) build macos --root .. --mode $(BUILD_MODE)
 
 macos-native-test:
@@ -79,10 +86,10 @@ macos-native-test:
 		-configuration Debug \
 		-destination 'platform=macOS'
 
-windows-build:
+{{end}}{{if hasPlatform "windows"}}windows-build:
 	cd backend && $(BRIDRA) build windows --root .. --mode $(BUILD_MODE)
 
-android-build:
+{{end}}{{if hasPlatform "android"}}android-build:
 	cd backend && $(BRIDRA) build android --root .. --mode $(BUILD_MODE) \
 		--backend-url '$(BACKEND_URL)' --token '$(BACKEND_TOKEN)'
 
@@ -93,7 +100,7 @@ android-emulator-smoke: backend-build
 		BRIDRA_ANDROID_EMULATOR_PORT='$(ANDROID_EMULATOR_PORT)' \
 		./tool/android_emulator_smoke.sh
 
-ios-build:
+{{end}}{{if hasPlatform "ios"}}ios-build:
 	cd backend && $(BRIDRA) build ios --root .. --mode $(BUILD_MODE) \
 		--backend-url '$(BACKEND_URL)' --token '$(BACKEND_TOKEN)'
 
@@ -112,6 +119,7 @@ ios-device-smoke: backend-build
 		BRIDRA_IOS_DEVICE_PORT='$(IOS_DEVICE_PORT)' \
 		./tool/ios_device_smoke.sh
 
-web-build:
+{{end}}{{if hasPlatform "web"}}web-build:
 	cd backend && $(BRIDRA) build web --root .. --mode $(BUILD_MODE) \
 		--backend-url '$(BACKEND_URL)' --token '$(BACKEND_TOKEN)'
+{{end}}

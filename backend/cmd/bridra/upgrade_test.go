@@ -81,7 +81,7 @@ func TestUpgradeCheckExplainsLegacyNMinusOneMetadataWithoutWriting(t *testing.T)
 		len(report.Diagnostics) != 1 || report.Diagnostics[0].Code != "legacy_project_metadata" {
 		t.Fatalf("report = %#v", report)
 	}
-	if !strings.Contains(report.Diagnostics[0].Action, "schema 2") {
+	if !strings.Contains(report.Diagnostics[0].Action, "schema 3") {
 		t.Fatalf("migration action = %q", report.Diagnostics[0].Action)
 	}
 	assertFileContents(t, applicationPath, applicationContents)
@@ -105,7 +105,7 @@ func TestUpgradeCheckReportsOlderAndNewerContracts(t *testing.T) {
 		{
 			name: "newer metadata schema",
 			metadata: `{
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "projectName": "example",
   "goModule": "example.test/app",
   "frameworkModule": "github.com/cluion/bridra/backend",
@@ -1114,7 +1114,7 @@ func TestCurrentUpgradeCatalogPlansApplicationLifecycleForCustomProtocol(t *test
 		report.ApplyAvailable || len(report.Steps) != 2 ||
 		report.Steps[0].ID != "framework-0.14.0-to-0.15.0" ||
 		report.Steps[0].Automatic ||
-		report.Steps[1].ID != "template-3-to-4" ||
+		report.Steps[1].ID != "template-3-to-5" ||
 		report.Steps[1].Automatic ||
 		report.Project.ProtocolVersion != 3 ||
 		report.Target.TemplateProtocolVersion != 1 ||
@@ -1340,7 +1340,7 @@ func makeUpgradeProjectRoot(t *testing.T, metadataJSON string) string {
 	if err := json.Unmarshal([]byte(metadataJSON), &metadata); err != nil {
 		return root
 	}
-	if metadata.SchemaVersion == releaseinfo.ProjectMetadataVersion &&
+	if metadata.SchemaVersion >= 2 &&
 		metadata.ProtocolVersion > 0 {
 		writeApplicationRPCFixture(t, root, metadata)
 	}
@@ -1398,6 +1398,20 @@ func assertTestFileContains(t *testing.T, path, expected string) {
 }
 
 func currentProjectMetadata(frameworkVersion string, templateVersion, protocolVersion int) string {
+	if frameworkVersion == releaseinfo.Version &&
+		templateVersion == releaseinfo.ProjectTemplateVersion {
+		return fmt.Sprintf(`{
+  "schemaVersion": 3,
+  "projectName": "example",
+  "goModule": "example.test/app",
+  "frameworkModule": "github.com/cluion/bridra/backend",
+  "frameworkVersion": %q,
+  "templateVersion": %d,
+  "protocolVersion": %d,
+  "platforms": ["android", "ios", "linux", "macos", "windows", "web"]
+}
+`, frameworkVersion, templateVersion, protocolVersion)
+	}
 	return fmt.Sprintf(`{
   "schemaVersion": 2,
   "projectName": "example",

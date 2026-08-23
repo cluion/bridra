@@ -361,16 +361,18 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 		t.Fatalf("read generated project metadata: %v", err)
 	}
 	var metadata struct {
-		SchemaVersion    int    `json:"schemaVersion"`
-		FrameworkVersion string `json:"frameworkVersion"`
-		TemplateVersion  int    `json:"templateVersion"`
-		ProtocolVersion  int    `json:"protocolVersion"`
+		SchemaVersion    int      `json:"schemaVersion"`
+		FrameworkVersion string   `json:"frameworkVersion"`
+		TemplateVersion  int      `json:"templateVersion"`
+		ProtocolVersion  int      `json:"protocolVersion"`
+		Platforms        []string `json:"platforms"`
 	}
 	if err := json.Unmarshal(projectMetadata, &metadata); err != nil {
 		t.Fatalf("decode generated project metadata: %v", err)
 	}
-	if metadata.SchemaVersion != 2 || metadata.FrameworkVersion != "0.1.0" ||
-		metadata.TemplateVersion != 2 || metadata.ProtocolVersion != 1 {
+	if metadata.SchemaVersion != 3 || metadata.FrameworkVersion != "0.1.0" ||
+		metadata.TemplateVersion != 2 || metadata.ProtocolVersion != 1 ||
+		len(metadata.Platforms) != 6 {
 		t.Fatalf("generated project metadata = %#v", metadata)
 	}
 	serverSource, err := os.ReadFile(filepath.Join(root, "backend", "cmd", "server", "main.go"))
@@ -449,6 +451,61 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 		if !strings.Contains(string(generatedMakefile), expected) {
 			t.Fatalf("generated Makefile does not contain %q:\n%s", expected, generatedMakefile)
 		}
+	}
+}
+
+func TestRenderSelectsPlatformOwnedFilesTargetsAndMetadata(t *testing.T) {
+	root := t.TempDir()
+	config := testConfig(t)
+	config.Platforms = []string{"web", "macos"}
+	if err := Render(root, config); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	for _, path := range []string{
+		"macos/Runner/MainFlutterWindow.swift",
+		"macos/RunnerTests/RunnerTests.swift",
+	} {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(path))); err != nil {
+			t.Fatalf("selected platform file %s: %v", path, err)
+		}
+	}
+	for _, path := range []string{
+		"android/app/src/debug/AndroidManifest.xml",
+		"ios/Runner/Info.plist",
+		"tool/android_emulator_smoke.sh",
+		"tool/ios_simulator_smoke.sh",
+	} {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(path))); !os.IsNotExist(err) {
+			t.Fatalf("unselected platform file %s exists or cannot be checked: %v", path, err)
+		}
+	}
+	makefile, err := os.ReadFile(filepath.Join(root, "Makefile"))
+	if err != nil {
+		t.Fatalf("read Makefile: %v", err)
+	}
+	for _, target := range []string{"macos-build:", "web-build:"} {
+		if !strings.Contains(string(makefile), target) {
+			t.Fatalf("Makefile does not contain %q:\n%s", target, makefile)
+		}
+	}
+	for _, target := range []string{"android-build:", "ios-build:", "linux-build:"} {
+		if strings.Contains(string(makefile), target) {
+			t.Fatalf("Makefile contains unselected target %q:\n%s", target, makefile)
+		}
+	}
+	metadata, err := os.ReadFile(filepath.Join(root, ".bridra", "project.json"))
+	if err != nil {
+		t.Fatalf("read project metadata: %v", err)
+	}
+	if !strings.Contains(string(metadata), `"platforms": ["macos", "web"]`) {
+		t.Fatalf("project metadata = %s", metadata)
+	}
+	mainSource, err := os.ReadFile(filepath.Join(root, "lib", "main.dart"))
+	if err != nil {
+		t.Fatalf("read main.dart: %v", err)
+	}
+	if !strings.Contains(string(mainSource), "One interface · 2 selected platforms") {
+		t.Fatalf("main.dart = %s", mainSource)
 	}
 }
 

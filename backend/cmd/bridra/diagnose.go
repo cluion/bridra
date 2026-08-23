@@ -64,11 +64,12 @@ type diagnosticBundleReport struct {
 }
 
 type diagnosticProject struct {
-	Status                string `json:"status"`
-	MetadataSchemaVersion int    `json:"metadataSchemaVersion,omitempty"`
-	FrameworkVersion      string `json:"frameworkVersion,omitempty"`
-	TemplateVersion       int    `json:"templateVersion,omitempty"`
-	ProtocolVersion       int    `json:"protocolVersion,omitempty"`
+	Status                string   `json:"status"`
+	MetadataSchemaVersion int      `json:"metadataSchemaVersion,omitempty"`
+	FrameworkVersion      string   `json:"frameworkVersion,omitempty"`
+	TemplateVersion       int      `json:"templateVersion,omitempty"`
+	ProtocolVersion       int      `json:"protocolVersion,omitempty"`
+	Platforms             []string `json:"platforms,omitempty"`
 }
 
 type diagnosticDoctorCheck struct {
@@ -255,6 +256,7 @@ func diagnosticProjectSnapshot(root string) diagnosticProject {
 		FrameworkVersion:      metadata.FrameworkVersion,
 		TemplateVersion:       metadata.TemplateVersion,
 		ProtocolVersion:       metadata.ProtocolVersion,
+		Platforms:             append([]string(nil), metadata.Platforms...),
 	}
 }
 

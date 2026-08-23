@@ -95,11 +95,20 @@ is read-only and fails when any managed surface drifts. Protocol, Project
 Template, and project metadata versions remain independent compatibility
 contracts; neither command tags or publishes a release.
 
-`create` asks Flutter to generate the native six-platform runners inside a
-same-parent staging directory, then renders Project Template manifest v4 and
+`create` resolves `all`, `desktop`, `mobile`, or an explicit platform list into
+one canonical selection. It asks Flutter to generate only those runners inside a
+same-parent staging directory, then renders Project Template manifest v5 and
 generates the typed contract. Go consumer tests, Flutter dependency resolution,
 and Dart formatting must succeed before one atomic rename exposes the destination;
 every earlier failure removes the staging directory.
+
+Manifest entries may declare platform ownership, so native patches and smoke
+scripts are rendered only when their runner was selected. Template conditions
+apply the same scope to Make targets, README guidance, and starter UI text.
+Metadata schema 3 persists the canonical list; `build` rejects targets outside
+it, diagnostics expose it, and `doctor` skips host-native tool probes when that
+host platform is not selected. Metadata schemas 1 and 2 resolve conservatively
+to all six platforms.
 
 Framework dependency coordinates are data, not template constants. Create v0.1
 defaults to the running CLI's compatible Go module, Flutter package, framework
@@ -111,10 +120,10 @@ canonical framework module is `github.com/cluion/bridra/backend`; generated
 application modules remain caller-owned and independent from the Cluion namespace.
 
 `.bridra/project.json` is the committed discovery boundary for project-local
-commands. Schema 2 records project identity, application and framework modules,
-framework SemVer, Project Template version, and RPC protocol version. Schema 1
-remains readable by current core commands so an older generated project can run
-the read-only upgrade diagnosis before migrating its metadata.
+commands. Schema 3 records project identity, application and framework modules,
+framework SemVer, Project Template version, RPC protocol version, and selected
+platforms. Schemas 1 and 2 remain readable by current core commands so older
+generated projects can run read-only upgrade diagnosis before migrating metadata.
 
 `upgrade` defaults to a read-only plan and retains `--check` as a compatibility
 alias. Its versioned release catalog maps each framework release to metadata,

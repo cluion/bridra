@@ -77,6 +77,48 @@ func TestDoctorStrictModeFailsOnHostWarnings(t *testing.T) {
 	}
 }
 
+func TestDoctorSkipsUnselectedHostPlatformTools(t *testing.T) {
+	root := writeFVMConfiguration(t, "3.44.6")
+	if err := os.MkdirAll(filepath.Join(root, ".bridra"), 0o755); err != nil {
+		t.Fatalf("create metadata directory: %v", err)
+	}
+	metadata := `{
+  "schemaVersion": 3,
+  "projectName": "web_app",
+  "goModule": "example.test/web/app",
+  "frameworkModule": "github.com/cluion/bridra/backend",
+  "frameworkVersion": "0.15.0",
+  "templateVersion": 5,
+  "protocolVersion": 1,
+  "platforms": ["web"]
+}`
+	if err := os.WriteFile(
+		filepath.Join(root, ".bridra", "project.json"),
+		[]byte(metadata),
+		0o644,
+	); err != nil {
+		t.Fatalf("write metadata: %v", err)
+	}
+	system := healthyDoctorSystem("clang", "cmake", "ninja", "pkg-config")
+	var stdout bytes.Buffer
+	if err := newApplication(system).run(
+		[]string{"doctor", "--root", root, "--strict"},
+		&stdout,
+		&bytes.Buffer{},
+	); err != nil {
+		t.Fatalf("doctor: %v", err)
+	}
+	for _, expected := range []string{
+		"[ok] Platforms: web",
+		"[ok] Host build tools: not required by selected platforms",
+		"All checks passed.",
+	} {
+		if !strings.Contains(stdout.String(), expected) {
+			t.Fatalf("stdout = %q, want %q", stdout.String(), expected)
+		}
+	}
+}
+
 func TestDoctorFailsWhenFlutterDoesNotMatchFVMConfiguration(t *testing.T) {
 	root := writeFVMConfiguration(t, "3.44.6")
 	system := healthyDoctorSystem()

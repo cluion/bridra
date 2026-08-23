@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/cluion/bridra/backend/framework"
+	"github.com/cluion/bridra/backend/internal/projectplatform"
 )
 
 var errDoctorFailed = errors.New("Bridra doctor checks failed")
@@ -147,6 +148,7 @@ func (item doctorCommand) run(arguments []string, stdout, stderr io.Writer) erro
 
 func (item doctorCommand) inspect(root string) doctorReport {
 	report := doctorReport{}
+	platforms := item.checkProjectPlatforms(root, &report)
 	configuration, configurationOK := item.checkFVMConfiguration(root, &report)
 	item.checkGo(&report)
 	fvmOK := item.checkFVM(&report)
@@ -155,8 +157,30 @@ func (item doctorCommand) inspect(root string) doctorReport {
 	} else {
 		report.add(doctorFailure, "Flutter", "not checked because .fvmrc or FVM is unavailable")
 	}
-	item.checkHost(&report)
+	item.checkHost(platforms, &report)
 	return report
+}
+
+func (item doctorCommand) checkProjectPlatforms(
+	root string,
+	report *doctorReport,
+) []string {
+	path := filepath.Join(root, ".bridra", "project.json")
+	contents, err := item.system.readFile(path)
+	if os.IsNotExist(err) {
+		return projectplatform.CloneAll()
+	}
+	if err != nil {
+		report.add(doctorFailure, "Platforms", fmt.Sprintf("cannot read %s: %v", path, err))
+		return projectplatform.CloneAll()
+	}
+	metadata, err := decodeProjectMetadata(contents)
+	if err != nil {
+		report.add(doctorFailure, "Platforms", err.Error())
+		return projectplatform.CloneAll()
+	}
+	report.add(doctorOK, "Platforms", strings.Join(metadata.Platforms, ", "))
+	return metadata.Platforms
 }
 
 func (item doctorCommand) checkFVMConfiguration(
@@ -254,7 +278,7 @@ func (item doctorCommand) checkFlutter(expected string, report *doctorReport) {
 	report.add(doctorOK, "Flutter", detail)
 }
 
-func (item doctorCommand) checkHost(report *doctorReport) {
+func (item doctorCommand) checkHost(platforms []string, report *doctorReport) {
 	report.add(doctorOK, "Host", item.system.goos+"/"+item.system.goarch)
 	if item.system.goarch != "amd64" && item.system.goarch != "arm64" {
 		report.add(
@@ -262,6 +286,15 @@ func (item doctorCommand) checkHost(report *doctorReport) {
 			"Architecture",
 			item.system.goarch+" is not in Bridra's release build matrix",
 		)
+	}
+	requiresHostTools := projectplatform.Contains(platforms, item.system.goos)
+	if item.system.goos == "darwin" {
+		requiresHostTools = projectplatform.Contains(platforms, projectplatform.MacOS) ||
+			projectplatform.Contains(platforms, projectplatform.IOS)
+	}
+	if !requiresHostTools {
+		report.add(doctorOK, "Host build tools", "not required by selected platforms")
+		return
 	}
 
 	switch item.system.goos {

@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/cluion/bridra/backend/framework"
+	"github.com/cluion/bridra/backend/internal/projectplatform"
 )
 
 var (
@@ -236,6 +237,13 @@ func (item buildCommand) resolveOptions(options buildOptions) (buildOptions, err
 		return buildOptions{}, fmt.Errorf(
 			"%w: target must be linux, macos, windows, android, ios, or web",
 			errBuildInvalid,
+		)
+	}
+	if !projectplatform.Contains(options.metadata.Platforms, string(options.target)) {
+		return buildOptions{}, fmt.Errorf(
+			"%w: target %s is not selected in .bridra/project.json",
+			errBuildInvalid,
+			options.target,
 		)
 	}
 	options.mode = buildMode(strings.ToLower(strings.TrimSpace(string(options.mode))))
