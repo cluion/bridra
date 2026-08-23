@@ -10,6 +10,10 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/cluion/bridra/backend/codegen"
+	"github.com/cluion/bridra/backend/framework"
+	"github.com/cluion/bridra/backend/internal/releaseinfo"
 )
 
 func TestManifestHasStableSafeDestinations(t *testing.T) {
@@ -73,6 +77,113 @@ func TestRenderMatchesProjectTreeGolden(t *testing.T) {
 			t.Fatalf("%s contains an unresolved template expression", path)
 		}
 	}
+}
+
+func TestRenderInitializesSchemaBaselineOnce(t *testing.T) {
+	root := t.TempDir()
+	config := testConfig(t)
+	config.ProtocolVersion = 3
+	if err := Render(root, config); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	currentPath := filepath.Join(root, "schema", "bridra.json")
+	baselinePath := filepath.Join(root, filepath.FromSlash(schemaBaselinePath))
+	current := readProjectTemplateTestFile(t, currentPath)
+	baseline := readProjectTemplateTestFile(t, baselinePath)
+	if !bytes.Equal(baseline, current) {
+		t.Fatalf("initial baseline differs from current schema:\nbaseline: %s\ncurrent: %s", baseline, current)
+	}
+	loaded, err := codegen.LoadSchema(baselinePath)
+	if err != nil {
+		t.Fatalf("load baseline: %v", err)
+	}
+	if loaded.ProtocolVersion != 3 {
+		t.Fatalf("baseline protocol = %d, want custom application protocol 3", loaded.ProtocolVersion)
+	}
+
+	reviewed := append([]byte(nil), baseline...)
+	reviewed = append(reviewed, '\n')
+	if err := os.WriteFile(baselinePath, reviewed, 0o644); err != nil {
+		t.Fatalf("mark reviewed baseline: %v", err)
+	}
+	if err := Render(root, config); err != nil {
+		t.Fatalf("rerender: %v", err)
+	}
+	if actual := readProjectTemplateTestFile(t, baselinePath); !bytes.Equal(actual, reviewed) {
+		t.Fatalf("rerender overwrote application-owned baseline:\n%s", actual)
+	}
+}
+
+func TestRenderedCustomProtocolProjectVerifyEnforcesSchemaBaseline(t *testing.T) {
+	root := t.TempDir()
+	config := testConfig(t)
+	config.BridraGoVersion = "v" + releaseinfo.Version
+	config.BridraFlutterVersion = releaseinfo.Version
+	config.FrameworkVersion = releaseinfo.Version
+	config.ProtocolVersion = 3
+	if config.ProtocolVersion <= framework.ProtocolVersion {
+		t.Fatalf(
+			"custom protocol %d must exceed template baseline %d",
+			config.ProtocolVersion,
+			framework.ProtocolVersion,
+		)
+	}
+	if err := Render(root, config); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	runProjectTemplateCommand(t, filepath.Join(root, "backend"), "go", "mod", "tidy")
+	runProjectTemplateCommand(t, root, "fvm", "flutter", "pub", "get")
+	runProjectTemplateCommand(t, root, "make", "verify")
+
+	baselinePath := filepath.Join(root, filepath.FromSlash(schemaBaselinePath))
+	baselineBefore := readProjectTemplateTestFile(t, baselinePath)
+	currentPath := filepath.Join(root, "schema", "bridra.json")
+	current, err := codegen.LoadSchema(currentPath)
+	if err != nil {
+		t.Fatalf("load current schema: %v", err)
+	}
+	current.Methods[0].Result.Fields[0].Type = "boolean"
+	contents, err := json.MarshalIndent(current, "", "  ")
+	if err != nil {
+		t.Fatalf("encode breaking schema: %v", err)
+	}
+	if err := os.WriteFile(currentPath, append(contents, '\n'), 0o644); err != nil {
+		t.Fatalf("write breaking schema: %v", err)
+	}
+
+	command := exec.Command("make", "schema-check")
+	command.Dir = root
+	output, err := command.CombinedOutput()
+	if err == nil {
+		t.Fatalf("schema-check accepted an unversioned breaking change:\n%s", output)
+	}
+	for _, expected := range []string{"Status: incompatible", "Required protocolVersion: 4 or newer"} {
+		if !bytes.Contains(output, []byte(expected)) {
+			t.Fatalf("schema-check output = %s, want %q", output, expected)
+		}
+	}
+	if actual := readProjectTemplateTestFile(t, baselinePath); !bytes.Equal(actual, baselineBefore) {
+		t.Fatalf("schema-check modified application-owned baseline:\n%s", actual)
+	}
+}
+
+func runProjectTemplateCommand(t *testing.T, directory, name string, arguments ...string) {
+	t.Helper()
+	command := exec.Command(name, arguments...)
+	command.Dir = directory
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%s %s: %v\n%s", name, strings.Join(arguments, " "), err, output)
+	}
+}
+
+func readProjectTemplateTestFile(t *testing.T, path string) []byte {
+	t.Helper()
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return contents
 }
 
 func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {

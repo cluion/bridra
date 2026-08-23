@@ -99,15 +99,22 @@ steps.
 
 ## Contract generation
 
-`schema/bridra.json` is the RPC source of truth:
+`schema/bridra.json` is the RPC source of truth. The project also owns
+`schema/bridra.baseline.json`, an immutable snapshot of the reviewed deployed
+contract:
 
 ```bash
 make generate
+make schema-check
 make codegen-check
 ```
 
-Compare a proposed contract with the immutable schema from a reviewed release
-or deployment before regenerating clients and servers:
+`make verify` runs the schema check automatically. A breaking wire change fails
+unless the current application `protocolVersion` is greater than the baseline.
+Neither `make generate` nor framework upgrades replace the baseline; update it
+only after the new contract has been reviewed and deployed.
+
+To compare against a different release or deployment explicitly:
 
 ```bash
 cd backend
@@ -116,8 +123,7 @@ go run {{.BridraGoModule}}/cmd/bridra schema check \
   --schema ../schema/bridra.json
 ```
 
-Breaking wire changes require a higher application `protocolVersion`. Use
-`--json` for a machine-readable CI report.
+Use `--json` for a machine-readable CI report.
 
 Set `"stream": true` on a schema method to generate a typed
 `Stream<RpcStreamEvent<ResultType>>`; use `framework.ProduceStream` in its Go

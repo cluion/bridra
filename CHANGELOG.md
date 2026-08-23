@@ -5,6 +5,22 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 
 ## [Unreleased]
 
+## [0.14.0] - Unreleased
+
+### Added
+
+- Generated projects now keep an application-owned
+  `schema/bridra.baseline.json` and run `bridra schema check` from `make verify`,
+  blocking breaking RPC wire changes that reuse the deployed protocol version.
+  Contract generation and framework upgrades never replace the baseline.
+
+### Changed
+
+- Advanced the Project Template to version `3` and registered the manual
+  `0.13.0` to `0.14.0` migration. Existing applications must select their own
+  reviewed deployed schema as the baseline; the template protocol baseline
+  remains `1` and does not constrain custom application protocols.
+
 ## [0.13.0] - 2026-08-15
 
 ### Added

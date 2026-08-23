@@ -4,6 +4,7 @@ GO ?= go
 FVM ?= fvm
 BRIDRA_FLUTTER_PACKAGE := packages/bridra_flutter
 BRIDRA := cd backend && $(GO) run ./cmd/bridra
+SCHEMA_BASELINE := schema/bridra.baseline.json
 
 ifeq ($(OS),Windows_NT)
 HOST_OS := Windows
@@ -46,7 +47,7 @@ RUNTIME_RESOURCE_MAX_HEAP_GROWTH_MIB ?= 8
 RUNTIME_RESOURCE_MAX_FD_GROWTH ?= 4
 RUNTIME_RESOURCE_MAX_RSS_GROWTH_MIB ?= 32
 
-.PHONY: help setup doctor generate codegen-check license-check format backend-build backend-server-build backend-serve backend-format backend-test backend-public-api-test backend-sql-store-test backend-sql-job-store-test backend-vet transport-benchmark http-fault-test ios-simulator-watchdog-test \
+.PHONY: help setup doctor generate schema-check codegen-check license-check format backend-build backend-server-build backend-serve backend-format backend-test backend-public-api-test backend-sql-store-test backend-sql-job-store-test backend-vet transport-benchmark http-fault-test ios-simulator-watchdog-test \
 	flutter-format flutter-package-test flutter-web-test flutter-test analyze verify coverage backend-coverage flutter-package-coverage flutter-app-coverage coverage-check linux-check linux-run linux-build \
 	linux-smoke macos-check macos-run macos-build macos-smoke windows-run \
 	windows-build windows-smoke windows-verify android-run android-build android-emulator-smoke \
@@ -57,6 +58,7 @@ help:
 	@echo "make setup        Install the pinned Flutter SDK and project dependencies"
 	@echo "make doctor       Check Go, FVM, and the pinned Flutter SDK"
 	@echo "make generate     Generate Go and Dart APIs from schema/bridra.json"
+	@echo "make schema-check Enforce RPC compatibility against the deployed baseline"
 	@echo "make license-check Verify publishable packages carry the root MIT license"
 	@echo "make verify       Run format checks, Go tests, Flutter tests, and analysis"
 	@echo "make coverage     Generate reports and enforce coverage non-regression floors"
@@ -105,6 +107,9 @@ doctor:
 
 generate:
 	cd backend && $(GO) run ./cmd/bridra generate --schema ../schema/bridra.json --root ..
+
+schema-check:
+	cd backend && $(GO) run ./cmd/bridra schema check --against ../$(SCHEMA_BASELINE) --schema ../schema/bridra.json
 
 codegen-check:
 	cd backend && $(GO) run ./cmd/bridra generate --schema ../schema/bridra.json --root .. --check
@@ -226,7 +231,7 @@ cli-release:
 ios-simulator-watchdog-test:
 	sh ./tool/ios_simulator_watchdog_test.sh
 
-verify: license-check release-check doctor codegen-check backend-format backend-vet backend-public-api-test backend-test backend-sql-store-test flutter-format flutter-package-test flutter-web-test flutter-test ios-simulator-watchdog-test analyze
+verify: license-check release-check doctor schema-check codegen-check backend-format backend-vet backend-public-api-test backend-test backend-sql-store-test flutter-format flutter-package-test flutter-web-test flutter-test ios-simulator-watchdog-test analyze
 
 linux-check:
 	@test "$(HOST_OS)" = "Linux" || \

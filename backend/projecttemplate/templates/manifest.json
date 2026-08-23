@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "files": [
     {"source": "project.json.tmpl", "destination": ".bridra/project.json", "mode": "0644"},
     {"source": "README.md.tmpl", "destination": "README.md", "mode": "0644"},

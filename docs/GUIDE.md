@@ -27,7 +27,7 @@ Flutter UI -> typed gateway -> RPC client
 
 The application entrypoint is `lib/main.dart`. Both transports use the same
 versioned request, response, error, and health-handshake contract. Framework
-SemVer (`0.13.0`), the Project Template protocol baseline (`1`), and each
+SemVer (`0.14.0`), the Project Template protocol baseline (`1`), and each
 application's internally consistent RPC protocol evolve independently.
 
 ## Platform support
@@ -141,7 +141,7 @@ this starter currently uses Flutter's Swift Package Manager integration.
 Install the exact CLI version through Go:
 
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.13.0
+go install github.com/cluion/bridra/backend/cmd/bridra@v0.14.0
 bridra version
 bridra version --json
 ```
@@ -175,19 +175,20 @@ Upgrade by installing an explicit newer version, then inspect it before updating
 projects:
 
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.13.0
+go install github.com/cluion/bridra/backend/cmd/bridra@v0.14.0
 bridra version --json
-bridra upgrade --plan --to 0.13.0 --root /path/to/project
+bridra upgrade --plan --to 0.14.0 --root /path/to/project
 ```
 
 Bridra does not silently auto-update the CLI. Project compatibility,
 migration, deprecation, and rollback rules are documented in
 [UPGRADING.md](UPGRADING.md). Maintainer release steps are documented in
-[RELEASING.md](RELEASING.md). The `0.9.0` to `0.13.0` path contains the
+[RELEASING.md](RELEASING.md). The `0.9.0` to `0.14.0` path contains the
 automatic `0.10.0` HTTP-security step, the `0.10.1` diagnostics and
 upgrade-planner patch, the runtime-neutral `0.11.0` supply-chain release, and
-the `0.12.0` bounded-stdin Sidecar launch update, followed by the `0.13.0`
-RPC schema compatibility tooling release.
+the `0.12.0` bounded-stdin Sidecar launch update. Its final `0.14.0` baseline-gate
+step is manual because only the application can identify its reviewed deployed
+RPC schema.
 Existing application-owned server entrypoints are not overwritten; adopt the
 production controls deliberately using
 [HTTP_SECURITY.md](HTTP_SECURITY.md). The planner validates each application's
@@ -202,9 +203,9 @@ path.
 Framework maintainers enter the public SemVer once:
 
 ```bash
-make release-prepare VERSION=0.13.0
-make release-check VERSION=0.13.0
-make release-check VERSION=0.13.0 FINAL=1
+make release-prepare VERSION=0.14.0
+make release-check VERSION=0.14.0
+make release-check VERSION=0.14.0 FINAL=1
 ```
 
 `release-prepare` synchronizes the root `VERSION`, Go Framework and CLI metadata,
@@ -215,7 +216,7 @@ independent and change only when their compatibility contracts change.
 
 The command prepares a reviewable change only. It never creates or pushes a Git
 tag, publishes to pub.dev, or creates a GitHub Release. Windows maintainers use
-`.\tool\windows.ps1 -Task release-prepare -Version 0.13.0` and the corresponding
+`.\tool\windows.ps1 -Task release-prepare -Version 0.14.0` and the corresponding
 `release-check` task. The final check rejects a release while either changelog is
 still marked `Unreleased`; on Windows, add `-Final`.
 
@@ -237,7 +238,7 @@ The release packager builds with `CGO_ENABLED=0`, `-trimpath`, disabled VCS
 stamping, an empty Go build ID, and ldflag-injected version/commit/date metadata.
 Archive timestamps come from the source commit date, so identical inputs produce
 identical archives and checksums. Outputs are written under `build/bridra/cli/`.
-Each version has its own directory, such as `build/bridra/cli/0.13.0/`, so stale
+Each version has its own directory, such as `build/bridra/cli/0.14.0/`, so stale
 assets from an earlier release cannot be uploaded accidentally.
 
 ## Verify
@@ -486,20 +487,24 @@ and store submission remain product release tasks.
 
 ## Generate the RPC contract
 
-`schema/bridra.json` is the source of truth for RPC method names, protocol
-version, request validation, response fields, and Flutter decoding:
+`schema/bridra.json` is the source of truth for the proposed RPC contract.
+`schema/bridra.baseline.json` is the application-owned immutable snapshot of the
+reviewed contract currently deployed to its peers:
 
 ```bash
 make generate
+make schema-check
 make codegen-check
 ```
 
 `make generate` runs the `bridra generate` CLI and writes deterministic Go and
-Dart files. Generated files are committed, marked `DO NOT EDIT`, and compiled by
-normal tests. `make verify` fails when the schema and checked-in output differ.
+Dart files. It never updates the baseline. Generated files are committed, marked
+`DO NOT EDIT`, and compiled by normal tests. `make verify` fails when the current
+schema breaks the baseline without a higher protocol or when the schema and
+checked-in output differ.
 
-Before accepting an RPC contract change, compare it with the reviewed deployed
-or released schema:
+Generated Project Template v3 runs this comparison automatically. To compare
+with another reviewed deployed or released schema explicitly:
 
 ```bash
 bridra schema check \
@@ -512,7 +517,8 @@ current `protocolVersion` regresses or when a breaking wire change keeps the
 baseline protocol. A greater protocol produces `versioned_break`: generated
 clients and servers will reject the old contract instead of exchanging
 incompatible payloads. The command does not modify either schema or generated
-code.
+code. Replace the application baseline only after the new contract has passed
+review and deployment; never derive it from the Template protocol baseline.
 
 Method removal, unary/streaming changes, request parameter and rule changes,
 field shape/nullability changes, and required response/meta field changes are

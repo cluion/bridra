@@ -131,6 +131,12 @@ var registeredUpgradeReleases = []upgradeRelease{
 		TemplateVersion:         2,
 		TemplateProtocolVersion: 1,
 	},
+	{
+		FrameworkVersion:        "0.14.0",
+		ProjectMetadataVersion:  2,
+		TemplateVersion:         3,
+		TemplateProtocolVersion: 1,
+	},
 }
 
 var registeredFrameworkMigrations = []frameworkMigration{
@@ -238,6 +244,13 @@ var registeredFrameworkMigrations = []frameworkMigration{
 		To:          "0.13.0",
 		Description: "Update the Go and Flutter framework dependencies for RPC schema compatibility checking without changing application runtime contracts.",
 		Automatic:   true,
+	},
+	{
+		ID:          "framework-0.13.0-to-0.14.0",
+		From:        "0.13.0",
+		To:          "0.14.0",
+		Description: "Adopt the application-owned deployed RPC schema baseline and automatic make verify compatibility gate, then update both framework dependencies.",
+		Automatic:   false,
 	},
 }
 
