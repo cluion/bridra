@@ -21,6 +21,12 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
   reviewed deployed schema as the baseline; the template protocol baseline
   remains `1` and does not constrain custom application protocols.
 
+### Support
+
+- The latest `0.14.x` release receives best-effort security fixes until the next
+  minor line is published. The `0.13.x` line is no longer supported after this
+  release.
+
 ## [0.13.0] - 2026-08-15
 
 ### Added

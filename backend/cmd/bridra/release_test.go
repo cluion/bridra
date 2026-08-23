@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -117,6 +118,9 @@ func TestReleaseFinalCheckRequiresDatedChangelogs(t *testing.T) {
 		if !strings.Contains(stdout.String(), "Changelogs: finalized") {
 			t.Fatalf("stdout = %q", stdout.String())
 		}
+		if !strings.Contains(stdout.String(), "Support policy: latest 0.1.x patch") {
+			t.Fatalf("stdout = %q", stdout.String())
+		}
 	})
 
 	t.Run("unreleased", func(t *testing.T) {
@@ -131,6 +135,81 @@ func TestReleaseFinalCheckRequiresDatedChangelogs(t *testing.T) {
 			t.Fatalf("error = %v", err)
 		}
 	})
+}
+
+func TestReleaseFinalCheckRejectsSupportPolicyDrift(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		path        string
+		old         string
+		replacement string
+		want        string
+	}{
+		{
+			name:        "support current release",
+			path:        "SUPPORT.md",
+			old:         "Bridra 0.1 is the current",
+			replacement: "Bridra 0.0 is the current",
+			want:        "SUPPORT.md current release line is 0.0, expected 0.1",
+		},
+		{
+			name:        "security current release",
+			path:        "SECURITY.md",
+			old:         "Bridra 0.1 is a pre-1.0",
+			replacement: "Bridra 0.0 is a pre-1.0",
+			want:        "SECURITY.md current release line is 0.0, expected 0.1",
+		},
+		{
+			name:        "security supported versions",
+			path:        "SECURITY.md",
+			old:         "Latest `0.1.x` patch",
+			replacement: "Latest `0.0.x` patch",
+			want:        "SECURITY.md supported versions table is 0.0, expected 0.1",
+		},
+		{
+			name:        "changelog support section",
+			path:        "CHANGELOG.md",
+			old:         "### Support",
+			replacement: "### Compatibility",
+			want:        "CHANGELOG.md: release 0.1.0 has no Support section",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := releaseTestRoot(t, "0.1.0", "2026-07-24")
+			contents := readReleaseTestFile(t, root, test.path)
+			writeReleaseTestFile(
+				t,
+				root,
+				test.path,
+				strings.Replace(contents, test.old, test.replacement, 1),
+			)
+			err := (releaseCommand{}).run(
+				[]string{"check", "--final", "--root", root, "--version", "0.1.0"},
+				&bytes.Buffer{},
+				&bytes.Buffer{},
+			)
+			if !errors.Is(err, errReleaseInconsistent) ||
+				!strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestReleaseFinalCheckUsesMinorSupportLineForPatchRelease(t *testing.T) {
+	root := releaseTestRoot(t, "0.14.1", "2026-08-24")
+	var stdout bytes.Buffer
+	err := (releaseCommand{}).run(
+		[]string{"check", "--final", "--root", root, "--version", "0.14.1"},
+		&stdout,
+		&bytes.Buffer{},
+	)
+	if err != nil {
+		t.Fatalf("release final patch check: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "Support policy: latest 0.14.x patch") {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
 }
 
 func TestReleaseFinalCheckAcceptsWindowsLineEndings(t *testing.T) {
@@ -222,6 +301,11 @@ func TestReleaseCommandRejectsInvalidVersionsAndUsage(t *testing.T) {
 func releaseTestRoot(t *testing.T, version, changelogStatus string) string {
 	t.Helper()
 	root := t.TempDir()
+	parsedVersion, err := parseSemanticVersion(version)
+	if err != nil {
+		t.Fatalf("parse fixture version: %v", err)
+	}
+	releaseLine := fmt.Sprintf("%d.%d", parsedVersion.major, parsedVersion.minor)
 	files := map[string]string{
 		"VERSION":        version + "\n",
 		"backend/go.mod": "module github.com/cluion/bridra/backend\n",
@@ -233,9 +317,15 @@ func releaseTestRoot(t *testing.T, version, changelogStatus string) string {
 		".bridra/project.json": "{\n  \"frameworkVersion\": \"" + version + "\",\n" +
 			"  \"templateVersion\": 2,\n  \"protocolVersion\": 1\n}\n",
 		"CHANGELOG.md": "# Changelog\n\n## [" + version + "] - " +
-			changelogStatus + "\n\n- Existing change.\n",
+			changelogStatus + "\n\n- Existing change.\n\n### Support\n\n" +
+			"- Latest `" + releaseLine + ".x` patch is supported.\n",
 		"packages/bridra_flutter/CHANGELOG.md": "# Changelog\n\n## " + version +
 			" - " + changelogStatus + "\n\n- Existing change.\n",
+		"SUPPORT.md": "# Support\n\nBridra " + releaseLine +
+			" is the current pre-1.0 framework line.\n",
+		"SECURITY.md": "# Security policy\n\nBridra " + releaseLine +
+			" is a pre-1.0 framework line.\n\n| Version | Security support |\n" +
+			"| --- | --- |\n| Latest `" + releaseLine + ".x` patch | Supported |\n",
 	}
 	for _, path := range []string{
 		"docs/ARCHITECTURE.md",
