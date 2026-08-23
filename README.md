@@ -42,7 +42,8 @@ distribution channels.
 
 ## What Bridra provides
 
-- Typed Go and Dart contracts generated from one versioned RPC schema
+- Typed Go and Dart contracts generated from one versioned RPC schema,
+  including reusable named object types and structured object arrays
 - Laravel-style Middleware, Controller, Service, Provider, Model, Request, and
   Response application layers
 - Typed Config and dependency injection with singleton, transient, scoped, and

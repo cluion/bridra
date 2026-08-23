@@ -16,6 +16,24 @@ type publicOptionalBound struct {
 	Attempts *int
 }
 
+type publicNestedValue struct {
+	Name string
+}
+
+func (value publicNestedValue) Validate() error {
+	if value.Name != "" {
+		return nil
+	}
+	return framework.NewValidationErrors(framework.FieldViolation{
+		Field: "name", Rule: "required", Message: "Name is required.",
+	})
+}
+
+type publicNestedLists struct {
+	Values   []publicNestedValue
+	Fallback *[]publicNestedValue
+}
+
 type publicConflict struct{}
 
 func (*publicConflict) Error() string { return "conflict" }
@@ -83,5 +101,23 @@ func TestPublicOptionalNumericBounds(t *testing.T) {
 	attempts := 6
 	if err := rules.Validate(publicOptionalBound{Attempts: &attempts}); err == nil {
 		t.Fatal("expected optional maximum violation")
+	}
+}
+
+func TestPublicNestedListValidation(t *testing.T) {
+	rules := framework.NewRuleRegistry[publicNestedLists](
+		framework.NestedListField(
+			"values",
+			func(value publicNestedLists) []publicNestedValue { return value.Values },
+		),
+		framework.OptionalNestedListField(
+			"fallback",
+			func(value publicNestedLists) *[]publicNestedValue { return value.Fallback },
+		),
+	)
+	if err := rules.Validate(publicNestedLists{
+		Values: []publicNestedValue{{}},
+	}); err == nil {
+		t.Fatal("expected public nested list validation error")
 	}
 }

@@ -42,6 +42,7 @@ func GenerateWithOptions(schema Schema, options Options) ([]Output, error) {
 	if err := schema.Validate(); err != nil {
 		return nil, err
 	}
+	schema = schema.resolveReferences()
 	if strings.TrimSpace(options.GoFrameworkImport) == "" {
 		options.GoFrameworkImport = DefaultGoFrameworkImport
 	}
@@ -185,11 +186,12 @@ func renderGoRequests(schema Schema, frameworkImport string) []byte {
 		fmt.Fprintf(&output, "\t%q\n)\n", frameworkImport)
 	}
 
+	emitted := make(map[string]struct{})
 	for _, method := range schema.Methods {
 		if method.Params == nil {
 			continue
 		}
-		writeGoRequestObject(&output, *method.Params)
+		writeGoRequestObject(&output, *method.Params, emitted)
 	}
 	return []byte(output.String())
 }
@@ -201,23 +203,32 @@ func renderGoResponses(schema Schema, frameworkImport string) []byte {
 	if schemaHasFileResponses(schema) {
 		fmt.Fprintf(&output, "\nimport %q\n", frameworkImport)
 	}
+	emitted := make(map[string]struct{})
 	for _, method := range schema.Methods {
 		for _, field := range method.Meta {
 			if field.Object != nil {
-				writeGoObject(&output, *field.Object)
+				writeGoObject(&output, *field.Object, emitted)
 			}
 		}
-		writeGoObject(&output, method.Result)
+		writeGoObject(&output, method.Result, emitted)
 	}
 	return []byte(output.String())
 }
 
-func writeGoRequestObject(output *strings.Builder, object Object) {
+func writeGoRequestObject(
+	output *strings.Builder,
+	object Object,
+	emitted map[string]struct{},
+) {
+	if _, exists := emitted[object.GoType]; exists {
+		return
+	}
 	for _, field := range object.Fields {
 		if field.Object != nil {
-			writeGoRequestObject(output, *field.Object)
+			writeGoRequestObject(output, *field.Object, emitted)
 		}
 	}
+	emitted[object.GoType] = struct{}{}
 	writeGoStruct(output, object)
 	fmt.Fprintf(output, "\nfunc (%s) ValidatePayload(payload []byte) error {\n", object.GoType)
 	fmt.Fprintf(output, "\treturn framework.ValidateRequestPayload[%s](payload)\n", object.GoType)
@@ -237,7 +248,12 @@ func writeGoRequestObject(output *strings.Builder, object Object) {
 				continue
 			}
 			helper := "framework.NestedField"
-			if field.Nullable {
+			switch {
+			case field.Array && field.Nullable:
+				helper = "framework.OptionalNestedListField"
+			case field.Array:
+				helper = "framework.NestedListField"
+			case field.Nullable:
 				helper = "framework.OptionalNestedField"
 			}
 			fmt.Fprintf(output, "\t%s(\n", helper)
@@ -331,7 +347,16 @@ func writeGoRequestNormalizer(output *strings.Builder, object Object) {
 		if field.Object == nil || !objectHasTrim(*field.Object) {
 			continue
 		}
-		if field.Nullable {
+		if field.Array && field.Nullable {
+			fmt.Fprintf(output, "\tif request.%s != nil {\n", fieldName)
+			fmt.Fprintf(output, "\t\tfor index := range *request.%s {\n", fieldName)
+			fmt.Fprintf(output, "\t\t\t(*request.%s)[index].Normalize()\n", fieldName)
+			output.WriteString("\t\t}\n\t}\n")
+		} else if field.Array {
+			fmt.Fprintf(output, "\tfor index := range request.%s {\n", fieldName)
+			fmt.Fprintf(output, "\t\trequest.%s[index].Normalize()\n", fieldName)
+			output.WriteString("\t}\n")
+		} else if field.Nullable {
 			fmt.Fprintf(output, "\tif request.%s != nil {\n", fieldName)
 			fmt.Fprintf(output, "\t\trequest.%s.Normalize()\n", fieldName)
 			output.WriteString("\t}\n")
@@ -342,12 +367,16 @@ func writeGoRequestNormalizer(output *strings.Builder, object Object) {
 	output.WriteString("}\n")
 }
 
-func writeGoObject(output *strings.Builder, object Object) {
+func writeGoObject(output *strings.Builder, object Object, emitted map[string]struct{}) {
+	if _, exists := emitted[object.GoType]; exists {
+		return
+	}
 	for _, field := range object.Fields {
 		if field.Object != nil {
-			writeGoObject(output, *field.Object)
+			writeGoObject(output, *field.Object, emitted)
 		}
 	}
+	emitted[object.GoType] = struct{}{}
 	writeGoStruct(output, object)
 }
 
@@ -420,11 +449,15 @@ func renderDartClient(schema Schema, runtimeImport string) []byte {
 	}
 	output.WriteString("}\n")
 
+	emitted := make(map[string]struct{})
+	for _, definition := range schema.Types {
+		writeDartReusableObject(&output, definition.Object, emitted)
+	}
 	for _, method := range schema.Methods {
 		if method.Params != nil {
-			writeDartRequest(&output, *method.Params)
+			writeDartRequest(&output, *method.Params, emitted)
 		}
-		writeDartResult(&output, method)
+		writeDartResult(&output, method, emitted)
 	}
 
 	output.WriteString("\nabstract interface class BridraApi {\n")
@@ -443,51 +476,38 @@ func renderDartClient(schema Schema, runtimeImport string) []byte {
 	return []byte(strings.TrimRight(output.String(), "\n") + "\n")
 }
 
-func writeDartRequest(output *strings.Builder, object Object) {
+func writeDartRequest(
+	output *strings.Builder,
+	object Object,
+	emitted map[string]struct{},
+) {
+	if _, exists := emitted[object.DartType]; exists {
+		return
+	}
 	for _, field := range object.Fields {
 		if field.Object != nil {
-			writeDartRequest(output, *field.Object)
+			writeDartRequest(output, *field.Object, emitted)
 		}
 	}
+	emitted[object.DartType] = struct{}{}
 	fmt.Fprintf(output, "\nclass %s {\n", object.DartType)
 	writeDartConstructor(output, object.DartType, object.Fields)
 	output.WriteString("\n")
 	for _, field := range object.Fields {
 		fmt.Fprintf(output, "  final %s %s;\n", dartType(field), field.Name)
 	}
-	if len(object.Fields) == 1 && !object.Fields[0].Nullable {
-		field := object.Fields[0]
-		fmt.Fprintf(
-			output,
-			"\n  Map<String, Object?> toJson() => {%s: %s};\n",
-			dartString(field.Name),
-			dartEncodeExpression(field),
-		)
-		output.WriteString("}\n")
-		return
-	}
-	output.WriteString("\n  Map<String, Object?> toJson() => {\n")
-	for _, field := range object.Fields {
-		if field.Nullable {
-			fmt.Fprintf(
-				output,
-				"    if (%s != null) %s: %s,\n",
-				field.Name,
-				dartString(field.Name),
-				dartEncodeExpression(field),
-			)
-		} else {
-			fmt.Fprintf(output, "    %s: %s,\n", dartString(field.Name), dartEncodeExpression(field))
-		}
-	}
-	output.WriteString("  };\n")
+	writeDartToJson(output, object.Fields)
 	output.WriteString("}\n")
 }
 
-func writeDartResult(output *strings.Builder, method Method) {
+func writeDartResult(
+	output *strings.Builder,
+	method Method,
+	emitted map[string]struct{},
+) {
 	for _, field := range appendFields(method.Result.Fields, method.Meta) {
 		if field.Object != nil {
-			writeDartResponseObject(output, *field.Object)
+			writeDartResponseObject(output, *field.Object, emitted)
 		}
 	}
 	fmt.Fprintf(output, "\nclass %s {\n", method.Result.DartType)
@@ -500,29 +520,148 @@ func writeDartResult(output *strings.Builder, method Method) {
 	output.WriteString("}\n")
 }
 
-func writeDartResponseObject(output *strings.Builder, object Object) {
+func writeDartResponseObject(
+	output *strings.Builder,
+	object Object,
+	emitted map[string]struct{},
+) {
+	if _, exists := emitted[object.DartType]; exists {
+		return
+	}
 	for _, field := range object.Fields {
 		if field.Object != nil {
-			writeDartResponseObject(output, *field.Object)
+			writeDartResponseObject(output, *field.Object, emitted)
 		}
 	}
+	emitted[object.DartType] = struct{}{}
 	fmt.Fprintf(output, "\nclass %s {\n", object.DartType)
 	writeDartConstructor(output, object.DartType, object.Fields)
 	output.WriteString("\n")
 	for _, field := range object.Fields {
 		fmt.Fprintf(output, "  final %s %s;\n", dartType(field), field.Name)
 	}
-	fmt.Fprintf(output, "\n  factory %s.fromJson(Map<String, dynamic> json) => %s(\n", object.DartType, object.DartType)
+	writeDartFromJsonFactory(output, object)
+	output.WriteString("}\n")
+}
+
+func writeDartReusableObject(
+	output *strings.Builder,
+	object Object,
+	emitted map[string]struct{},
+) {
+	if _, exists := emitted[object.DartType]; exists {
+		return
+	}
 	for _, field := range object.Fields {
-		fmt.Fprintf(
-			output,
-			"    %s: %s,\n",
-			field.Name,
-			dartDecodeExpression("json", field),
+		if field.Object != nil {
+			writeDartReusableObject(output, *field.Object, emitted)
+		}
+	}
+	emitted[object.DartType] = struct{}{}
+	fmt.Fprintf(output, "\nclass %s {\n", object.DartType)
+	writeDartConstructor(output, object.DartType, object.Fields)
+	output.WriteString("\n")
+	for _, field := range object.Fields {
+		fmt.Fprintf(output, "  final %s %s;\n", dartType(field), field.Name)
+	}
+	writeDartToJson(output, object.Fields)
+	writeDartFromJsonFactory(output, object)
+	output.WriteString("}\n")
+}
+
+func writeDartToJson(output *strings.Builder, fields []Field) {
+	entries := make([]string, 0, len(fields))
+	for _, field := range fields {
+		entry := fmt.Sprintf("%s: %s", dartString(field.Name), dartEncodeExpression(field))
+		if field.Nullable {
+			entry = fmt.Sprintf("if (%s != null) %s", field.Name, entry)
+		}
+		entries = append(entries, entry)
+	}
+	inline := "  Map<String, Object?> toJson() => {" + strings.Join(entries, ", ") + "};"
+	if len(inline) <= 80 {
+		output.WriteString("\n" + inline + "\n")
+		return
+	}
+	output.WriteString("\n  Map<String, Object?> toJson() => {\n")
+	for _, entry := range entries {
+		fmt.Fprintf(output, "    %s,\n", entry)
+	}
+	output.WriteString("  };\n")
+}
+
+func writeDartFromJsonFactory(output *strings.Builder, object Object) {
+	arguments := make([]string, 0, len(object.Fields))
+	for _, field := range object.Fields {
+		arguments = append(
+			arguments,
+			fmt.Sprintf("%s: %s", field.Name, dartDecodeExpression("json", field)),
 		)
 	}
+	inline := fmt.Sprintf(
+		"  factory %s.fromJson(Map<String, dynamic> json) => %s(%s);",
+		object.DartType,
+		object.DartType,
+		strings.Join(arguments, ", "),
+	)
+	if len(inline) <= 80 {
+		output.WriteString("\n" + inline + "\n")
+		return
+	}
+	continuation := fmt.Sprintf("      %s(%s);", object.DartType, arguments[0])
+	if len(arguments) == 1 && !object.Fields[0].Array && len(continuation) <= 80 {
+		fmt.Fprintf(
+			output,
+			"\n  factory %s.fromJson(Map<String, dynamic> json) =>\n%s\n",
+			object.DartType,
+			continuation,
+		)
+		return
+	}
+	fmt.Fprintf(
+		output,
+		"\n  factory %s.fromJson(Map<String, dynamic> json) => %s(\n",
+		object.DartType,
+		object.DartType,
+	)
+	for _, field := range object.Fields {
+		writeDartDecodedArgument(output, "    ", "json", field)
+	}
 	output.WriteString("  );\n")
-	output.WriteString("}\n")
+}
+
+func writeDartDecodedArgument(
+	output *strings.Builder,
+	indent string,
+	source string,
+	field Field,
+) {
+	if field.Object == nil || !field.Array {
+		fmt.Fprintf(
+			output,
+			"%s%s: %s,\n",
+			indent,
+			field.Name,
+			dartDecodeExpression(source, field),
+		)
+		return
+	}
+	helper := "_requireObjectListField"
+	if field.Nullable {
+		helper = "_optionalObjectListField"
+	}
+	fmt.Fprintf(
+		output,
+		"%s%s: %s<%s>(\n",
+		indent,
+		field.Name,
+		helper,
+		field.Object.DartType,
+	)
+	fmt.Fprintf(output, "%s  %s,\n", indent, source)
+	fmt.Fprintf(output, "%s  %s,\n", indent, dartString(field.Name))
+	fmt.Fprintf(output, "%s  %s.fromJson,\n", indent, field.Object.DartType)
+	fmt.Fprintf(output, "%s),\n", indent)
 }
 
 func writeDartConstructor(output *strings.Builder, dartType string, fields []Field) {
@@ -606,22 +745,10 @@ func writeDartClientMethod(output *strings.Builder, method Method) {
 			method.Result.DartType,
 		)
 		for _, field := range method.Result.Fields {
-			fmt.Fprintf(
-				output,
-				"%s    %s: %s,\n",
-				bodyIndent,
-				field.Name,
-				dartDecodeExpression("result", field),
-			)
+			writeDartDecodedArgument(output, bodyIndent+"    ", "result", field)
 		}
 		for _, field := range method.Meta {
-			fmt.Fprintf(
-				output,
-				"%s    %s: %s,\n",
-				bodyIndent,
-				field.Name,
-				dartDecodeExpression("reply.meta", field),
-			)
+			writeDartDecodedArgument(output, bodyIndent+"    ", "reply.meta", field)
 		}
 		fmt.Fprintf(output, "%s  );\n", bodyIndent)
 		fmt.Fprintf(output, "%s  yield RpcStreamData(\n", bodyIndent)
@@ -637,22 +764,10 @@ func writeDartClientMethod(output *strings.Builder, method Method) {
 			method.Result.DartType,
 		)
 		for _, field := range method.Result.Fields {
-			fmt.Fprintf(
-				output,
-				"%s    %s: %s,\n",
-				bodyIndent,
-				field.Name,
-				dartDecodeExpression("result", field),
-			)
+			writeDartDecodedArgument(output, bodyIndent+"    ", "result", field)
 		}
 		for _, field := range method.Meta {
-			fmt.Fprintf(
-				output,
-				"%s    %s: %s,\n",
-				bodyIndent,
-				field.Name,
-				dartDecodeExpression("reply.meta", field),
-			)
+			writeDartDecodedArgument(output, bodyIndent+"    ", "reply.meta", field)
 		}
 		fmt.Fprintf(output, "%s  );\n", bodyIndent)
 	}
@@ -768,6 +883,39 @@ func writeDartDecoders(output *strings.Builder, schema Schema) {
 		output.WriteString("  return value == null ? null : decode(_requireMap(value, field));\n")
 		output.WriteString("}\n\n")
 	}
+	if usage.requiredObjectList {
+		output.WriteString("List<T> _requireObjectListField<T>(\n")
+		output.WriteString("  Map<String, dynamic> data,\n")
+		output.WriteString("  String field,\n")
+		output.WriteString("  T Function(Map<String, dynamic>) decode,\n")
+		output.WriteString(") {\n")
+		output.WriteString("  final value = data[field];\n")
+		output.WriteString("  if (value is! List) {\n")
+		output.WriteString("    throw BackendProtocolException('$field must be a list of objects.');\n")
+		output.WriteString("  }\n")
+		output.WriteString("  return List<T>.unmodifiable(\n")
+		output.WriteString("    value.map((item) => decode(_requireMap(item, field))),\n")
+		output.WriteString("  );\n")
+		output.WriteString("}\n\n")
+	}
+	if usage.optionalObjectList {
+		output.WriteString("List<T>? _optionalObjectListField<T>(\n")
+		output.WriteString("  Map<String, dynamic> data,\n")
+		output.WriteString("  String field,\n")
+		output.WriteString("  T Function(Map<String, dynamic>) decode,\n")
+		output.WriteString(") {\n")
+		output.WriteString("  final value = data[field];\n")
+		output.WriteString("  if (value == null) {\n")
+		output.WriteString("    return null;\n")
+		output.WriteString("  }\n")
+		output.WriteString("  if (value is! List) {\n")
+		output.WriteString("    throw BackendProtocolException('$field must be a list of objects or null.');\n")
+		output.WriteString("  }\n")
+		output.WriteString("  return List<T>.unmodifiable(\n")
+		output.WriteString("    value.map((item) => decode(_requireMap(item, field))),\n")
+		output.WriteString("  );\n")
+		output.WriteString("}\n\n")
+	}
 	if usage.requiredFile {
 		output.WriteString("RpcFileReference _requireFileField(\n")
 		output.WriteString("  Map<String, dynamic> data,\n")
@@ -798,12 +946,17 @@ type dartDecoderUsage struct {
 	optionalList         bool
 	requiredObject       bool
 	optionalObject       bool
+	requiredObjectList   bool
+	optionalObjectList   bool
 	requiredFile         bool
 	optionalFile         bool
 }
 
 func collectDartDecoderUsage(schema Schema) dartDecoderUsage {
 	var usage dartDecoderUsage
+	for _, definition := range schema.Types {
+		collectDartFieldUsage(definition.Fields, &usage)
+	}
 	for _, method := range schema.Methods {
 		collectDartFieldUsage(method.Result.Fields, &usage)
 		collectDartFieldUsage(method.Meta, &usage)
@@ -820,6 +973,13 @@ func collectDartFieldUsage(fields []Field, usage *dartDecoderUsage) {
 			} else {
 				usage.requiredFile = true
 			}
+		case field.Object != nil && field.Array:
+			if field.Nullable {
+				usage.optionalObjectList = true
+			} else {
+				usage.requiredObjectList = true
+			}
+			collectDartFieldUsage(field.Object.Fields, usage)
 		case field.Object != nil:
 			if field.Nullable {
 				usage.optionalObject = true
@@ -934,6 +1094,20 @@ func dartDecodeExpression(source string, field Field) string {
 		}
 		return fmt.Sprintf("%s(%s, %s)", helper, source, dartString(field.Name))
 	}
+	if field.Object != nil && field.Array {
+		helper := "_requireObjectListField"
+		if field.Nullable {
+			helper = "_optionalObjectListField"
+		}
+		return fmt.Sprintf(
+			"%s<%s>(%s, %s, %s.fromJson)",
+			helper,
+			field.Object.DartType,
+			source,
+			dartString(field.Name),
+			field.Object.DartType,
+		)
+	}
 	if field.Object != nil {
 		helper := "_requireObjectField"
 		if field.Nullable {
@@ -1002,6 +1176,12 @@ func dartEncodeExpression(field Field) string {
 			return value + "?.toJson()"
 		}
 		return value + ".toJson()"
+	}
+	if field.Object != nil && field.Array {
+		if field.Nullable {
+			return value + "?.map((item) => item.toJson()).toList(growable: false)"
+		}
+		return value + ".map((item) => item.toJson()).toList(growable: false)"
 	}
 	if field.Object != nil {
 		if field.Nullable {

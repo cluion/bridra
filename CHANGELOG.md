@@ -18,6 +18,13 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 - Added scalar integer `minimum`／`maximum` schema constraints, generated Go
   request validation through public `framework.Minimum`／`Maximum` rules, and
   compatibility checks that require a Protocol bump when request bounds change.
+- Added top-level reusable schema `types`, explicit object `ref` fields, and
+  structured object arrays across generated Go requests／responses and Dart
+  encoding／decoding. Reused request objects retain nested validation and
+  normalization with indexed violation paths.
+- Added public Go `framework.NestedListField` and
+  `framework.OptionalNestedListField` rules for generated and application-owned
+  structured lists.
 
 ### Changed
 

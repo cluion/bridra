@@ -282,6 +282,50 @@ func OptionalNestedField[T any, V Validatable](field string, value func(T) V) Ru
 	})
 }
 
+func NestedListField[T any, V Validatable](field string, value func(T) []V) Rule[T] {
+	if value == nil {
+		panic(ErrInvalidValidationRule)
+	}
+	return RuleFunc[T](func(input T) error {
+		return validateNestedList(field, value(input))
+	})
+}
+
+func OptionalNestedListField[T any, V Validatable](
+	field string,
+	value func(T) *[]V,
+) Rule[T] {
+	if value == nil {
+		panic(ErrInvalidValidationRule)
+	}
+	return RuleFunc[T](func(input T) error {
+		values := value(input)
+		if values == nil {
+			return nil
+		}
+		return validateNestedList(field, *values)
+	})
+}
+
+func validateNestedList[V Validatable](field string, values []V) error {
+	violations := make([]FieldViolation, 0)
+	for index, value := range values {
+		err := validateNested(fmt.Sprintf("%s[%d]", field, index), value)
+		if err == nil {
+			continue
+		}
+		var validationErrors *ValidationErrors
+		if !errors.As(err, &validationErrors) {
+			return err
+		}
+		violations = append(violations, validationErrors.Violations...)
+	}
+	if len(violations) == 0 {
+		return nil
+	}
+	return NewValidationErrors(violations...)
+}
+
 func validateNested(field string, validator Validatable) error {
 	err := validator.Validate()
 	if err == nil {

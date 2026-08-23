@@ -20,9 +20,15 @@ const methodNameGuidance = "use at least two lowercase dot-separated segments; "
 	`(for example, "users.create")`
 
 type Schema struct {
-	SchemaVersion   int      `json:"schemaVersion"`
-	ProtocolVersion int      `json:"protocolVersion"`
-	Methods         []Method `json:"methods"`
+	SchemaVersion   int           `json:"schemaVersion"`
+	ProtocolVersion int           `json:"protocolVersion"`
+	Types           []NamedObject `json:"types,omitempty"`
+	Methods         []Method      `json:"methods"`
+}
+
+type NamedObject struct {
+	Name string `json:"name"`
+	Object
 }
 
 type Method struct {
@@ -48,6 +54,7 @@ type Field struct {
 	Nullable  bool     `json:"nullable,omitempty"`
 	Enum      []string `json:"enum,omitempty"`
 	Object    *Object  `json:"object,omitempty"`
+	Ref       string   `json:"ref,omitempty"`
 	MinLength int      `json:"minLength,omitempty"`
 	MaxLength int      `json:"maxLength,omitempty"`
 	Minimum   *int     `json:"minimum,omitempty"`
@@ -103,10 +110,36 @@ func (schema Schema) Validate() error {
 		return fmt.Errorf("codegen: schema must define at least one method")
 	}
 
+	definitions := make(map[string]Object, len(schema.Types))
 	methods := make(map[string]struct{}, len(schema.Methods))
 	clients := make(map[string]struct{}, len(schema.Methods))
-	goTypes := make(map[string]string, len(schema.Methods)*2)
-	dartTypes := make(map[string]string, len(schema.Methods)*2)
+	goTypes := make(map[string]string, len(schema.Types)+len(schema.Methods)*2)
+	dartTypes := make(map[string]string, len(schema.Types)+len(schema.Methods)*2)
+	for index, definition := range schema.Types {
+		path := fmt.Sprintf("types[%d]", index)
+		if !identifierPattern.MatchString(definition.Name) {
+			return fmt.Errorf("codegen: %s.name %q is invalid", path, definition.Name)
+		}
+		if _, exists := definitions[definition.Name]; exists {
+			return fmt.Errorf("codegen: duplicate reusable type %q", definition.Name)
+		}
+		definitions[definition.Name] = definition.Object
+	}
+	for index, definition := range schema.Types {
+		if err := validateObject(
+			fmt.Sprintf("types[%d]", index),
+			definition.Object,
+			goTypes,
+			dartTypes,
+			definitions,
+			true,
+		); err != nil {
+			return err
+		}
+	}
+	if err := validateReferenceCycles(definitions); err != nil {
+		return err
+	}
 	for index, method := range schema.Methods {
 		path := fmt.Sprintf("methods[%d]", index)
 		if !methodPattern.MatchString(method.Name) {
@@ -130,14 +163,14 @@ func (schema Schema) Validate() error {
 		clients[method.ClientName] = struct{}{}
 
 		if method.Params != nil {
-			if err := validateObject(path+".params", *method.Params, goTypes, dartTypes, true); err != nil {
+			if err := validateObject(path+".params", *method.Params, goTypes, dartTypes, definitions, true); err != nil {
 				return err
 			}
 		}
-		if err := validateObject(path+".result", method.Result, goTypes, dartTypes, true); err != nil {
+		if err := validateObject(path+".result", method.Result, goTypes, dartTypes, definitions, true); err != nil {
 			return err
 		}
-		if err := validateFields(path+".meta", method.Meta, goTypes, dartTypes, true); err != nil {
+		if err := validateFields(path+".meta", method.Meta, goTypes, dartTypes, definitions, true); err != nil {
 			return err
 		}
 	}
@@ -149,6 +182,7 @@ func validateObject(
 	object Object,
 	goTypes map[string]string,
 	dartTypes map[string]string,
+	definitions map[string]Object,
 	allowFile bool,
 ) error {
 	if !identifierPattern.MatchString(object.GoType) {
@@ -178,7 +212,7 @@ func validateObject(
 	if len(object.Fields) == 0 {
 		return fmt.Errorf("codegen: %s.fields must not be empty", path)
 	}
-	return validateFields(path+".fields", object.Fields, goTypes, dartTypes, allowFile)
+	return validateFields(path+".fields", object.Fields, goTypes, dartTypes, definitions, allowFile)
 }
 
 func validateFields(
@@ -186,6 +220,7 @@ func validateFields(
 	fields []Field,
 	goTypes map[string]string,
 	dartTypes map[string]string,
+	definitions map[string]Object,
 	allowFile bool,
 ) error {
 	names := make(map[string]struct{}, len(fields))
@@ -200,31 +235,44 @@ func validateFields(
 		names[field.Name] = struct{}{}
 		switch field.Type {
 		case "string", "integer", "boolean":
-			if field.Object != nil {
-				return fmt.Errorf("codegen: %s.object requires type object", fieldPath)
+			if field.Object != nil || field.Ref != "" {
+				return fmt.Errorf("codegen: %s object or ref requires type object", fieldPath)
 			}
 		case "file":
 			if !allowFile {
 				return fmt.Errorf("codegen: %s file fields are not allowed here", fieldPath)
 			}
-			if field.Object != nil {
-				return fmt.Errorf("codegen: %s.object requires type object", fieldPath)
+			if field.Object != nil || field.Ref != "" {
+				return fmt.Errorf("codegen: %s object or ref requires type object", fieldPath)
 			}
 			if field.Array {
 				return fmt.Errorf("codegen: %s file arrays are not supported", fieldPath)
 			}
 		case "object":
-			if field.Object == nil {
-				return fmt.Errorf("codegen: %s.object is required for type object", fieldPath)
+			if field.Object == nil && field.Ref == "" {
+				return fmt.Errorf(
+					"codegen: %s.object is required unless ref is set",
+					fieldPath,
+				)
 			}
-			if field.Array {
-				return fmt.Errorf("codegen: %s nested object arrays are not supported", fieldPath)
+			if field.Object != nil && field.Ref != "" {
+				return fmt.Errorf(
+					"codegen: %s type object requires exactly one of object or ref",
+					fieldPath,
+				)
+			}
+			if field.Ref != "" {
+				if _, exists := definitions[field.Ref]; !exists {
+					return fmt.Errorf("codegen: %s.ref %q is undefined", fieldPath, field.Ref)
+				}
+				break
 			}
 			if err := validateObject(
 				fieldPath+".object",
 				*field.Object,
 				goTypes,
 				dartTypes,
+				definitions,
 				allowFile,
 			); err != nil {
 				return err

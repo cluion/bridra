@@ -328,6 +328,41 @@ func TestLoadSchemaPreservesExplicitIntegerBounds(t *testing.T) {
 	}
 }
 
+func TestLoadSchemaAcceptsReusableTypeReferences(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "schema.json")
+	contents := []byte(`{
+  "schemaVersion": 1,
+  "protocolVersion": 1,
+  "types": [{
+    "name": "entry",
+    "goType": "Entry",
+    "dartType": "Entry",
+    "fields": [{"name": "value", "type": "string"}]
+  }],
+  "methods": [{
+    "name": "entries.list",
+    "clientName": "listEntries",
+    "result": {
+      "goType": "ListEntriesResponse",
+      "dartType": "ListEntriesResult",
+      "fields": [{"name": "entries", "type": "object", "array": true, "ref": "entry"}]
+    }
+  }]
+}`)
+	if err := os.WriteFile(path, contents, 0o644); err != nil {
+		t.Fatalf("write schema: %v", err)
+	}
+
+	schema, err := LoadSchema(path)
+	if err != nil {
+		t.Fatalf("load schema: %v", err)
+	}
+	if len(schema.Types) != 1 || schema.Types[0].Name != "entry" ||
+		schema.Methods[0].Result.Fields[0].Ref != "entry" {
+		t.Fatalf("loaded reusable schema = %#v", schema)
+	}
+}
+
 func TestSchemaValidatesIntegerBounds(t *testing.T) {
 	base := func(field Field) Schema {
 		return Schema{
@@ -540,6 +575,168 @@ func TestSchemaRestrictsFileFieldsToScalars(t *testing.T) {
 	if err := schema.Validate(); err == nil ||
 		!strings.Contains(err.Error(), "file arrays are not supported") {
 		t.Fatalf("file array validation error = %v", err)
+	}
+}
+
+func TestGenerateSupportsReusableStructuredObjectArrays(t *testing.T) {
+	schema := Schema{
+		SchemaVersion:   SupportedSchemaVersion,
+		ProtocolVersion: 2,
+		Types: []NamedObject{
+			{
+				Name: "renameRule",
+				Object: Object{
+					GoType:   "RenameRule",
+					DartType: "RenameRule",
+					Fields: []Field{{
+						Name: "pattern", Type: "string", MinLength: 1, Trim: true,
+					}},
+				},
+			},
+			{
+				Name: "renameItem",
+				Object: Object{
+					GoType:   "RenameItem",
+					DartType: "RenameItem",
+					Fields: []Field{
+						{Name: "source", Type: "string"},
+						{Name: "target", Type: "string"},
+					},
+				},
+			},
+		},
+		Methods: []Method{
+			{
+				Name:       "rename.preview",
+				ClientName: "previewRename",
+				Params: &Object{
+					GoType:   "PreviewRenameRequest",
+					DartType: "PreviewRenameRequest",
+					Fields: []Field{
+						{Name: "rules", Type: "object", Array: true, Ref: "renameRule"},
+						{
+							Name: "fallbackRules", Type: "object", Array: true,
+							Nullable: true, Ref: "renameRule",
+						},
+					},
+				},
+				Result: Object{
+					GoType:   "PreviewRenameResponse",
+					DartType: "PreviewRenameResult",
+					Fields: []Field{
+						{Name: "items", Type: "object", Array: true, Ref: "renameItem"},
+						{Name: "rules", Type: "object", Array: true, Ref: "renameRule"},
+					},
+				},
+			},
+			{
+				Name:       "rename.apply",
+				ClientName: "applyRename",
+				Params: &Object{
+					GoType:   "ApplyRenameRequest",
+					DartType: "ApplyRenameRequest",
+					Fields: []Field{{
+						Name: "rules", Type: "object", Array: true, Ref: "renameRule",
+					}},
+				},
+				Result: Object{
+					GoType:   "ApplyRenameResponse",
+					DartType: "ApplyRenameResult",
+					Fields:   []Field{{Name: "ok", Type: "boolean"}},
+				},
+			},
+		},
+	}
+
+	outputs, err := Generate(schema)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	requests := generatedContent(t, outputs, GoRequestsPath)
+	for _, fragment := range []string{
+		"type RenameRule struct",
+		"Rules         []RenameRule",
+		"FallbackRules *[]RenameRule",
+		"framework.NestedListField(",
+		"framework.OptionalNestedListField(",
+	} {
+		if !strings.Contains(requests, fragment) {
+			t.Errorf("Go requests do not contain %q:\n%s", fragment, requests)
+		}
+	}
+	if strings.Count(requests, "type RenameRule struct") != 1 {
+		t.Fatalf("Go request reusable type was emitted more than once:\n%s", requests)
+	}
+	responses := generatedContent(t, outputs, GoResponsesPath)
+	for _, fragment := range []string{
+		"type RenameItem struct", "Items []RenameItem", "type RenameRule struct",
+	} {
+		if !strings.Contains(responses, fragment) {
+			t.Errorf("Go responses do not contain %q:\n%s", fragment, responses)
+		}
+	}
+	dart := generatedContent(t, outputs, DartClientPath)
+	for _, fragment := range []string{
+		"class RenameRule",
+		"factory RenameRule.fromJson",
+		"final List<RenameRule> rules;",
+		"rules.map((item) => item.toJson()).toList(growable: false)",
+		"_requireObjectListField<RenameItem>",
+	} {
+		if !strings.Contains(dart, fragment) {
+			t.Errorf("Dart client does not contain %q:\n%s", fragment, dart)
+		}
+	}
+	if strings.Count(dart, "class RenameRule") != 1 {
+		t.Fatalf("Dart reusable type was emitted more than once:\n%s", dart)
+	}
+}
+
+func TestSchemaValidatesReusableTypeReferences(t *testing.T) {
+	valid := Schema{
+		SchemaVersion:   SupportedSchemaVersion,
+		ProtocolVersion: 1,
+		Types: []NamedObject{{
+			Name: "entry",
+			Object: Object{
+				GoType:   "Entry",
+				DartType: "Entry",
+				Fields:   []Field{{Name: "value", Type: "string"}},
+			},
+		}},
+		Methods: []Method{{
+			Name:       "entries.list",
+			ClientName: "listEntries",
+			Result: Object{
+				GoType:   "ListEntriesResponse",
+				DartType: "ListEntriesResult",
+				Fields: []Field{{
+					Name: "entries", Type: "object", Array: true, Ref: "entry",
+				}},
+			},
+		}},
+	}
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("validate reusable object array: %v", err)
+	}
+
+	undefined := valid
+	undefined.Methods[0].Result.Fields[0].Ref = "missing"
+	if err := undefined.Validate(); err == nil || !strings.Contains(err.Error(), `ref "missing" is undefined`) {
+		t.Fatalf("undefined ref error = %v", err)
+	}
+
+	conflicting := valid
+	inline := valid.Types[0].Object
+	conflicting.Methods[0].Result.Fields[0].Object = &inline
+	if err := conflicting.Validate(); err == nil || !strings.Contains(err.Error(), "exactly one") {
+		t.Fatalf("conflicting object/ref error = %v", err)
+	}
+
+	cyclic := valid
+	cyclic.Types[0].Fields = []Field{{Name: "child", Type: "object", Ref: "entry"}}
+	if err := cyclic.Validate(); err == nil || !strings.Contains(err.Error(), "reference cycle") {
+		t.Fatalf("reference cycle error = %v", err)
 	}
 }
 

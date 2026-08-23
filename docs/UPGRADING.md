@@ -314,6 +314,15 @@ the deployed baseline before deployment. Invalid method names now include the
 accepted lowercase dot-separated format and an example; this diagnostic change
 requires no migration.
 
+The same release additively accepts top-level reusable `types`, object `ref`,
+and structured object arrays. Existing inline objects remain valid. To replace
+a JSON-string or parallel-array workaround, define the object once, reference
+it from request／response fields, regenerate, and migrate application code to the
+generated Go／Dart models. The compatibility checker resolves every reference;
+changing a used reusable request or response shape follows the same Protocol
+rules as changing that shape inline. Circular references are intentionally not
+supported because generated Go DTOs are value types.
+
 ## Framework 0.13.0 to 0.14.0
 
 Project Template v3 adds `schema/bridra.baseline.json` and makes `make verify`

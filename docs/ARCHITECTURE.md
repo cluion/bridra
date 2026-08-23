@@ -45,6 +45,15 @@ but never rewrites the baseline. Checked-in generated files act as golden output
 while `make verify` runs both `schema-check` and `codegen-check` before compiling
 either language.
 
+Top-level schema `types` assign one stable reference name to each reusable
+object while preserving explicit Go and Dart generated names. Object fields use
+`ref` instead of repeating an inline definition and may set `array`; unknown,
+ambiguous, duplicate, and cyclic definitions fail validation. Codegen resolves
+references into immutable object shapes, emits each language type once per
+package/file, and adds both Dart encoding and decoding for reusable types. The
+compatibility checker compares the resolved shapes at their request or response
+use sites, so a definition edit cannot bypass the application Protocol gate.
+
 `bridra schema check --against <baseline>` compares that reviewed wire contract
 with the current schema. Project Template v4 wires this check into generated
 projects' default verification gate. Its deterministic report separates compatible changes,
@@ -62,7 +71,9 @@ omitted bound remains distinct from an explicit zero; Codegen emits inclusive
 `Minimum`／`Maximum` rules and wraps nullable fields with `Optional`. Any request
 bound change is a compatibility-visible validation-rule change. Field rules,
 nested validators, and cross-field `RuleFunc[T]` errors are aggregated into
-structured violations. The Router passes every returned error through its
+structured violations. Object arrays use `NestedListField` or
+`OptionalNestedListField` and retain indexed paths such as
+`rules[2].pattern`. The Router passes every returned error through its
 `ExceptionRenderer`; an `ExceptionRegistry` can map typed domain errors while
 retaining the framework's safe fallback behavior.
 

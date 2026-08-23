@@ -129,6 +129,42 @@ func TestNumericBoundsReportStableViolations(t *testing.T) {
 	}
 }
 
+func TestNestedListRulesPrefixEveryInvalidElement(t *testing.T) {
+	type addressBook struct {
+		Addresses         []validationAddress
+		FallbackAddresses *[]validationAddress
+	}
+	registry := NewRuleRegistry[addressBook](
+		NestedListField(
+			"addresses",
+			func(book addressBook) []validationAddress { return book.Addresses },
+		),
+		OptionalNestedListField(
+			"fallbackAddresses",
+			func(book addressBook) *[]validationAddress { return book.FallbackAddresses },
+		),
+	)
+	fallback := []validationAddress{{City: "Taichung"}}
+	err := registry.Validate(addressBook{
+		Addresses:         []validationAddress{{City: "ok"}, {City: "Taipei"}},
+		FallbackAddresses: &fallback,
+	})
+	var validationErrors *ValidationErrors
+	if !errors.As(err, &validationErrors) {
+		t.Fatalf("error = %v, want ValidationErrors", err)
+	}
+	fields := []string{
+		validationErrors.Violations[0].Field,
+		validationErrors.Violations[1].Field,
+	}
+	if !reflect.DeepEqual(fields, []string{"addresses[1].city", "fallbackAddresses[0].city"}) {
+		t.Fatalf("fields = %#v", fields)
+	}
+	if err := registry.Validate(addressBook{}); err != nil {
+		t.Fatalf("validate empty and nil lists: %v", err)
+	}
+}
+
 func TestRuleRegistryRejectsTypedNilRuleWithoutMutation(t *testing.T) {
 	registry := NewRuleRegistry[validationWindow]()
 	var invalid RuleFunc[validationWindow]

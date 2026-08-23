@@ -276,6 +276,37 @@ func TestCompareSchemasIgnoresOrderingAndGeneratedNames(t *testing.T) {
 	}
 }
 
+func TestCompareSchemasResolvesReusableTypeWireShapes(t *testing.T) {
+	baseline := compatibilityTestSchema(1)
+	baseline.Types = []NamedObject{{
+		Name: "entry",
+		Object: Object{
+			GoType:   "Entry",
+			DartType: "Entry",
+			Fields:   []Field{{Name: "value", Type: "string"}},
+		},
+	}}
+	baseline.Methods[0].Result.Fields = []Field{{
+		Name: "entries", Type: "object", Array: true, Ref: "entry",
+	}}
+	current := baseline
+	current.Types = append([]NamedObject(nil), baseline.Types...)
+	current.Types[0].Fields = append([]Field(nil), baseline.Types[0].Fields...)
+	current.Types[0].Fields = append(
+		current.Types[0].Fields,
+		Field{Name: "required", Type: "boolean"},
+	)
+
+	report, err := CompareSchemas(baseline, current)
+	if err != nil {
+		t.Fatalf("compare schemas: %v", err)
+	}
+	if report.Status != SchemaIncompatible ||
+		!compatibilityHasChange(report, "field_added") {
+		t.Fatalf("report = %#v, want incompatible reusable shape change", report)
+	}
+}
+
 func compatibilityTestSchema(protocolVersion int) Schema {
 	return Schema{
 		SchemaVersion:   SupportedSchemaVersion,

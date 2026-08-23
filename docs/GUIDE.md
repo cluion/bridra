@@ -533,10 +533,50 @@ for example `users.create` or `reports.v2status`. Invalid names report this rule
 and example directly.
 
 Codegen supports string, integer, and boolean fields, scalar arrays
-(including RFC 3339 date-time arrays), nullable fields, string enums, nested
-objects, and generated minimum-length／maximum-length, integer-bound, and enum
-validation. Scalar integer request fields accept inclusive `minimum` and
-`maximum` values, including explicit zero or negative bounds:
+(including RFC 3339 date-time arrays), nullable fields, string enums, inline or
+reusable nested objects, structured object arrays, and generated
+minimum-length／maximum-length, integer-bound, and enum validation. Define a
+reusable object once in top-level `types`, then select it with `ref`:
+
+```json
+{
+  "types": [
+    {
+      "name": "renameRule",
+      "goType": "RenameRule",
+      "dartType": "RenameRule",
+      "fields": [
+        { "name": "pattern", "type": "string", "minLength": 1, "trim": true }
+      ]
+    }
+  ],
+  "methods": [
+    {
+      "name": "rename.preview",
+      "clientName": "previewRename",
+      "params": {
+        "goType": "PreviewRenameRequest",
+        "dartType": "PreviewRenameRequest",
+        "fields": [
+          { "name": "rules", "type": "object", "array": true, "ref": "renameRule" }
+        ]
+      }
+    }
+  ]
+}
+```
+
+The abbreviated fragment omits required `schemaVersion`, `protocolVersion`, and
+method `result` members. Each object field
+uses exactly one of inline `object` or reusable `ref`. Unknown and cyclic
+references are rejected. A reusable type is emitted once per generated language
+scope; it may be referenced by multiple methods or by both request and response
+contracts. Request arrays recursively normalize and validate every item, with
+paths such as `rules[2].pattern`. Compatibility checks resolve references first,
+so changes to a used reusable type are assessed at every wire location.
+
+Scalar integer request fields accept inclusive `minimum` and `maximum` values,
+including explicit zero or negative bounds:
 
 ```json
 {
@@ -1272,8 +1312,9 @@ The application provider uses generated group/action constants, so composing
 `RuleFunc[T]` cross-field rules. A registry evaluates every validation rule and
 returns one `ValidationErrors` value, so the Flutter client receives all known
 field violations in one response. `ForField`, `MaxLength`, `OneOf`, `Optional`,
-`NestedField`, and `OptionalNestedField` are reusable building blocks; generated
-Request DTOs use the same public API as hand-written application validators.
+`NestedField`, `OptionalNestedField`, `NestedListField`, and
+`OptionalNestedListField` are reusable building blocks; generated Request DTOs
+use the same public API as hand-written application validators.
 
 The Router owns one `ExceptionRenderer`. `ExceptionRegistry` preserves the
 framework mappings for `RPCError`, `ValidationErrors`, and hidden internal

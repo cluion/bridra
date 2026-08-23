@@ -288,7 +288,9 @@ bounded Application shutdown, and adds reliable macOS secondary-instance
 termination through the additive `DesktopSingleInstance.terminateSecondary`
 API plus a native runner gate. It also adds scalar integer schema bounds,
 generated public Go validation rules, compatibility coverage, and actionable
-method-name diagnostics. Project metadata
+method-name diagnostics. Reusable named schema objects and structured object
+arrays generate deduplicated Go／Dart models, indexed nested validation, and
+reference-resolved compatibility reports. Project metadata
 schema `2` and template protocol baseline `1` remain unchanged; every migration
 preserves each application's internally consistent RPC protocol.
 

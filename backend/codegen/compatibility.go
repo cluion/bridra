@@ -47,6 +47,8 @@ func CompareSchemas(baseline, current Schema) (SchemaCompatibilityReport, error)
 			err,
 		)
 	}
+	baseline = baseline.resolveReferences()
+	current = current.resolveReferences()
 
 	changes := make([]SchemaChange, 0)
 	baselineMethods := methodsByName(baseline.Methods)
