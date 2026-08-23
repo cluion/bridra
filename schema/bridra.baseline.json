@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "protocolVersion": 1,
+  "methods": [
+    {
+      "name": "system.health",
+      "clientName": "health",
+      "result": {
+        "goType": "HealthResponse",
+        "dartType": "HealthInfo",
+        "fields": [
+          { "name": "status", "type": "string" },
+          { "name": "frameworkVersion", "type": "string" },
+          { "name": "protocolVersion", "type": "integer" },
+          { "name": "runtime", "type": "string" },
+          { "name": "architecture", "type": "string" }
+        ]
+      }
+    },
+    {
+      "name": "greeting.hello",
+      "clientName": "greet",
+      "params": {
+        "goType": "HelloRequest",
+        "dartType": "GreetingRequest",
+        "fields": [
+          {
+            "name": "name",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "trim": true
+          },
+          {
+            "name": "tone",
+            "type": "string",
+            "nullable": true,
+            "enum": ["friendly", "formal"]
+          },
+          {
+            "name": "profile",
+            "type": "object",
+            "nullable": true,
+            "object": {
+              "goType": "GreetingProfileRequest",
+              "dartType": "GreetingProfileRequest",
+              "fields": [
+                {
+                  "name": "nickname",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32,
+                  "trim": true
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "result": {
+        "goType": "GreetingResponse",
+        "dartType": "GreetingResult",
+        "fields": [
+          { "name": "message", "type": "string" },
+          { "name": "servedBy", "type": "string" },
+          { "name": "timestamp", "type": "string", "format": "date-time" }
+        ]
+      },
+      "meta": [
+        { "name": "pipeline", "type": "string", "array": true }
+      ]
+    }
+  ]
+}

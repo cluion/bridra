@@ -1041,6 +1041,47 @@ func TestCurrentUpgradeCatalogIncludesAutomaticSchemaCompatibilityRelease(t *tes
 	}
 }
 
+func TestCurrentUpgradeCatalogRequiresManualSchemaBaselineAdoption(t *testing.T) {
+	path, available, err := currentUpgradeCatalog().migrationPath("0.13.0", "0.14.0")
+	if err != nil {
+		t.Fatalf("resolve schema baseline migration: %v", err)
+	}
+	if !available || len(path) != 1 {
+		t.Fatalf("schema baseline path = %#v, available = %t", path, available)
+	}
+	if path[0].ID != "framework-0.13.0-to-0.14.0" || path[0].Automatic {
+		t.Fatalf("schema baseline migration = %#v", path[0])
+	}
+}
+
+func TestCurrentUpgradeCatalogPlansSchemaBaselineForCustomApplicationProtocol(t *testing.T) {
+	root := makeUpgradeProjectRoot(t, currentProjectMetadata("0.13.0", 2, 3))
+	var stdout bytes.Buffer
+	err := testUpgradeCommand().run(
+		[]string{"--plan", "--to", "0.14.0", "--json", "--root", root},
+		&stdout,
+		&bytes.Buffer{},
+	)
+	if !errors.Is(err, errUpgradeRequired) {
+		t.Fatalf("upgrade error = %v, want errUpgradeRequired", err)
+	}
+	var report upgradeReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode report: %v", err)
+	}
+	if report.Status != upgradeMigrationRequired || !report.PlanAvailable ||
+		report.ApplyAvailable || len(report.Steps) != 2 ||
+		report.Steps[0].ID != "framework-0.13.0-to-0.14.0" ||
+		report.Steps[0].Automatic ||
+		report.Steps[1].ID != "template-2-to-3" ||
+		report.Steps[1].Automatic ||
+		report.Project.ProtocolVersion != 3 ||
+		report.Target.TemplateProtocolVersion != 1 ||
+		!hasUpgradeDiagnostic(report, "application_protocol_custom") {
+		t.Fatalf("report = %#v", report)
+	}
+}
+
 func TestCurrentUpgradeCatalogPlansSchemaCompatibilityForCustomApplicationProtocol(t *testing.T) {
 	root := makeUpgradeProjectRoot(t, currentProjectMetadata("0.12.0", 2, 3))
 	var stdout bytes.Buffer

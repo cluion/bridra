@@ -32,19 +32,22 @@ Models, Services, Responses, Controllers, and route registration remain under
 `backend/app`. `packages/bridra_flutter` owns transport-neutral RPC, HTTP, and
 desktop Sidecar clients. The generated `BridraRpcApi` owns the application RPC
 contract; `lib/api/backend_gateway.dart` adds connection lifecycle and health
-caching. Both packages remain in one Git repository and use Bridra 0.13.0.
+caching. Both packages remain in one Git repository and use Bridra 0.14.0.
 
 ## Contract generation
 
 `schema/bridra.json` is the single source for protocol version, RPC methods,
 wire DTO fields, presence/nullability, scalar/nested validation, and Dart
-decoders. `bridra generate` produces Go protocol/route constants, Go Request and
-Response DTOs, and the Dart typed client. Checked-in generated files act as
-golden outputs, while `make verify` runs `codegen-check` before compiling either
-language.
+decoders. Each application also owns `schema/bridra.baseline.json`, the immutable
+reviewed contract currently deployed to its peers. `bridra generate` produces Go
+protocol/route constants, Go Request and Response DTOs, and the Dart typed client,
+but never rewrites the baseline. Checked-in generated files act as golden outputs,
+while `make verify` runs both `schema-check` and `codegen-check` before compiling
+either language.
 
 `bridra schema check --against <baseline>` compares that reviewed wire contract
-with the current schema. Its deterministic report separates compatible changes,
+with the current schema. Project Template v3 wires this check into generated
+projects' default verification gate. Its deterministic report separates compatible changes,
 breaking changes isolated by a higher protocol version, and incompatible changes
 that reused or regressed the baseline protocol. The comparison follows actual
 Bridra decoding behavior: Requests enforce unknown-field, presence, nullability,
@@ -78,7 +81,7 @@ Template, and project metadata versions remain independent compatibility
 contracts; neither command tags or publishes a release.
 
 `create` asks Flutter to generate the native six-platform runners inside a
-same-parent staging directory, then renders Project Template manifest v2 and
+same-parent staging directory, then renders Project Template manifest v3 and
 generates the typed contract. Go consumer tests, Flutter dependency resolution,
 and Dart formatting must succeed before one atomic rename exposes the destination;
 every earlier failure removes the staging directory.

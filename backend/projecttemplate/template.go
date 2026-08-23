@@ -20,6 +20,8 @@ import (
 
 const ManifestVersion = releaseinfo.ProjectTemplateVersion
 
+const schemaBaselinePath = "schema/bridra.baseline.json"
+
 var ErrInvalidConfiguration = errors.New("project template: invalid configuration")
 
 //go:embed all:templates
@@ -90,6 +92,9 @@ func Render(root string, config Config) error {
 			return err
 		}
 	}
+	if err := initializeSchemaBaseline(root); err != nil {
+		return err
+	}
 
 	schema, err := codegen.LoadSchema(filepath.Join(root, "schema", "bridra.json"))
 	if err != nil {
@@ -104,6 +109,37 @@ func Render(root string, config Config) error {
 	}
 	if err := codegen.Write(root, outputs); err != nil {
 		return fmt.Errorf("project template: write generated contract: %w", err)
+	}
+	return nil
+}
+
+func initializeSchemaBaseline(root string) (resultErr error) {
+	currentPath := filepath.Join(root, "schema", "bridra.json")
+	contents, err := os.ReadFile(currentPath)
+	if err != nil {
+		return fmt.Errorf("project template: read current schema for baseline: %w", err)
+	}
+	baselinePath := filepath.Join(root, filepath.FromSlash(schemaBaselinePath))
+	if err := os.MkdirAll(filepath.Dir(baselinePath), 0o755); err != nil {
+		return fmt.Errorf("project template: create schema baseline directory: %w", err)
+	}
+	baseline, err := os.OpenFile(baselinePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if errors.Is(err, fs.ErrExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("project template: create schema baseline: %w", err)
+	}
+	defer func() {
+		if closeErr := baseline.Close(); closeErr != nil && resultErr == nil {
+			resultErr = fmt.Errorf("project template: close schema baseline: %w", closeErr)
+		}
+		if resultErr != nil {
+			_ = os.Remove(baselinePath)
+		}
+	}()
+	if _, err := baseline.Write(contents); err != nil {
+		return fmt.Errorf("project template: write schema baseline: %w", err)
 	}
 	return nil
 }

@@ -21,7 +21,7 @@ Flutter UI -> typed gateway -> RPC transport
                               Middleware -> Controller -> Service
 ```
 
-Framework version `0.13.0` and the Project Template protocol baseline `1`
+Framework version `0.14.0` and the Project Template protocol baseline `1`
 evolve independently. Applications own their RPC protocol and may increment it
 when regenerating a coordinated Go/Dart contract.
 Bridra is licensed under the [MIT License](LICENSE), Copyright (c) 2026 Cluion.
@@ -97,7 +97,7 @@ Install Go 1.25+, FVM 4.x, and the native toolchain required by your target
 platform. Then install the exact Bridra CLI version:
 
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.13.0
+go install github.com/cluion/bridra/backend/cmd/bridra@v0.14.0
 bridra version
 ```
 
@@ -113,9 +113,10 @@ make verify
 make run
 ```
 
-The generated project owns its Flutter UI, Go application layers, schema,
-native runners, and tests. Framework packages remain versioned dependencies, so
-application code can evolve independently.
+The generated project owns its Flutter UI, Go application layers, current RPC
+schema, immutable deployed-schema baseline, native runners, and tests. Framework
+packages remain versioned dependencies, so application code can evolve
+independently. `make verify` checks the current schema against that baseline.
 
 ## Everyday commands
 
@@ -124,7 +125,7 @@ bridra make controller User
 bridra make service Billing
 bridra make request CreateUser
 bridra generate
-bridra schema check --against path/to/released-schema.json
+make schema-check
 bridra dev
 bridra build linux
 bridra diagnose
