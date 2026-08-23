@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.14.0 - Unreleased
+## 0.14.0 - 2026-08-23
 
 - Aligned package metadata with Bridra 0.14.0's generated-project RPC schema
   baseline CI gate. The public Dart runtime API and RPC protocol remain
