@@ -322,10 +322,10 @@ overwrite them:
    `macos/Runner/MainFlutterWindow.swift`; it must acknowledge
    `terminateSecondary` before calling `NSApp.terminate`. Add the generated
    `RunnerTests.swift` coverage and a `make macos-native-test` gate.
-7. Update both framework dependencies to `0.15.0`, record Template version `4`
-   and Framework version `0.15.0` in `.bridra/project.json`, preserve the
-   application protocol, then run `make verify`, `make macos-native-test`, and
-   required Desktop builds.
+7. Update both framework dependencies to `0.15.0`, record metadata schema `3`,
+   Template version `5`, Framework version `0.15.0`, and the reviewed canonical
+   `platforms` list in `.bridra/project.json`, preserve the application protocol,
+   then run `make verify`, `make macos-native-test`, and required Desktop builds.
 
 The generated Template v4 `application.go`, `router.go`, Sidecar entrypoint, and
 Sidecar tests are the reference implementation. Roll back by restoring the
