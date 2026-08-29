@@ -7,3 +7,18 @@ package framework
 func MacOSNativeFoundationAvailable() bool {
 	return false
 }
+
+type unavailableMacOSResourceBookmarkResolver struct{}
+
+// NewMacOSResourceBookmarkResolver returns an unavailable resolver unless the
+// process uses Bridra's opt-in native macOS build.
+func NewMacOSResourceBookmarkResolver() ResourceBookmarkResolver {
+	return unavailableMacOSResourceBookmarkResolver{}
+}
+
+func (unavailableMacOSResourceBookmarkResolver) ResolveBookmark(
+	[]byte,
+	ResourceBookmarkScope,
+) (ResourceLease, error) {
+	return nil, ErrResourceBookmarkUnavailable
+}

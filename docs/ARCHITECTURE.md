@@ -34,6 +34,16 @@ desktop Sidecar clients. The generated `BridraRpcApi` owns the application RPC
 contract; `lib/api/backend_gateway.dart` adds connection lifecycle and health
 caching. Both packages remain in one Git repository and use Bridra 0.15.0.
 
+Native macOS Sidecars may register a `ResourceBroker` backed by
+`NewMacOSResourceBookmarkResolver`. The resolver alone handles Foundation's
+different ephemeral and persistent bookmark lifecycles; the broker owns a
+bounded set of leases and gives application code only authenticated,
+process-local capabilities. Application shutdown releases all remaining leases.
+Bookmark bytes, capabilities, and resolved paths are authority-bearing secrets
+and must not enter logs or diagnostics. The reserved RPC control channel and
+Flutter／Swift bookmark creator are separate integration layers and are not yet
+available.
+
 ## Contract generation
 
 `schema/bridra.json` is the single source for protocol version, RPC methods,

@@ -521,11 +521,33 @@ and links Bridra's Foundation adapter. The default remains a portable
 `CGO_ENABLED=0` Sidecar.
 Distribution signing, notarization, installers, and store submission remain
 product release tasks. Native mode provides the prerequisite adapter but does
-not yet implement security-scoped bookmark handoff.
+not yet implement the Flutter／Swift bookmark handoff or reserved RPC control
+messages.
 
 Build manifests use schema version 2. `sidecarNative: true` distinguishes an
 opt-in Foundation-enabled macOS Sidecar; the field is omitted for portable
 Sidecars and HTTP artifacts.
+
+Native Sidecar applications can prepare the Go-owned resource lifecycle without
+exposing bookmark bytes to controllers:
+
+```go
+provider := framework.NewResourceBrokerServiceProvider(
+    framework.NewMacOSResourceBookmarkResolver(),
+    framework.DefaultResourceBrokerOptions(),
+)
+```
+
+`ResourceBroker.Grant` accepts either `ResourceBookmarkEphemeral` for a
+current-process handoff or `ResourceBookmarkPersistent` for an explicitly
+security-scoped stored bookmark. It rejects bookmarks over 1 MiB and more than
+64 concurrent grants by default, and returns only an authenticated opaque
+capability. Controllers may call `ResolvePath` while the lease is active and
+must call `Release` when finished; `Application.Shutdown` releases all remaining
+leases through the provider. Bookmark bytes, capability values, and resolved
+paths must never be logged, persisted as diagnostics, or included in RPC schema
+baselines. Non-native builds return `ErrResourceBookmarkUnavailable` from the
+macOS resolver. No public RPC route accepts bookmark data yet.
 
 ## Generate the RPC contract
 
