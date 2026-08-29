@@ -12,6 +12,9 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
   fallback behavior.
 - Added `bridra build macos --macos-sidecar-entitlements <path>` for
   application-owned Sidecar sandbox and capability contracts.
+- Added opt-in `bridra build macos --macos-sidecar-native`, which builds both
+  universal Sidecar architectures with CGO and Bridra's tagged Foundation
+  adapter. Build manifest schema 2 records this as `sidecarNative`.
 
 ### Fixed
 

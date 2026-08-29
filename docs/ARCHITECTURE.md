@@ -180,7 +180,11 @@ a Sidecar unless an explicit backend URL selects HTTP, while mobile and Web alwa
 HTTP. Profile and release HTTP artifacts require an HTTPS `/rpc` endpoint and an
 explicit compile-time token.
 
-Sidecars are built with `CGO_ENABLED=0` for the target OS and host architecture.
+Sidecars are built with `CGO_ENABLED=0` for the target OS and host architecture
+by default. macOS may explicitly select a native mode that builds both
+architectures with CGO, enables the `bridra_macos_native` build tag, and links a
+small Foundation availability adapter. The build manifest records that opt-in;
+other platforms remain portable.
 macOS combines arm64 and amd64 binaries with `lipo`, installs the universal executable
 under the app's `libexec`, then re-applies and verifies an ad-hoc bundle signature.
 The app's pre-existing entitlements are preserved and compared after re-signing.
@@ -193,10 +197,12 @@ bundle. This post-build installation also works for unmodified runners created b
 hooks.
 
 After validating the expected artifact and bundled Sidecar, the command computes a
-deterministic SHA-256 over the file or directory tree. A versioned, token-free manifest
-under `build/bridra` records target, mode, transport, relative artifact paths, backend
-URL, architecture, and checksums. Make targets and the Windows PowerShell entrypoint
-delegate release builds to this command so CI and local builds share one policy.
+deterministic SHA-256 over the file or directory tree. A schema-versioned,
+token-free manifest under `build/bridra` records target, mode, transport,
+relative artifact paths, backend URL, architecture, native macOS Sidecar
+opt-in, and checksums. Make targets and the Windows PowerShell entrypoint
+delegate release builds to this command so CI and local builds share one
+policy.
 
 CLI release metadata has one source in `backend/internal/releaseinfo`. The global
 help, `bridra version`, generated dependency versions, and release linker flags

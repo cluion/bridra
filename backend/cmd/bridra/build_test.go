@@ -59,7 +59,8 @@ func TestBuildLinuxBundlesSidecarAndWritesManifest(t *testing.T) {
 		t.Fatalf("Sidecar = %q", contents)
 	}
 	manifest := readBuildTestManifest(t, filepath.Join(root, "build", "bridra", "linux-release.json"))
-	if manifest.Target != buildTargetLinux || manifest.Mode != buildModeRelease ||
+	if manifest.SchemaVersion != buildManifestSchemaVersion ||
+		manifest.Target != buildTargetLinux || manifest.Mode != buildModeRelease ||
 		manifest.Transport != buildTransportSidecar || manifest.Architecture != "x64" {
 		t.Fatalf("manifest = %#v", manifest)
 	}
@@ -193,6 +194,7 @@ func TestBuildMacOSCreatesUniversalSidecarAndResignsApp(t *testing.T) {
 		[]string{
 			"macos",
 			"--root", root,
+			"--macos-sidecar-native",
 			"--macos-sidecar-entitlements", "macos/Runner/Sidecar.entitlements",
 		},
 		&bytes.Buffer{},
@@ -211,6 +213,10 @@ func TestBuildMacOSCreatesUniversalSidecarAndResignsApp(t *testing.T) {
 				goArchitectures,
 				buildEnvironmentValue(specification.Environment, "GOARCH"),
 			)
+			if buildEnvironmentValue(specification.Environment, "CGO_ENABLED") != "1" ||
+				!containsString(specification.Arguments, macosNativeBuildTag) {
+				t.Fatalf("native Go build = %#v", specification)
+			}
 		}
 		if specification.Name == "codesign" {
 			codesignCalls++
@@ -246,7 +252,10 @@ func TestBuildMacOSCreatesUniversalSidecarAndResignsApp(t *testing.T) {
 		t.Fatalf("Sidecar = %q", contents)
 	}
 	manifest := readBuildTestManifest(t, filepath.Join(root, "build", "bridra", "macos-release.json"))
-	if manifest.Architecture != "universal" || manifest.Sidecar == "" {
+	if manifest.SchemaVersion != buildManifestSchemaVersion ||
+		manifest.Architecture != "universal" ||
+		manifest.Sidecar == "" ||
+		!manifest.SidecarNative {
 		t.Fatalf("manifest = %#v", manifest)
 	}
 	artifactChecksum, err := artifactSHA256(filepath.Join(
@@ -262,6 +271,47 @@ func TestBuildMacOSCreatesUniversalSidecarAndResignsApp(t *testing.T) {
 	}
 	if manifest.ArtifactSHA256 != artifactChecksum || manifest.SidecarSHA256 != sidecarChecksum {
 		t.Fatalf("manifest checksums were not computed from the final signed artifact: %#v", manifest)
+	}
+}
+
+func TestBuildMacOSPortableSidecarRemainsCGODisabled(t *testing.T) {
+	root := buildProjectRoot(t)
+	workDirectory := t.TempDir()
+	var specifications []buildProcessSpec
+	system := buildTestSystem("darwin", "arm64")
+	system.run = func(specification buildProcessSpec) error {
+		specifications = append(specifications, specification)
+		switch specification.Name {
+		case "go":
+			writeBuildTestOutput(t, buildOutputArgument(t, specification.Arguments), "sidecar")
+		case "xcrun":
+			writeBuildTestOutput(
+				t,
+				buildNamedArgument(t, specification.Arguments, "-output"),
+				"universal",
+			)
+		default:
+			t.Fatalf("unexpected command: %#v", specification)
+		}
+		return nil
+	}
+	_, err := (buildCommand{system: system}).buildSidecar(
+		buildOptions{root: root, target: buildTargetMacOS},
+		workDirectory,
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+	)
+	if err != nil {
+		t.Fatalf("build portable Sidecar: %v", err)
+	}
+	for _, specification := range specifications {
+		if specification.Name != "go" {
+			continue
+		}
+		if buildEnvironmentValue(specification.Environment, "CGO_ENABLED") != "0" ||
+			containsString(specification.Arguments, macosNativeBuildTag) {
+			t.Fatalf("portable Go build = %#v", specification)
+		}
 	}
 }
 
@@ -472,6 +522,14 @@ func TestBuildRejectsInvalidOptions(t *testing.T) {
 			message: "requires the macos target",
 		},
 		{
+			name: "native macOS Sidecar on Linux target", goos: "linux", goarch: "amd64",
+			options: buildOptions{
+				root: root, target: buildTargetLinux, mode: buildModeRelease,
+				macosSidecarNative: true,
+			},
+			message: "requires the macos target",
+		},
+		{
 			name: "missing macOS Sidecar entitlements", goos: "darwin", goarch: "arm64",
 			options: buildOptions{
 				root: root, target: buildTargetMacOS, mode: buildModeRelease,
@@ -520,6 +578,20 @@ func TestBuildRejectsMacOSSidecarEntitlementsWithHTTPTransport(t *testing.T) {
 			root: root, target: buildTargetMacOS, mode: buildModeDebug,
 			backendURL: "http://127.0.0.1:8080/rpc", token: "token",
 			macosSidecarEntitlements: entitlements,
+		},
+	)
+	if !errors.Is(err, errBuildInvalid) || !strings.Contains(err.Error(), "Sidecar transport") {
+		t.Fatalf("error = %v, want Sidecar transport requirement", err)
+	}
+}
+
+func TestBuildRejectsNativeMacOSSidecarWithHTTPTransport(t *testing.T) {
+	root := buildProjectRoot(t)
+	_, err := (buildCommand{system: buildTestSystem("darwin", "arm64")}).resolveOptions(
+		buildOptions{
+			root: root, target: buildTargetMacOS, mode: buildModeDebug,
+			backendURL: "http://127.0.0.1:8080/rpc", token: "token",
+			macosSidecarNative: true,
 		},
 	)
 	if !errors.Is(err, errBuildInvalid) || !strings.Contains(err.Error(), "Sidecar transport") {

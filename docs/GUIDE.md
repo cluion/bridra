@@ -506,6 +506,7 @@ plist explicitly:
 
 ```bash
 go run ./cmd/bridra build macos --root .. \
+  --macos-sidecar-native \
   --macos-sidecar-entitlements macos/Runner/Sidecar.entitlements
 ```
 
@@ -514,9 +515,17 @@ compares their property-list values, verifies both signatures, and only then
 computes the manifest checksums. For an App Sandbox child, the application owns
 the exact contract; a typical Sidecar plist enables both
 `com.apple.security.app-sandbox` and `com.apple.security.inherit`.
+`--macos-sidecar-native` is separately opt-in: it builds both Darwin
+architectures with `CGO_ENABLED=1`, enables the `bridra_macos_native` build tag,
+and links Bridra's Foundation adapter. The default remains a portable
+`CGO_ENABLED=0` Sidecar.
 Distribution signing, notarization, installers, and store submission remain
-product release tasks. This option does not enable CGO or implement
-security-scoped bookmark handoff.
+product release tasks. Native mode provides the prerequisite adapter but does
+not yet implement security-scoped bookmark handoff.
+
+Build manifests use schema version 2. `sidecarNative: true` distinguishes an
+opt-in Foundation-enabled macOS Sidecar; the field is omitted for portable
+Sidecars and HTTP artifacts.
 
 ## Generate the RPC contract
 
@@ -899,7 +908,8 @@ Build Windows and Linux releases on the target OS and architecture. The macOS
 build phase produces and ad-hoc signs a universal `arm64`/`x86_64` sidecar. It
 preserves and verifies the app's existing entitlements; pass
 `--macos-sidecar-entitlements` when the child process needs an application-owned
-entitlement contract.
+entitlement contract, and `--macos-sidecar-native` when application code needs
+the opt-in Foundation adapter. Portable `CGO_ENABLED=0` remains the default.
 The `make *-build` and Windows `-Task build` wrappers delegate to `bridra build`.
 
 ## Runtime configuration

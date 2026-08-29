@@ -51,6 +51,9 @@ const (
 	buildTransportHTTP    buildTransport = "http"
 )
 
+const buildManifestSchemaVersion = 2
+const macosNativeBuildTag = "bridra_macos_native"
+
 type buildProcessSpec struct {
 	Name        string
 	Arguments   []string
@@ -85,6 +88,7 @@ type buildOptions struct {
 	mode                     buildMode
 	backendURL               string
 	token                    string
+	macosSidecarNative       bool
 	macosSidecarEntitlements string
 	transport                buildTransport
 	architecture             string
@@ -108,6 +112,7 @@ type buildManifest struct {
 	ArtifactSHA256 string         `json:"artifactSha256"`
 	Sidecar        string         `json:"sidecar,omitempty"`
 	SidecarSHA256  string         `json:"sidecarSha256,omitempty"`
+	SidecarNative  bool           `json:"sidecarNative,omitempty"`
 	BackendURL     string         `json:"backendUrl,omitempty"`
 }
 
@@ -156,6 +161,7 @@ Options:
   --mode value                        debug, profile, or release (default release)
   --backend-url URL                   HTTP RPC endpoint compiled into Flutter
   --token value                       HTTP RPC token compiled into Flutter
+  --macos-sidecar-native              Build a Foundation-enabled macOS Sidecar
   --macos-sidecar-entitlements path   Entitlements for a bundled macOS Sidecar
 
 Linux builds require Linux, macOS and iOS builds require macOS, and Windows
@@ -179,6 +185,11 @@ func (item buildCommand) run(arguments []string, stdout, stderr io.Writer) error
 	mode := flags.String("mode", string(buildModeRelease), "debug, profile, or release")
 	backendURL := flags.String("backend-url", "", "HTTP RPC endpoint")
 	token := flags.String("token", "", "HTTP RPC token")
+	macosSidecarNative := flags.Bool(
+		"macos-sidecar-native",
+		false,
+		"build a Foundation-enabled macOS Sidecar",
+	)
 	macosSidecarEntitlements := flags.String(
 		"macos-sidecar-entitlements",
 		"",
@@ -199,6 +210,7 @@ func (item buildCommand) run(arguments []string, stdout, stderr io.Writer) error
 		mode:                     buildMode(*mode),
 		backendURL:               *backendURL,
 		token:                    *token,
+		macosSidecarNative:       *macosSidecarNative,
 		macosSidecarEntitlements: *macosSidecarEntitlements,
 	})
 	if err != nil {
@@ -271,6 +283,12 @@ func (item buildCommand) resolveOptions(options buildOptions) (buildOptions, err
 	options.backendURL = strings.TrimSpace(options.backendURL)
 	options.token = strings.TrimSpace(options.token)
 	options.macosSidecarEntitlements = strings.TrimSpace(options.macosSidecarEntitlements)
+	if options.macosSidecarNative && options.target != buildTargetMacOS {
+		return buildOptions{}, fmt.Errorf(
+			"%w: --macos-sidecar-native requires the macos target",
+			errBuildInvalid,
+		)
+	}
 	if options.macosSidecarEntitlements != "" && options.target != buildTargetMacOS {
 		return buildOptions{}, fmt.Errorf(
 			"%w: --macos-sidecar-entitlements requires the macos target",
@@ -315,6 +333,12 @@ func (item buildCommand) resolveOptions(options buildOptions) (buildOptions, err
 	}
 
 	options.transport = buildTransportHTTP
+	if options.macosSidecarNative {
+		return buildOptions{}, fmt.Errorf(
+			"%w: --macos-sidecar-native requires the Sidecar transport",
+			errBuildInvalid,
+		)
+	}
 	if options.macosSidecarEntitlements != "" {
 		return buildOptions{}, fmt.Errorf(
 			"%w: --macos-sidecar-entitlements requires the Sidecar transport",
@@ -551,7 +575,7 @@ func (item buildCommand) build(options buildOptions, stdout, stderr io.Writer) (
 		return fmt.Errorf("build: checksum artifact: %w", err)
 	}
 	manifest := buildManifest{
-		SchemaVersion:  1,
+		SchemaVersion:  buildManifestSchemaVersion,
 		ProjectName:    options.metadata.ProjectName,
 		Target:         options.target,
 		Mode:           options.mode,
@@ -560,6 +584,7 @@ func (item buildCommand) build(options buildOptions, stdout, stderr io.Writer) (
 		Artifact:       relativeBuildPath(options.root, artifact.path),
 		ArtifactSHA256: artifactChecksum,
 		BackendURL:     options.backendURL,
+		SidecarNative:  options.macosSidecarNative,
 	}
 	if artifact.sidecarPath != "" {
 		manifest.Sidecar = relativeBuildPath(options.root, artifact.sidecarPath)
@@ -597,11 +622,19 @@ func (item buildCommand) buildSidecar(
 		var binaries []string
 		for _, architecture := range []string{"arm64", "amd64"} {
 			output := filepath.Join(workDirectory, "bridra_backend_"+architecture)
+			arguments := []string{"build", "-trimpath", "-o", output, "./cmd/sidecar"}
+			cgoEnabled := "0"
+			if options.macosSidecarNative {
+				cgoEnabled = "1"
+				arguments = []string{
+					"build", "-tags", macosNativeBuildTag, "-trimpath", "-o", output, "./cmd/sidecar",
+				}
+			}
 			if err := item.execute("Go Sidecar "+architecture, buildProcessSpec{
 				Name:        "go",
-				Arguments:   []string{"build", "-trimpath", "-o", output, "./cmd/sidecar"},
+				Arguments:   arguments,
 				Directory:   backendDirectory,
-				Environment: []string{"CGO_ENABLED=0", "GOOS=darwin", "GOARCH=" + architecture},
+				Environment: []string{"CGO_ENABLED=" + cgoEnabled, "GOOS=darwin", "GOARCH=" + architecture},
 				Stdout:      stdout,
 				Stderr:      stderr,
 			}); err != nil {
