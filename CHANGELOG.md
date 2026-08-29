@@ -3,6 +3,51 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
+## [0.16.0] - 2026-08-29
+
+### Added
+
+- Documented the exact raw streaming metadata contract and added Sidecar plus
+  HTTP wire-level regressions for non-canonical stream flags and Sidecar window
+  fallback behavior.
+- Added `bridra build macos --macos-sidecar-entitlements <path>` for
+  application-owned Sidecar sandbox and capability contracts.
+- Added opt-in `bridra build macos --macos-sidecar-native`, which builds both
+  universal Sidecar architectures with CGO and Bridra's tagged Foundation
+  adapter. Build manifest schema 2 records this as `sidecarNative`.
+- Added a bounded Go `ResourceBroker`, opaque authenticated capabilities,
+  lifecycle provider, and tagged Foundation resolver for ephemeral and
+  persistent macOS bookmark leases.
+- Added the macOS Swift bookmark creator, public Dart bookmark and Sidecar grant
+  APIs, and authenticated reserved Sidecar grant／release controls. Capability
+  values are session-bound and redacted from string output.
+- Added `make macos-sandbox-smoke` and a hosted macOS CI gate that signs isolated
+  creator／receiver harness apps and proves outside-container raw-path denial,
+  ephemeral bookmark access, and denial again after release.
+
+### Changed
+
+- Advanced the Project Template to version `6` for the application-owned macOS
+  bookmark bridge and ResourceBroker-enabled Sidecar entrypoint. Existing
+  projects require the documented manual migration. Project metadata schema `3`
+  and Template RPC protocol baseline `1` remain unchanged.
+
+### Fixed
+
+- `bridra generate` now canonicalizes generated Dart with the project-pinned
+  formatter before writing or checking output. Valid schemas no longer force
+  generated-file freshness and Dart formatting gates into conflicting states.
+- macOS Sidecar builds now preserve and verify the Flutter app's existing
+  entitlements when re-applying the ad-hoc bundle signature. Requested Sidecar
+  entitlements are also read back and compared before final artifact checksums
+  are written.
+
+### Support
+
+- The latest `0.16.x` release receives best-effort security fixes until the next
+  minor line is published. The `0.15.x` line is no longer supported after this
+  release.
+
 ## [0.15.0] - 2026-08-29
 
 ### Added

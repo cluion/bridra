@@ -8,7 +8,7 @@ Go module: `github.com/cluion/bridra/backend`
 
 License: [MIT](../LICENSE), Copyright (c) 2026 Cluion
 
-Bridra 0.13 is a six-platform framework starter with a typed
+Bridra 0.16 is a six-platform framework starter with a typed
 Flutter gateway and a Laravel-inspired Go application pipeline. Windows,
 macOS, and Linux bundle Go as a child-process sidecar; Android, iOS, and Web
 use the same backend through an HTTP RPC adapter.
@@ -27,7 +27,7 @@ Flutter UI -> typed gateway -> RPC client
 
 The application entrypoint is `lib/main.dart`. Both transports use the same
 versioned request, response, error, and health-handshake contract. Framework
-SemVer (`0.15.0`), the Project Template protocol baseline (`1`), and each
+SemVer (`0.16.0`), the Project Template protocol baseline (`1`), and each
 application's internally consistent RPC protocol evolve independently.
 
 ## Platform support
@@ -141,7 +141,7 @@ this starter currently uses Flutter's Swift Package Manager integration.
 Install the exact CLI version through Go:
 
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.15.0
+go install github.com/cluion/bridra/backend/cmd/bridra@v0.16.0
 bridra version
 bridra version --json
 ```
@@ -175,20 +175,21 @@ Upgrade by installing an explicit newer version, then inspect it before updating
 projects:
 
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.15.0
+go install github.com/cluion/bridra/backend/cmd/bridra@v0.16.0
 bridra version --json
-bridra upgrade --plan --to 0.15.0 --root /path/to/project
+bridra upgrade --plan --to 0.16.0 --root /path/to/project
 ```
 
 Bridra does not silently auto-update the CLI. Project compatibility,
 migration, deprecation, and rollback rules are documented in
 [UPGRADING.md](UPGRADING.md). Maintainer release steps are documented in
-[RELEASING.md](RELEASING.md). The `0.9.0` to `0.15.0` path contains the
+[RELEASING.md](RELEASING.md). The `0.9.0` to `0.16.0` path contains the
 automatic `0.10.0` HTTP-security step, the `0.10.1` diagnostics and
 upgrade-planner patch, the runtime-neutral `0.11.0` supply-chain release, and
-the `0.12.0` bounded-stdin Sidecar launch update. The `0.14.0` baseline-gate and
-final `0.15.0` Application lifecycle steps are manual because Bridra does not
-overwrite application-owned schema baselines, app wiring, or Sidecar entrypoints.
+the `0.12.0` bounded-stdin Sidecar launch update. The `0.14.0` baseline-gate,
+`0.15.0` Application lifecycle, and `0.16.0` macOS resource-handoff steps are
+manual because Bridra does not overwrite application-owned schema baselines,
+app wiring, Sidecar entrypoints, or native runners.
 Existing application-owned server entrypoints are not overwritten; adopt the
 production controls deliberately using
 [HTTP_SECURITY.md](HTTP_SECURITY.md). The planner validates each application's
@@ -203,9 +204,9 @@ path.
 Framework maintainers enter the public SemVer once:
 
 ```bash
-make release-prepare VERSION=0.15.0
-make release-check VERSION=0.15.0
-make release-check VERSION=0.15.0 FINAL=1
+make release-prepare VERSION=0.16.0
+make release-check VERSION=0.16.0
+make release-check VERSION=0.16.0 FINAL=1
 ```
 
 `release-prepare` synchronizes the root `VERSION`, Go Framework and CLI metadata,
@@ -216,7 +217,7 @@ independent and change only when their compatibility contracts change.
 
 The command prepares a reviewable change only. It never creates or pushes a Git
 tag, publishes to pub.dev, or creates a GitHub Release. Windows maintainers use
-`.\tool\windows.ps1 -Task release-prepare -Version 0.15.0` and the corresponding
+`.\tool\windows.ps1 -Task release-prepare -Version 0.16.0` and the corresponding
 `release-check` task. The final check rejects a release while either changelog is
 still marked `Unreleased`; on Windows, add `-Final`.
 
@@ -238,7 +239,7 @@ The release packager builds with `CGO_ENABLED=0`, `-trimpath`, disabled VCS
 stamping, an empty Go build ID, and ldflag-injected version/commit/date metadata.
 Archive timestamps come from the source commit date, so identical inputs produce
 identical archives and checksums. Outputs are written under `build/bridra/cli/`.
-Each version has its own directory, such as `build/bridra/cli/0.15.0/`, so stale
+Each version has its own directory, such as `build/bridra/cli/0.16.0/`, so stale
 assets from an earlier release cannot be uploaded accidentally.
 
 ## Verify
@@ -498,8 +499,103 @@ Every successful build writes a token-free manifest to
 `build/bridra/<target>-<mode>.json`. It records the stable artifact path,
 transport, architecture, content-tree SHA-256, and Sidecar checksum when present.
 The iOS artifact is unsigned. The macOS command applies an ad-hoc signature after
-embedding its universal Sidecar; distribution signing, notarization, installers,
-and store submission remain product release tasks.
+embedding its universal Sidecar. It preserves the app entitlements embedded by
+the Flutter/Xcode build and fails if their signed value changes.
+
+An application that needs entitlements on the bundled Sidecar supplies its own
+plist explicitly:
+
+```bash
+go run ./cmd/bridra build macos --root .. \
+  --macos-sidecar-native \
+  --macos-sidecar-entitlements macos/Runner/Sidecar.entitlements
+```
+
+Bridra signs the Sidecar with that plist, reads the embedded entitlements back,
+compares their property-list values, verifies both signatures, and only then
+computes the manifest checksums. For an App Sandbox child, the application owns
+the exact contract; a typical Sidecar plist enables both
+`com.apple.security.app-sandbox` and `com.apple.security.inherit`.
+`--macos-sidecar-native` is separately opt-in: it builds both Darwin
+architectures with `CGO_ENABLED=1`, enables the `bridra_macos_native` build tag,
+and links Bridra's Foundation adapter. The default remains a portable
+`CGO_ENABLED=0` Sidecar.
+Distribution signing, notarization, installers, and store submission remain
+product release tasks. Native mode enables the Foundation adapter used by the
+Flutter／Swift bookmark handoff and reserved Sidecar resource controls.
+
+Build manifests use schema version 2. `sidecarNative: true` distinguishes an
+opt-in Foundation-enabled macOS Sidecar; the field is omitted for portable
+Sidecars and HTTP artifacts.
+
+Native Sidecar applications can prepare the Go-owned resource lifecycle without
+exposing bookmark bytes to controllers:
+
+```go
+provider := framework.NewResourceBrokerServiceProvider(
+    framework.NewMacOSResourceBookmarkResolver(),
+    framework.DefaultResourceBrokerOptions(),
+)
+```
+
+`ResourceBroker.Grant` accepts either `ResourceBookmarkEphemeral` for a
+current-process handoff or `ResourceBookmarkPersistent` for an explicitly
+security-scoped stored bookmark. It rejects bookmarks over 1 MiB and more than
+64 concurrent grants by default, and returns only an authenticated opaque
+capability. Controllers may call `ResolvePath` while the lease is active and
+must call `Release` when finished; `Application.Shutdown` releases all remaining
+leases through the provider. Non-native builds return
+`ErrResourceBookmarkUnavailable` from the macOS resolver.
+
+The Flutter owner creates and grants a bookmark without putting its bytes in the
+application RPC schema:
+
+```dart
+final bookmark = await MacOSResourceBookmarks.create(
+  path: selectedPath,
+  scope: ResourceBookmarkScope.ephemeral,
+  readOnly: true,
+);
+final capability = await sidecar.grantResource(bookmark);
+try {
+  await api.importFolder(
+    ImportFolderRequest(resourceCapability: capability.value),
+  );
+} finally {
+  await sidecar.releaseResource(capability);
+}
+```
+
+The `resourceCapability` field above is an application-owned string request
+field. Its controller resolves that value through the injected `ResourceBroker`;
+the path never crosses back to Flutter. A capability is valid only for the
+issuing Sidecar session. Restart produces `SidecarResourceExpiredException` and
+the application must create or load a bookmark and grant it again.
+
+Bookmark bytes, capability values, and resolved paths must never be logged,
+persisted as diagnostics, included in schema baselines, or sent through deep
+links. Only persistent bookmark bytes may be stored, and that encrypted storage,
+entitlement, renewal, and consent policy remains application-owned. `toString`
+redacts both bookmarks and capabilities, but applications must still avoid
+logging their explicit `bytes` or `value` properties.
+
+Before accepting a sandboxed user-selected-folder workflow, run:
+
+```bash
+make macos-native-test
+make macos-sandbox-smoke
+```
+
+The first gate validates the application-owned Swift channel. The second builds
+and ad-hoc signs separate creator and receiver `.app` harnesses. A test-only
+read entitlement is scoped to one random outside-container folder on the
+creator; the receiver has no such exception. The receiver must fail a raw read,
+succeed only after an ephemeral bookmark grant, and fail again after release.
+Both harness bundles and the external fixture are removed after the test. This
+gate reuses two fixed bundle identifiers so macOS does not create a new managed
+container root on every run. It verifies current-session handoff; product-owned
+persistent bookmark storage still requires its own entitlement, consent,
+relaunch, and renewal acceptance.
 
 ## Generate the RPC contract
 
@@ -514,10 +610,13 @@ make codegen-check
 ```
 
 `make generate` runs the `bridra generate` CLI and writes deterministic Go and
-Dart files. It never updates the baseline. Generated files are committed, marked
-`DO NOT EDIT`, and compiled by normal tests. `make verify` fails when the current
-schema breaks the baseline without a higher protocol or when the schema and
-checked-in output differ.
+Dart files. Generated Dart is canonicalized with the Dart formatter selected by
+the project's `.fvmrc` before either writing or freshness comparison, so the
+format and codegen gates use the same bytes. FVM and the pinned SDK must be
+available. Generation never updates the baseline. Generated files are committed,
+marked `DO NOT EDIT`, and compiled by normal tests. `make verify` fails when the
+current schema breaks the baseline without a higher protocol or when the schema
+and checked-in output differ.
 
 Generated Project Template v4 runs this comparison automatically. To compare
 with another reviewed deployed or released schema explicitly:
@@ -876,7 +975,11 @@ build/windows/<x64|arm64>/runner/Release/
 ```
 
 Build Windows and Linux releases on the target OS and architecture. The macOS
-build phase produces and ad-hoc signs a universal `arm64`/`x86_64` sidecar.
+build phase produces and ad-hoc signs a universal `arm64`/`x86_64` sidecar. It
+preserves and verifies the app's existing entitlements; pass
+`--macos-sidecar-entitlements` when the child process needs an application-owned
+entitlement contract, and `--macos-sidecar-native` when application code needs
+the opt-in Foundation adapter. Portable `CGO_ENABLED=0` remains the default.
 The `make *-build` and Windows `-Task build` wrappers delegate to `bridra build`.
 
 ## Runtime configuration
@@ -1844,6 +1947,21 @@ rejects incompatible wire protocols. Requests are limited to 4 MiB.
 Declare a server-streaming method with `"stream": true` in
 `schema/bridra.json`. Code generation changes only that Dart method to return
 `Stream<RpcStreamEvent<ResultType>>`; unary methods keep returning `Future`.
+
+Generated Bridra clients add the required transport metadata automatically. A
+client that writes the raw RPC envelope must use string values and request a
+stream with the exact value `"1"`:
+
+```json
+{"id":"1","method":"reports.build","params":{},"meta":{"stream":"1","stream_window":"16"}}
+```
+
+The string `"true"` is not an alias: it dispatches the method as unary, so a
+stream producer returns `streaming_required`. A JSON boolean is invalid because
+request metadata is a string map. `stream_window` is Sidecar-only and accepts a
+base-10 string from `"1"` through `"256"`; an omitted, malformed, or out-of-range
+value falls back to 16. HTTP streaming ignores that field and uses NDJSON socket
+backpressure.
 
 Inside the Controller, bind and validate the request before producing the
 stream:

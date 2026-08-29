@@ -7,13 +7,18 @@ import (
 	"fmt"
 )
 
-const FrameworkVersion = "0.15.0"
+const FrameworkVersion = "0.16.0"
 const MaxRequestBytes = 4 * 1024 * 1024
 
 const (
-	streamRequestMeta = "stream"
-	streamWindowMeta  = "stream_window"
+	streamRequestMeta  = "stream"
+	streamRequestValue = "1"
+	streamWindowMeta   = "stream_window"
 )
+
+func requestsStream(request Request) bool {
+	return request.Meta[streamRequestMeta] == streamRequestValue
+}
 
 type Request struct {
 	ID     string            `json:"id"`

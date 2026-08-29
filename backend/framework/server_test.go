@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -288,6 +290,223 @@ func TestServerRejectsInvalidSidecarFileUploads(t *testing.T) {
 				t.Fatalf("response = %#v, want %q", response, test.code)
 			}
 		})
+	}
+}
+
+func TestServerGrantsAndReleasesReservedSidecarResource(t *testing.T) {
+	resolver := &resourceBrokerTestResolver{path: "/private/resource"}
+	broker, err := NewResourceBroker(resolver, DefaultResourceBrokerOptions())
+	if err != nil {
+		t.Fatalf("new broker: %v", err)
+	}
+	t.Cleanup(func() { _ = broker.Close() })
+	server := &Server{Resources: broker, Token: "secret"}
+	bookmark := []byte("opaque-bookmark")
+	params, err := json.Marshal(map[string]any{
+		"bookmark": base64.StdEncoding.EncodeToString(bookmark),
+		"scope":    ResourceBookmarkEphemeral,
+	})
+	if err != nil {
+		t.Fatalf("encode params: %v", err)
+	}
+	grant := server.grantSidecarResource(Request{
+		ID: "grant", Params: params, Meta: map[string]string{"token": "secret"},
+	})
+	if grant.Error != nil {
+		t.Fatalf("grant response = %#v", grant)
+	}
+	result, ok := grant.Result.(map[string]string)
+	if !ok {
+		t.Fatalf("grant result = %#v", grant.Result)
+	}
+	capability := ResourceCapability(result["capability"])
+	if !validResourceCapability(capability) {
+		t.Fatal("grant returned an invalid capability")
+	}
+	path, err := broker.ResolvePath(capability)
+	if err != nil || path != resolver.path {
+		t.Fatalf("resolved path = %q, %v", path, err)
+	}
+
+	releaseParams, err := json.Marshal(map[string]any{"capability": capability})
+	if err != nil {
+		t.Fatalf("encode release: %v", err)
+	}
+	release := server.releaseSidecarResource(Request{
+		ID: "release", Params: releaseParams, Meta: map[string]string{"token": "secret"},
+	})
+	if release.Error != nil || !reflect.DeepEqual(
+		release.Result,
+		map[string]bool{"released": true},
+	) {
+		t.Fatalf("release response = %#v", release)
+	}
+	if resolver.leases[0].releaseCount() != 1 {
+		t.Fatalf("lease releases = %d", resolver.leases[0].releaseCount())
+	}
+	duplicate := server.releaseSidecarResource(Request{
+		ID: "duplicate", Params: releaseParams, Meta: map[string]string{"token": "secret"},
+	})
+	if duplicate.Error != nil {
+		t.Fatalf("duplicate release response = %#v", duplicate)
+	}
+}
+
+func TestServerReservesResourceMethodsBeforeApplicationRouter(t *testing.T) {
+	resolver := &resourceBrokerTestResolver{path: "/private/resource"}
+	broker, err := NewResourceBroker(resolver, DefaultResourceBrokerOptions())
+	if err != nil {
+		t.Fatalf("new broker: %v", err)
+	}
+	t.Cleanup(func() { _ = broker.Close() })
+	router := NewRouter()
+	called := false
+	router.Handle(rpcResourceGrantMethod, func(*Context) (any, error) {
+		called = true
+		return "application route", nil
+	})
+	params, err := json.Marshal(map[string]any{
+		"bookmark": base64.StdEncoding.EncodeToString([]byte("opaque")),
+		"scope":    ResourceBookmarkEphemeral,
+	})
+	if err != nil {
+		t.Fatalf("encode params: %v", err)
+	}
+	request, err := json.Marshal(Request{
+		ID: "grant", Method: rpcResourceGrantMethod, Params: params,
+		Meta: map[string]string{"token": "secret"},
+	})
+	if err != nil {
+		t.Fatalf("encode request: %v", err)
+	}
+	var output bytes.Buffer
+	server := &Server{
+		Router: router, Input: bytes.NewReader(append(request, '\n')), Output: &output,
+		Resources: broker, Token: "secret",
+	}
+	if err := server.Serve(context.Background()); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	var response Response
+	if err := json.NewDecoder(&output).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Error != nil || called {
+		t.Fatalf("response = %#v, application route called = %t", response, called)
+	}
+}
+
+func TestServerRejectsInvalidSidecarResourceControls(t *testing.T) {
+	resolver := &resourceBrokerTestResolver{path: "/private/resource"}
+	broker, err := NewResourceBroker(resolver, ResourceBrokerOptions{
+		MaxBookmarkBytes: 4,
+		MaxActiveGrants:  1,
+	})
+	if err != nil {
+		t.Fatalf("new broker: %v", err)
+	}
+	t.Cleanup(func() { _ = broker.Close() })
+	server := &Server{Resources: broker, Token: "secret"}
+	valid := func(values map[string]any) json.RawMessage {
+		t.Helper()
+		params, err := json.Marshal(values)
+		if err != nil {
+			t.Fatalf("encode params: %v", err)
+		}
+		return params
+	}
+	tests := []struct {
+		name    string
+		server  *Server
+		request Request
+		code    string
+	}{
+		{
+			name: "broker", server: &Server{Token: "secret"},
+			request: Request{Meta: map[string]string{"token": "secret"}},
+			code:    "resource_unavailable",
+		},
+		{
+			name: "token", server: server,
+			request: Request{Params: valid(map[string]any{
+				"bookmark": "ZGF0YQ==", "scope": "ephemeral",
+			}), Meta: map[string]string{"token": "wrong"}},
+			code: "unauthenticated",
+		},
+		{
+			name: "json", server: server,
+			request: Request{Params: json.RawMessage("{"), Meta: map[string]string{"token": "secret"}},
+			code:    "resource_invalid",
+		},
+		{
+			name: "unknown field", server: server,
+			request: Request{Params: valid(map[string]any{
+				"bookmark": "ZGF0YQ==", "scope": "ephemeral", "path": "/secret",
+			}), Meta: map[string]string{"token": "secret"}},
+			code: "resource_invalid",
+		},
+		{
+			name: "base64", server: server,
+			request: Request{Params: valid(map[string]any{
+				"bookmark": "!!!!!!!!", "scope": "ephemeral",
+			}), Meta: map[string]string{"token": "secret"}},
+			code: "resource_invalid",
+		},
+		{
+			name: "scope", server: server,
+			request: Request{Params: valid(map[string]any{
+				"bookmark": "ZGF0YQ==", "scope": "future",
+			}), Meta: map[string]string{"token": "secret"}},
+			code: "resource_invalid",
+		},
+		{
+			name: "too large", server: server,
+			request: Request{Params: valid(map[string]any{
+				"bookmark": base64.StdEncoding.EncodeToString([]byte("12345")),
+				"scope":    "ephemeral",
+			}), Meta: map[string]string{"token": "secret"}},
+			code: "resource_too_large",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response := test.server.grantSidecarResource(test.request)
+			if response.Error == nil || response.Error.Code != test.code {
+				t.Fatalf("response = %#v, want %q", response, test.code)
+			}
+			encoded, err := json.Marshal(response)
+			if err != nil {
+				t.Fatalf("encode response: %v", err)
+			}
+			if bytes.Contains(encoded, []byte("ZGF0YQ==")) ||
+				bytes.Contains(encoded, []byte("!!!!!!!!")) ||
+				bytes.Contains(encoded, []byte("MTIzNDU=")) ||
+				bytes.Contains(encoded, []byte("/secret")) {
+				t.Fatalf("response exposed resource authority: %s", encoded)
+			}
+		})
+	}
+}
+
+func TestRenderSidecarResourceErrors(t *testing.T) {
+	tests := []struct {
+		err  error
+		code string
+	}{
+		{ErrResourceBookmarkUnavailable, "resource_unavailable"},
+		{ErrResourceBrokerClosed, "resource_unavailable"},
+		{ErrResourceBookmarkInvalid, "resource_invalid"},
+		{ErrResourceBookmarkTooLarge, "resource_too_large"},
+		{ErrResourceBookmarkStale, "resource_stale"},
+		{ErrResourceBookmarkAccess, "resource_access_denied"},
+		{ErrResourceGrantLimit, "resource_limit"},
+		{ErrResourceCapabilityNotFound, "resource_not_found"},
+		{ErrResourceLeaseRelease, "resource_failed"},
+	}
+	for _, test := range tests {
+		if got := renderSidecarResourceError(test.err); got.Code != test.code {
+			t.Fatalf("error %v code = %q, want %q", test.err, got.Code, test.code)
+		}
 	}
 }
 
@@ -620,6 +839,51 @@ func TestServerRejectsNegativePendingRequestLimit(t *testing.T) {
 	err := server.Serve(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "cannot be negative") {
 		t.Fatalf("error = %v, want invalid pending request limit", err)
+	}
+}
+
+func TestServerTreatsNonCanonicalStreamMetadataAsUnary(t *testing.T) {
+	router := NewRouter()
+	router.Handle("numbers.list", func(ctx *Context) (any, error) {
+		return ProduceStream(ctx, func(stream *StreamWriter) error {
+			return stream.Send(1)
+		})
+	})
+	input := strings.NewReader(
+		`{"id":"stream","method":"numbers.list","meta":{"stream":"true"}}` + "\n",
+	)
+	var output bytes.Buffer
+	server := &Server{Router: router, Input: input, Output: &output}
+
+	if err := server.Serve(context.Background()); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	var response Response
+	if err := json.NewDecoder(&output).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.ID != "stream" ||
+		response.Stream != nil ||
+		response.Error == nil ||
+		response.Error.Code != "streaming_required" {
+		t.Fatalf("response = %#v", response)
+	}
+}
+
+func TestParseStreamWindowUsesDocumentedBoundsAndFallback(t *testing.T) {
+	tests := map[string]int{
+		"":    defaultStreamWindow,
+		"no":  defaultStreamWindow,
+		"0":   defaultStreamWindow,
+		"-1":  defaultStreamWindow,
+		"257": defaultStreamWindow,
+		"1":   1,
+		"256": maxStreamWindow,
+	}
+	for value, expected := range tests {
+		if actual := parseStreamWindow(value); actual != expected {
+			t.Fatalf("parseStreamWindow(%q) = %d, want %d", value, actual, expected)
+		}
 	}
 }
 

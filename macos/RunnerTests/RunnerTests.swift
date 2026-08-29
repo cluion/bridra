@@ -37,4 +37,134 @@ final class RunnerTests: XCTestCase {
     XCTAssertTrue((receivedResult as? NSObject) === FlutterMethodNotImplemented)
     XCTAssertFalse(terminated)
   }
+
+  func testPersistentBookmarkPreservesReadOnlyPolicyWithoutReturningPath() {
+    var receivedURL: URL?
+    var receivedOptions: URL.BookmarkCreationOptions?
+    let handler = BridraResourceBookmarkHandler { url, options in
+      receivedURL = url
+      receivedOptions = options
+      return Data([1, 2, 3])
+    }
+    var receivedResult: Any?
+
+    handler.handle(
+      FlutterMethodCall(
+        methodName: "createBookmark",
+        arguments: [
+          "path": "/private/selected",
+          "scope": "persistent",
+          "readOnly": true,
+        ]
+      )
+    ) { result in
+      receivedResult = result
+    }
+
+    XCTAssertEqual(receivedURL?.path, "/private/selected")
+    XCTAssertTrue(receivedOptions?.contains(.withSecurityScope) == true)
+    XCTAssertTrue(
+      receivedOptions?.contains(.securityScopeAllowOnlyReadAccess) == true
+    )
+    let typedData = receivedResult as? FlutterStandardTypedData
+    XCTAssertEqual(typedData?.data, Data([1, 2, 3]))
+    XCTAssertFalse(String(describing: receivedResult).contains("/private/selected"))
+  }
+
+  func testEphemeralBookmarkUsesImplicitSecurityScope() {
+    var receivedOptions: URL.BookmarkCreationOptions?
+    let handler = BridraResourceBookmarkHandler { _, options in
+      receivedOptions = options
+      return Data([7])
+    }
+
+    handler.handle(
+      FlutterMethodCall(
+        methodName: "createBookmark",
+        arguments: [
+          "path": "/private/selected",
+          "scope": "ephemeral",
+          "readOnly": true,
+        ]
+      )
+    ) { _ in }
+
+    XCTAssertEqual(receivedOptions, [])
+  }
+
+  func testBookmarkErrorsRejectInvalidInputAndRedactNativeFailure() {
+    let secretPath = "/private/secret"
+    let handler = BridraResourceBookmarkHandler { _, _ in
+      throw NSError(
+        domain: secretPath,
+        code: 1,
+        userInfo: [NSLocalizedDescriptionKey: secretPath]
+      )
+    }
+    var invalidResult: Any?
+    handler.handle(
+      FlutterMethodCall(
+        methodName: "createBookmark",
+        arguments: [
+          "path": "relative/path",
+          "scope": "ephemeral",
+          "readOnly": true,
+        ]
+      )
+    ) { result in
+      invalidResult = result
+    }
+    XCTAssertEqual(
+      (invalidResult as? FlutterError)?.code,
+      "resource_bookmark_invalid"
+    )
+
+    var failureResult: Any?
+    handler.handle(
+      FlutterMethodCall(
+        methodName: "createBookmark",
+        arguments: [
+          "path": secretPath,
+          "scope": "persistent",
+          "readOnly": false,
+        ]
+      )
+    ) { result in
+      failureResult = result
+    }
+    let failure = failureResult as? FlutterError
+    XCTAssertEqual(failure?.code, "resource_bookmark_failed")
+    XCTAssertFalse(String(describing: failure).contains(secretPath))
+  }
+
+  func testBookmarkRejectsOversizedDataAndUnknownMethod() {
+    let handler = BridraResourceBookmarkHandler { _, _ in
+      Data(count: BridraResourceBookmarkHandler.maximumBookmarkBytes + 1)
+    }
+    var oversizedResult: Any?
+    handler.handle(
+      FlutterMethodCall(
+        methodName: "createBookmark",
+        arguments: [
+          "path": "/private/selected",
+          "scope": "ephemeral",
+          "readOnly": true,
+        ]
+      )
+    ) { result in
+      oversizedResult = result
+    }
+    XCTAssertEqual(
+      (oversizedResult as? FlutterError)?.code,
+      "resource_bookmark_too_large"
+    )
+
+    var unknownResult: Any?
+    handler.handle(
+      FlutterMethodCall(methodName: "unknown", arguments: nil)
+    ) { result in
+      unknownResult = result
+    }
+    XCTAssertTrue((unknownResult as? NSObject) === FlutterMethodNotImplemented)
+  }
 }

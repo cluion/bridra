@@ -31,7 +31,10 @@ func main() {
 		Runtime: "Go sidecar",
 	}, framework.NewFileTransferServiceProvider(framework.FileTransferOptions{
 		ExposeLocalPath: true,
-	}))
+	}), framework.NewResourceBrokerServiceProvider(
+		framework.NewMacOSResourceBookmarkResolver(),
+		framework.DefaultResourceBrokerOptions(),
+	))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "sidecar: configure: %v\n", err)
 		os.Exit(2)
@@ -68,12 +71,17 @@ func runSidecar(
 		application.Container(),
 		framework.FileTransferStoreKey,
 	)
+	resources, _ := framework.Resolve(
+		application.Container(),
+		framework.ResourceBrokerKey,
+	)
 	server := &framework.Server{
 		Router:        application.Router(),
 		Input:         input,
 		Output:        output,
 		Errors:        logs,
 		FileTransfers: fileTransfers,
+		Resources:     resources,
 		Token: framework.ConfigValue(
 			application.Config(),
 			settings.BackendToken,

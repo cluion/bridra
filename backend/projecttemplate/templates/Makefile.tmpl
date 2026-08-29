@@ -22,7 +22,7 @@ IOS_DEVICE_HOST ?=
 
 .PHONY: doctor generate schema-check codegen-check backend-build backend-serve run test analyze verify
 {{if hasPlatform "linux"}}.PHONY: linux-build
-{{end}}{{if hasPlatform "macos"}}.PHONY: macos-build macos-native-test
+{{end}}{{if hasPlatform "macos"}}.PHONY: macos-build macos-native-test macos-sandbox-smoke
 {{end}}{{if hasPlatform "windows"}}.PHONY: windows-build
 {{end}}{{if hasPlatform "android"}}.PHONY: android-build android-emulator-smoke
 {{end}}{{if hasPlatform "ios"}}.PHONY: ios-build ios-simulator-smoke ios-device-smoke
@@ -85,6 +85,11 @@ macos-native-test:
 		-scheme Runner \
 		-configuration Debug \
 		-destination 'platform=macOS'
+
+macos-sandbox-smoke:
+	cd backend && BRIDRA_MACOS_SANDBOX_SMOKE=1 CGO_ENABLED=1 \
+		$(GO) test -tags bridra_macos_native {{.BridraGoModule}}/framework \
+		-run '^TestMacOSSandboxBookmarkHandoff$$' -count=1 -v
 
 {{end}}{{if hasPlatform "windows"}}windows-build:
 	cd backend && $(BRIDRA) build windows --root .. --mode $(BUILD_MODE)

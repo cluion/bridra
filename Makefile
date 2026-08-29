@@ -47,9 +47,9 @@ RUNTIME_RESOURCE_MAX_HEAP_GROWTH_MIB ?= 8
 RUNTIME_RESOURCE_MAX_FD_GROWTH ?= 4
 RUNTIME_RESOURCE_MAX_RSS_GROWTH_MIB ?= 32
 
-.PHONY: help setup doctor generate schema-check codegen-check license-check format backend-build backend-server-build backend-serve backend-format backend-test backend-public-api-test backend-sql-store-test backend-sql-job-store-test backend-vet transport-benchmark http-fault-test ios-simulator-watchdog-test \
+.PHONY: help setup doctor generate schema-check codegen-check dart-codegen-format-test license-check format backend-build backend-server-build backend-serve backend-format backend-test backend-public-api-test backend-sql-store-test backend-sql-job-store-test backend-vet transport-benchmark http-fault-test ios-simulator-watchdog-test \
 	flutter-format flutter-package-test flutter-web-test flutter-test analyze verify coverage backend-coverage flutter-package-coverage flutter-app-coverage coverage-check linux-check linux-run linux-build \
-	linux-smoke macos-check macos-run macos-build macos-native-test macos-smoke windows-run \
+	linux-smoke macos-check macos-run macos-build macos-native-test macos-sandbox-smoke macos-smoke windows-run \
 	windows-build windows-smoke windows-verify android-run android-build android-emulator-smoke \
 	ios-run ios-build ios-simulator-build ios-simulator-smoke ios-device-smoke web-run web-build remote-release-check \
 	release-prepare release-check cli-release runtime-fuzz runtime-resources runtime-stress run
@@ -59,6 +59,7 @@ help:
 	@echo "make doctor       Check Go, FVM, and the pinned Flutter SDK"
 	@echo "make generate     Generate Go and Dart APIs from schema/bridra.json"
 	@echo "make schema-check Enforce RPC compatibility against the deployed baseline"
+	@echo "make dart-codegen-format-test Verify generated Dart uses the pinned formatter"
 	@echo "make license-check Verify publishable packages carry the root MIT license"
 	@echo "make verify       Run format checks, Go tests, Flutter tests, and analysis"
 	@echo "make coverage     Generate reports and enforce coverage non-regression floors"
@@ -72,6 +73,7 @@ help:
 	@echo "make macos-run    Run the starter on macOS"
 	@echo "make macos-build  Build a universal macOS app with its Go sidecar"
 	@echo "make macos-native-test Run the macOS application lifecycle tests"
+	@echo "make macos-sandbox-smoke Test signed outside-container bookmark access"
 	@echo "make macos-smoke  Build the macOS app and exercise the bundled sidecar"
 	@echo "make linux-run    Run the starter on Linux"
 	@echo "make linux-build  Build a Linux release bundle with its Go sidecar"
@@ -114,6 +116,10 @@ schema-check:
 
 codegen-check:
 	cd backend && $(GO) run ./cmd/bridra generate --schema ../schema/bridra.json --root .. --check
+
+dart-codegen-format-test: doctor
+	cd backend && BRIDRA_DART_FORMATTER_INTEGRATION=1 $(GO) test ./cmd/bridra \
+		-run '^TestDartFormatterCanonicalizesClurivaShapes$$' -count=1
 
 license-check:
 	@cmp -s LICENSE backend/LICENSE || \
@@ -232,7 +238,7 @@ cli-release:
 ios-simulator-watchdog-test:
 	sh ./tool/ios_simulator_watchdog_test.sh
 
-verify: license-check release-check doctor schema-check codegen-check backend-format backend-vet backend-public-api-test backend-test backend-sql-store-test flutter-format flutter-package-test flutter-web-test flutter-test ios-simulator-watchdog-test analyze
+verify: license-check release-check doctor schema-check codegen-check dart-codegen-format-test backend-format backend-vet backend-public-api-test backend-test backend-sql-store-test flutter-format flutter-package-test flutter-web-test flutter-test ios-simulator-watchdog-test analyze
 
 linux-check:
 	@test "$(HOST_OS)" = "Linux" || \
@@ -283,6 +289,11 @@ macos-native-test: macos-check
 		-scheme Runner \
 		-configuration Debug \
 		-destination 'platform=macOS'
+
+macos-sandbox-smoke: macos-check
+	cd backend && BRIDRA_MACOS_SANDBOX_SMOKE=1 CGO_ENABLED=1 \
+		$(GO) test -tags bridra_macos_native ./framework \
+		-run '^TestMacOSSandboxBookmarkHandoff$$' -count=1 -v
 
 macos-smoke: macos-build
 	@response="$$(printf '%s\n' '{"id":"smoke","method":"system.health","meta":{"token":"smoke-token"}}' | \

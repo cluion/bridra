@@ -556,3 +556,42 @@ func TestHTTPHandlerStreamsNDJSONAndFlushesCompletion(t *testing.T) {
 		}
 	}
 }
+
+func TestHTTPHandlerTreatsNonCanonicalStreamMetadataAsUnary(t *testing.T) {
+	router := NewRouter()
+	router.Handle("reports.build", func(ctx *Context) (any, error) {
+		return ProduceStream(ctx, func(stream *StreamWriter) error {
+			return stream.Send(map[string]any{"page": 1})
+		})
+	})
+	handler := &HTTPHandler{Router: router}
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/rpc",
+		strings.NewReader(
+			`{"id":"1","method":"reports.build","meta":{"stream":"true"}}`,
+		),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/x-ndjson")
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	if contentType := recorder.Header().Get("Content-Type"); contentType != "application/json" {
+		t.Fatalf("content type = %q", contentType)
+	}
+	var response Response
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.ID != "1" ||
+		response.Stream != nil ||
+		response.Error == nil ||
+		response.Error.Code != "streaming_required" {
+		t.Fatalf("response = %#v", response)
+	}
+}

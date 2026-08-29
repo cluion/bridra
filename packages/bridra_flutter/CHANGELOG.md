@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.16.0 - 2026-08-29
+
+- Added `MacOSResourceBookmarks` and `ResourceBookmark` for application-owned
+  ephemeral or persistent bookmark creation through the macOS runner.
+- Added `SidecarClient.grantResource`／`releaseResource` and session-bound,
+  redacted `SidecarResourceCapability` values. A Sidecar restart expires grants
+  instead of replaying authority into the replacement process.
+
 ## 0.15.0 - 2026-08-29
 
 - Added `DesktopSingleInstance.terminateSecondary`, which closes the secondary

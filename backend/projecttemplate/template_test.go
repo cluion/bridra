@@ -441,6 +441,10 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 		`guard call.method == "terminateSecondary"`,
 		"result(nil)",
 		"terminateApplication()",
+		`static let channelName = "dev.cluion.bridra/resources"`,
+		`guard call.method == "createBookmark"`,
+		"URL.BookmarkCreationOptions",
+		"FlutterStandardTypedData(bytes: data)",
 	} {
 		if !strings.Contains(string(macOSWindow), expected) {
 			t.Fatalf("generated MainFlutterWindow.swift does not contain %q:\n%s", expected, macOSWindow)
@@ -453,7 +457,9 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 		t.Fatalf("read generated RunnerTests.swift: %v", err)
 	}
 	if !strings.Contains(string(macOSTests), "@testable import starter_app") ||
-		!strings.Contains(string(macOSTests), `["result", "terminate"]`) {
+		!strings.Contains(string(macOSTests), `["result", "terminate"]`) ||
+		!strings.Contains(string(macOSTests), "testPersistentBookmarkPreservesReadOnlyPolicy") ||
+		!strings.Contains(string(macOSTests), "resource_bookmark_too_large") {
 		t.Fatalf("generated RunnerTests.swift = %s", macOSTests)
 	}
 	generatedMakefile, err := os.ReadFile(filepath.Join(root, "Makefile"))
@@ -462,7 +468,10 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 	}
 	for _, expected := range []string{
 		"macos-native-test:",
+		"macos-sandbox-smoke:",
 		"$(FLUTTER) build macos --debug --config-only",
+		"BRIDRA_MACOS_SANDBOX_SMOKE=1 CGO_ENABLED=1",
+		"TestMacOSSandboxBookmarkHandoff",
 		"xcodebuild test",
 	} {
 		if !strings.Contains(string(generatedMakefile), expected) {
@@ -500,7 +509,7 @@ func TestRenderSelectsPlatformOwnedFilesTargetsAndMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read Makefile: %v", err)
 	}
-	for _, target := range []string{"macos-build:", "web-build:"} {
+	for _, target := range []string{"macos-build:", "macos-sandbox-smoke:", "web-build:"} {
 		if !strings.Contains(string(makefile), target) {
 			t.Fatalf("Makefile does not contain %q:\n%s", target, makefile)
 		}

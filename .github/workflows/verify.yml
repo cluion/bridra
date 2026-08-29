@@ -172,6 +172,9 @@ jobs:
       - name: Test macOS application lifecycle
         run: make macos-native-test
 
+      - name: Test signed macOS sandbox bookmark handoff
+        run: make macos-sandbox-smoke
+
       - name: Build and smoke-test macOS bundle
         run: make macos-smoke
 

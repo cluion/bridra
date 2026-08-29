@@ -271,6 +271,110 @@ void main() {
     },
   );
 
+  test('grants and idempotently releases an opaque native resource', () async {
+    final process = FakeSidecarProcess();
+    final client = await _startClient(process);
+    addTearDown(client.close);
+    final bookmark = ResourceBookmark.fromBytes([
+      0,
+      1,
+      2,
+    ], scope: ResourceBookmarkScope.ephemeral);
+
+    final grant = client.grantResource(bookmark);
+    final grantRequest = await process.nextRequest();
+    expect(grantRequest['method'], 'rpc.resource_grant');
+    expect(grantRequest['params'], {'bookmark': 'AAEC', 'scope': 'ephemeral'});
+    expect((grantRequest['meta'] as Map)['token'], 'test-token');
+    final value = 'a' * 96;
+    process.respond({
+      'id': grantRequest['id'],
+      'result': {'capability': value},
+      'meta': <String, Object?>{},
+    });
+    final capability = await grant;
+    expect(capability.value, value);
+    expect(capability.isReleased, isFalse);
+    expect(capability.toString(), isNot(contains(value)));
+
+    final release = client.releaseResource(capability);
+    final releaseRequest = await process.nextRequest();
+    expect(releaseRequest['method'], 'rpc.resource_release');
+    expect(releaseRequest['params'], {'capability': value});
+    process.respond({
+      'id': releaseRequest['id'],
+      'result': {'released': true},
+      'meta': <String, Object?>{},
+    });
+    await release;
+    expect(capability.isReleased, isTrue);
+    await client.releaseResource(capability);
+    expect(process.receivedRequestCount, 2);
+  });
+
+  test('rejects malformed native resource control responses', () async {
+    final process = FakeSidecarProcess();
+    final client = await _startClient(process);
+    addTearDown(client.close);
+    final bookmark = ResourceBookmark.fromBytes([
+      1,
+    ], scope: ResourceBookmarkScope.persistent);
+
+    final grant = client.grantResource(bookmark);
+    final request = await process.nextRequest();
+    expect(request['params'], {'bookmark': 'AQ==', 'scope': 'persistent'});
+    process.respond({
+      'id': request['id'],
+      'result': {'capability': '/private/secret'},
+      'meta': <String, Object?>{},
+    });
+    await expectLater(grant, throwsA(isA<BackendProtocolException>()));
+  });
+
+  test('does not reuse native resource grants after Sidecar restart', () async {
+    final first = FakeSidecarProcess();
+    final replacement = FakeSidecarProcess();
+    final starter = FakeSidecarStarter([first, replacement]);
+    final client = await SidecarClient.start(
+      executablePath: '/fake/sidecar',
+      token: 'test-token',
+      restartPolicy: const SidecarRestartPolicy(
+        initialDelay: Duration.zero,
+        maxDelay: Duration.zero,
+      ),
+      processStarter: starter.start,
+    );
+    addTearDown(client.close);
+    final grant = client.grantResource(
+      ResourceBookmark.fromBytes([7], scope: ResourceBookmarkScope.ephemeral),
+    );
+    final grantRequest = await first.nextRequest();
+    first.respond({
+      'id': grantRequest['id'],
+      'result': {'capability': 'b' * 96},
+      'meta': <String, Object?>{},
+    });
+    final capability = await grant;
+
+    await first.exit(17);
+    final health = await replacement.nextRequest();
+    expect(health['method'], 'system.health');
+    replacement.respond({
+      'id': health['id'],
+      'result': {'status': 'ok'},
+      'meta': <String, Object?>{},
+    });
+    while (client.diagnostics().state != SidecarRuntimeState.running) {
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    await expectLater(
+      client.releaseResource(capability),
+      throwsA(isA<SidecarResourceExpiredException>()),
+    );
+    expect(replacement.receivedRequestCount, 1);
+  });
+
   test('cancelling a stream subscription cancels only that request', () async {
     final process = FakeSidecarProcess();
     final client = await _startClient(process);

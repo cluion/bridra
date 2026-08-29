@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +20,8 @@ const defaultStreamWindow = 16
 const maxStreamWindow = 256
 const rpcCancellationMethod = "rpc.cancel"
 const rpcFileUploadMethod = "rpc.file_upload"
+const rpcResourceGrantMethod = "rpc.resource_grant"
+const rpcResourceReleaseMethod = "rpc.resource_release"
 const rpcStreamAckMethod = "rpc.stream_ack"
 
 type Server struct {
@@ -27,6 +30,7 @@ type Server struct {
 	Output                io.Writer
 	Errors                io.Writer
 	FileTransfers         *FileTransferStore
+	Resources             *ResourceBroker
 	Token                 string
 	MaxConcurrentRequests int
 	MaxPendingRequests    int
@@ -67,12 +71,17 @@ func (s *Server) Serve(ctx context.Context) error {
 				if request.Context.Err() == nil {
 					if request.flow == nil {
 						response := Response{}
-						if request.Request.Method == rpcFileUploadMethod {
+						switch request.Request.Method {
+						case rpcFileUploadMethod:
 							response = s.importSidecarUpload(
 								request.Context,
 								request.Request,
 							)
-						} else {
+						case rpcResourceGrantMethod:
+							response = s.grantSidecarResource(request.Request)
+						case rpcResourceReleaseMethod:
+							response = s.releaseSidecarResource(request.Request)
+						default:
 							response = s.Router.Dispatch(
 								request.Context,
 								request.Request,
@@ -163,6 +172,128 @@ scan:
 	close(jobs)
 	workers.Wait()
 	return errors.Join(scanError, encoder.Err())
+}
+
+func (s *Server) grantSidecarResource(request Request) Response {
+	response := Response{ID: request.ID}
+	if s.Resources == nil {
+		response.Error = NewError(
+			"resource_unavailable",
+			"Native Sidecar resources are not configured.",
+		)
+		return response
+	}
+	if !s.authenticatesSidecarControl(request) {
+		response.Error = NewError("unauthenticated", "The request token is invalid.")
+		return response
+	}
+	var params struct {
+		Bookmark string                `json:"bookmark"`
+		Scope    ResourceBookmarkScope `json:"scope"`
+	}
+	if err := decodeSidecarControlParams(request.Params, &params); err != nil ||
+		params.Bookmark == "" || !validResourceBookmarkScope(params.Scope) {
+		response.Error = NewError(
+			"resource_invalid",
+			"The resource grant parameters are invalid.",
+		)
+		return response
+	}
+	if len(params.Bookmark) > base64.StdEncoding.EncodedLen(s.Resources.maxBookmarkBytes) {
+		response.Error = NewError(
+			"resource_too_large",
+			"The resource bookmark exceeds the configured size.",
+		)
+		return response
+	}
+	bookmark, err := base64.StdEncoding.DecodeString(params.Bookmark)
+	if err != nil {
+		response.Error = NewError(
+			"resource_invalid",
+			"The resource grant parameters are invalid.",
+		)
+		return response
+	}
+	capability, err := s.Resources.Grant(bookmark, params.Scope)
+	if err != nil {
+		response.Error = renderSidecarResourceError(err)
+		return response
+	}
+	response.Result = map[string]string{"capability": string(capability)}
+	return response
+}
+
+func (s *Server) releaseSidecarResource(request Request) Response {
+	response := Response{ID: request.ID}
+	if s.Resources == nil {
+		response.Error = NewError(
+			"resource_unavailable",
+			"Native Sidecar resources are not configured.",
+		)
+		return response
+	}
+	if !s.authenticatesSidecarControl(request) {
+		response.Error = NewError("unauthenticated", "The request token is invalid.")
+		return response
+	}
+	var params struct {
+		Capability ResourceCapability `json:"capability"`
+	}
+	if err := decodeSidecarControlParams(request.Params, &params); err != nil ||
+		!validResourceCapability(params.Capability) {
+		response.Error = NewError(
+			"resource_invalid",
+			"The resource release parameters are invalid.",
+		)
+		return response
+	}
+	if err := s.Resources.Release(params.Capability); err != nil {
+		response.Error = renderSidecarResourceError(err)
+		return response
+	}
+	response.Result = map[string]bool{"released": true}
+	return response
+}
+
+func (s *Server) authenticatesSidecarControl(request Request) bool {
+	return s.Token != "" && request.Meta["token"] == s.Token
+}
+
+func decodeSidecarControlParams(params json.RawMessage, target any) error {
+	decoder := json.NewDecoder(bytes.NewReader(params))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return errors.New("sidecar control parameters contain trailing data")
+	}
+	return nil
+}
+
+func renderSidecarResourceError(err error) *RPCError {
+	switch {
+	case errors.Is(err, ErrResourceBookmarkUnavailable),
+		errors.Is(err, ErrResourceBrokerClosed):
+		return NewError("resource_unavailable", "Native Sidecar resources are unavailable.")
+	case errors.Is(err, ErrResourceBookmarkInvalid),
+		errors.Is(err, ErrResourceCapabilityInvalid),
+		errors.Is(err, ErrResourceLeaseInvalid):
+		return NewError("resource_invalid", "The native resource grant is invalid.")
+	case errors.Is(err, ErrResourceBookmarkTooLarge):
+		return NewError("resource_too_large", "The resource bookmark exceeds the configured size.")
+	case errors.Is(err, ErrResourceBookmarkStale):
+		return NewError("resource_stale", "The resource bookmark is stale and must be recreated.")
+	case errors.Is(err, ErrResourceBookmarkAccess):
+		return NewError("resource_access_denied", "The Sidecar could not access the resource.")
+	case errors.Is(err, ErrResourceGrantLimit):
+		return NewError("resource_limit", "The active native resource limit was reached.")
+	case errors.Is(err, ErrResourceCapabilityNotFound):
+		return NewError("resource_not_found", "The native resource capability was not found.")
+	default:
+		return NewError("resource_failed", "The native resource operation failed.")
+	}
 }
 
 func (s *Server) importSidecarUpload(
@@ -289,7 +420,7 @@ func (r *serverRequestRegistry) Register(
 		Request: request,
 		cancel:  cancel,
 	}
-	if request.Meta[streamRequestMeta] == "1" {
+	if requestsStream(request) {
 		registered.flow = newStreamFlow(parseStreamWindow(request.Meta[streamWindowMeta]))
 	}
 	if request.ID == "" {

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -9,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 
@@ -48,6 +51,9 @@ const (
 	buildTransportHTTP    buildTransport = "http"
 )
 
+const buildManifestSchemaVersion = 2
+const macosNativeBuildTag = "bridra_macos_native"
+
 type buildProcessSpec struct {
 	Name        string
 	Arguments   []string
@@ -77,14 +83,16 @@ type buildCommand struct {
 }
 
 type buildOptions struct {
-	root         string
-	target       buildTarget
-	mode         buildMode
-	backendURL   string
-	token        string
-	transport    buildTransport
-	architecture string
-	metadata     projectMetadata
+	root                     string
+	target                   buildTarget
+	mode                     buildMode
+	backendURL               string
+	token                    string
+	macosSidecarNative       bool
+	macosSidecarEntitlements string
+	transport                buildTransport
+	architecture             string
+	metadata                 projectMetadata
 }
 
 type buildArtifact struct {
@@ -104,6 +112,7 @@ type buildManifest struct {
 	ArtifactSHA256 string         `json:"artifactSha256"`
 	Sidecar        string         `json:"sidecar,omitempty"`
 	SidecarSHA256  string         `json:"sidecarSha256,omitempty"`
+	SidecarNative  bool           `json:"sidecarNative,omitempty"`
 	BackendURL     string         `json:"backendUrl,omitempty"`
 }
 
@@ -148,10 +157,12 @@ Targets:
   android, ios, web      HTTP client artifact for an external Go backend
 
 Options:
-  --root path         Bridra project root (default .)
-  --mode value        debug, profile, or release (default release)
-  --backend-url URL   HTTP RPC endpoint compiled into Flutter
-  --token value       HTTP RPC token compiled into Flutter
+  --root path                         Bridra project root (default .)
+  --mode value                        debug, profile, or release (default release)
+  --backend-url URL                   HTTP RPC endpoint compiled into Flutter
+  --token value                       HTTP RPC token compiled into Flutter
+  --macos-sidecar-native              Build a Foundation-enabled macOS Sidecar
+  --macos-sidecar-entitlements path   Entitlements for a bundled macOS Sidecar
 
 Linux builds require Linux, macOS and iOS builds require macOS, and Windows
 builds require Windows. Profile and release HTTP builds require an HTTPS /rpc
@@ -174,6 +185,16 @@ func (item buildCommand) run(arguments []string, stdout, stderr io.Writer) error
 	mode := flags.String("mode", string(buildModeRelease), "debug, profile, or release")
 	backendURL := flags.String("backend-url", "", "HTTP RPC endpoint")
 	token := flags.String("token", "", "HTTP RPC token")
+	macosSidecarNative := flags.Bool(
+		"macos-sidecar-native",
+		false,
+		"build a Foundation-enabled macOS Sidecar",
+	)
+	macosSidecarEntitlements := flags.String(
+		"macos-sidecar-entitlements",
+		"",
+		"entitlements for a bundled macOS Sidecar",
+	)
 	if err := flags.Parse(flagArguments); err != nil {
 		return fmt.Errorf("%w: build: %v", errUsage, err)
 	}
@@ -184,11 +205,13 @@ func (item buildCommand) run(arguments []string, stdout, stderr io.Writer) error
 	}
 
 	options, err := item.resolveOptions(buildOptions{
-		root:       *root,
-		target:     target,
-		mode:       buildMode(*mode),
-		backendURL: *backendURL,
-		token:      *token,
+		root:                     *root,
+		target:                   target,
+		mode:                     buildMode(*mode),
+		backendURL:               *backendURL,
+		token:                    *token,
+		macosSidecarNative:       *macosSidecarNative,
+		macosSidecarEntitlements: *macosSidecarEntitlements,
 	})
 	if err != nil {
 		return err
@@ -259,6 +282,19 @@ func (item buildCommand) resolveOptions(options buildOptions) (buildOptions, err
 
 	options.backendURL = strings.TrimSpace(options.backendURL)
 	options.token = strings.TrimSpace(options.token)
+	options.macosSidecarEntitlements = strings.TrimSpace(options.macosSidecarEntitlements)
+	if options.macosSidecarNative && options.target != buildTargetMacOS {
+		return buildOptions{}, fmt.Errorf(
+			"%w: --macos-sidecar-native requires the macos target",
+			errBuildInvalid,
+		)
+	}
+	if options.macosSidecarEntitlements != "" && options.target != buildTargetMacOS {
+		return buildOptions{}, fmt.Errorf(
+			"%w: --macos-sidecar-entitlements requires the macos target",
+			errBuildInvalid,
+		)
+	}
 	if desktopBuildTarget(options.target) && options.backendURL == "" {
 		options.transport = buildTransportSidecar
 		if options.token != "" {
@@ -271,10 +307,44 @@ func (item buildCommand) resolveOptions(options buildOptions) (buildOptions, err
 		if err != nil {
 			return buildOptions{}, err
 		}
+		if options.macosSidecarEntitlements != "" {
+			path := options.macosSidecarEntitlements
+			if !filepath.IsAbs(path) {
+				path = filepath.Join(options.root, path)
+			}
+			path = filepath.Clean(path)
+			information, statErr := item.system.stat(path)
+			if statErr != nil {
+				return buildOptions{}, fmt.Errorf(
+					"%w: macOS Sidecar entitlements are unavailable: %w",
+					errBuildInvalid,
+					statErr,
+				)
+			}
+			if !information.Mode().IsRegular() {
+				return buildOptions{}, fmt.Errorf(
+					"%w: macOS Sidecar entitlements must be a regular file",
+					errBuildInvalid,
+				)
+			}
+			options.macosSidecarEntitlements = path
+		}
 		return options, nil
 	}
 
 	options.transport = buildTransportHTTP
+	if options.macosSidecarNative {
+		return buildOptions{}, fmt.Errorf(
+			"%w: --macos-sidecar-native requires the Sidecar transport",
+			errBuildInvalid,
+		)
+	}
+	if options.macosSidecarEntitlements != "" {
+		return buildOptions{}, fmt.Errorf(
+			"%w: --macos-sidecar-entitlements requires the Sidecar transport",
+			errBuildInvalid,
+		)
+	}
 	if options.backendURL == "" {
 		if options.mode != buildModeDebug {
 			return buildOptions{}, fmt.Errorf(
@@ -479,7 +549,13 @@ func (item buildCommand) build(options buildOptions, stdout, stderr io.Writer) (
 			return fmt.Errorf("build: install Sidecar: %w", err)
 		}
 		if options.target == buildTargetMacOS {
-			if err := item.signMacOSArtifact(options, artifact, stdout, stderr); err != nil {
+			if err := item.signMacOSArtifact(
+				options,
+				artifact,
+				workDirectory,
+				stdout,
+				stderr,
+			); err != nil {
 				return err
 			}
 		}
@@ -499,7 +575,7 @@ func (item buildCommand) build(options buildOptions, stdout, stderr io.Writer) (
 		return fmt.Errorf("build: checksum artifact: %w", err)
 	}
 	manifest := buildManifest{
-		SchemaVersion:  1,
+		SchemaVersion:  buildManifestSchemaVersion,
 		ProjectName:    options.metadata.ProjectName,
 		Target:         options.target,
 		Mode:           options.mode,
@@ -508,6 +584,7 @@ func (item buildCommand) build(options buildOptions, stdout, stderr io.Writer) (
 		Artifact:       relativeBuildPath(options.root, artifact.path),
 		ArtifactSHA256: artifactChecksum,
 		BackendURL:     options.backendURL,
+		SidecarNative:  options.macosSidecarNative,
 	}
 	if artifact.sidecarPath != "" {
 		manifest.Sidecar = relativeBuildPath(options.root, artifact.sidecarPath)
@@ -545,11 +622,19 @@ func (item buildCommand) buildSidecar(
 		var binaries []string
 		for _, architecture := range []string{"arm64", "amd64"} {
 			output := filepath.Join(workDirectory, "bridra_backend_"+architecture)
+			arguments := []string{"build", "-trimpath", "-o", output, "./cmd/sidecar"}
+			cgoEnabled := "0"
+			if options.macosSidecarNative {
+				cgoEnabled = "1"
+				arguments = []string{
+					"build", "-tags", macosNativeBuildTag, "-trimpath", "-o", output, "./cmd/sidecar",
+				}
+			}
 			if err := item.execute("Go Sidecar "+architecture, buildProcessSpec{
 				Name:        "go",
-				Arguments:   []string{"build", "-trimpath", "-o", output, "./cmd/sidecar"},
+				Arguments:   arguments,
 				Directory:   backendDirectory,
-				Environment: []string{"CGO_ENABLED=0", "GOOS=darwin", "GOARCH=" + architecture},
+				Environment: []string{"CGO_ENABLED=" + cgoEnabled, "GOOS=darwin", "GOARCH=" + architecture},
 				Stdout:      stdout,
 				Stderr:      stderr,
 			}); err != nil {
@@ -649,15 +734,43 @@ func titleBuildMode(mode buildMode) string {
 func (item buildCommand) signMacOSArtifact(
 	options buildOptions,
 	artifact buildArtifact,
+	workDirectory string,
 	stdout io.Writer,
 	stderr io.Writer,
 ) error {
+	appEntitlementsBefore := filepath.Join(workDirectory, "app-entitlements-before.plist")
+	appHadEntitlements, err := item.extractMacOSEntitlements(
+		"read macOS app entitlements before signing",
+		artifact.path,
+		appEntitlementsBefore,
+		stdout,
+		stderr,
+	)
+	if err != nil {
+		return err
+	}
+
+	sidecarSignArguments := []string{"--force", "--sign", "-"}
+	if options.macosSidecarEntitlements != "" {
+		sidecarSignArguments = append(
+			sidecarSignArguments,
+			"--entitlements",
+			options.macosSidecarEntitlements,
+		)
+	}
+	sidecarSignArguments = append(sidecarSignArguments, artifact.sidecarPath)
 	for _, operation := range []struct {
 		label     string
 		arguments []string
 	}{
-		{label: "sign macOS Sidecar", arguments: []string{"--force", "--sign", "-", artifact.sidecarPath}},
-		{label: "sign macOS app", arguments: []string{"--force", "--sign", "-", artifact.path}},
+		{label: "sign macOS Sidecar", arguments: sidecarSignArguments},
+		{
+			label: "sign macOS app",
+			arguments: []string{
+				"--force", "--sign", "-", "--preserve-metadata=entitlements", artifact.path,
+			},
+		},
+		{label: "verify macOS Sidecar", arguments: []string{"--verify", "--strict", artifact.sidecarPath}},
 		{label: "verify macOS app", arguments: []string{"--verify", "--deep", "--strict", artifact.path}},
 	} {
 		if err := item.execute(operation.label, buildProcessSpec{
@@ -670,7 +783,163 @@ func (item buildCommand) signMacOSArtifact(
 			return err
 		}
 	}
+
+	appEntitlementsAfter := filepath.Join(workDirectory, "app-entitlements-after.plist")
+	appStillHasEntitlements, err := item.extractMacOSEntitlements(
+		"read macOS app entitlements after signing",
+		artifact.path,
+		appEntitlementsAfter,
+		stdout,
+		stderr,
+	)
+	if err != nil {
+		return err
+	}
+	if appHadEntitlements != appStillHasEntitlements {
+		return fmt.Errorf(
+			"%w: macOS app entitlements changed while embedding the Sidecar",
+			errBuildArtifact,
+		)
+	}
+	if appHadEntitlements {
+		if err := item.compareMacOSEntitlements(
+			"macOS app",
+			appEntitlementsBefore,
+			appEntitlementsAfter,
+			options.root,
+			stderr,
+		); err != nil {
+			return err
+		}
+	}
+
+	if options.macosSidecarEntitlements != "" {
+		sidecarEntitlements := filepath.Join(workDirectory, "sidecar-entitlements.plist")
+		hasEntitlements, extractErr := item.extractMacOSEntitlements(
+			"read embedded macOS Sidecar entitlements",
+			artifact.sidecarPath,
+			sidecarEntitlements,
+			stdout,
+			stderr,
+		)
+		if extractErr != nil {
+			return extractErr
+		}
+		if !hasEntitlements {
+			return fmt.Errorf(
+				"%w: bundled macOS Sidecar is missing the requested entitlements",
+				errBuildArtifact,
+			)
+		}
+		if err := item.compareMacOSEntitlements(
+			"macOS Sidecar",
+			options.macosSidecarEntitlements,
+			sidecarEntitlements,
+			options.root,
+			stderr,
+		); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func (item buildCommand) extractMacOSEntitlements(
+	label string,
+	target string,
+	destination string,
+	stdout io.Writer,
+	stderr io.Writer,
+) (bool, error) {
+	if err := item.execute(label, buildProcessSpec{
+		Name: "codesign",
+		Arguments: []string{
+			"--display", "--entitlements", destination, "--xml", target,
+		},
+		Stdout: stdout,
+		Stderr: stderr,
+	}); err != nil {
+		return false, err
+	}
+	information, err := item.system.stat(destination)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("build: stat extracted macOS entitlements: %w", err)
+	}
+	if !information.Mode().IsRegular() {
+		return false, fmt.Errorf(
+			"%w: extracted macOS entitlements must be a regular file",
+			errBuildArtifact,
+		)
+	}
+	return information.Size() > 0, nil
+}
+
+func (item buildCommand) compareMacOSEntitlements(
+	label string,
+	expectedPath string,
+	actualPath string,
+	directory string,
+	stderr io.Writer,
+) error {
+	expected, err := item.normalizeMacOSEntitlements(
+		"normalize expected "+label+" entitlements",
+		expectedPath,
+		directory,
+		stderr,
+	)
+	if err != nil {
+		return err
+	}
+	actual, err := item.normalizeMacOSEntitlements(
+		"normalize embedded "+label+" entitlements",
+		actualPath,
+		directory,
+		stderr,
+	)
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(expected, actual) {
+		return fmt.Errorf(
+			"%w: embedded %s entitlements do not match the requested contract",
+			errBuildArtifact,
+			label,
+		)
+	}
+	return nil
+}
+
+func (item buildCommand) normalizeMacOSEntitlements(
+	label string,
+	path string,
+	directory string,
+	stderr io.Writer,
+) (map[string]any, error) {
+	var output bytes.Buffer
+	if err := item.execute(label, buildProcessSpec{
+		Name:      "plutil",
+		Arguments: []string{"-convert", "json", "-o", "-", path},
+		Directory: directory,
+		Stdout:    &output,
+		Stderr:    stderr,
+	}); err != nil {
+		return nil, err
+	}
+	var entitlements map[string]any
+	decoder := json.NewDecoder(&output)
+	decoder.UseNumber()
+	if err := decoder.Decode(&entitlements); err != nil {
+		return nil, fmt.Errorf(
+			"%w: decode normalized %s: %w",
+			errBuildArtifact,
+			label,
+			err,
+		)
+	}
+	return entitlements, nil
 }
 
 func (item buildCommand) execute(label string, specification buildProcessSpec) error {

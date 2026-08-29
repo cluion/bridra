@@ -1,6 +1,6 @@
 # Bridra architecture decisions
 
-Bridra 0.13 supports Windows, macOS, Linux, Android, iOS, and Web while keeping
+Bridra 0.16 supports Windows, macOS, Linux, Android, iOS, and Web while keeping
 one Go application pipeline and one typed Flutter API.
 
 ## Layers
@@ -32,7 +32,27 @@ Models, Services, Responses, Controllers, and route registration remain under
 `backend/app`. `packages/bridra_flutter` owns transport-neutral RPC, HTTP, and
 desktop Sidecar clients. The generated `BridraRpcApi` owns the application RPC
 contract; `lib/api/backend_gateway.dart` adds connection lifecycle and health
-caching. Both packages remain in one Git repository and use Bridra 0.15.0.
+caching. Both packages remain in one Git repository and use Bridra 0.16.0.
+
+Native macOS Sidecars may register a `ResourceBroker` backed by
+`NewMacOSResourceBookmarkResolver`. The resolver alone handles Foundation's
+different ephemeral and persistent bookmark lifecycles; the broker owns a
+bounded set of leases and gives application code only authenticated,
+process-local capabilities. Application shutdown releases all remaining leases.
+Bookmark bytes, capabilities, and resolved paths are authority-bearing secrets
+and must not enter logs or diagnostics. The macOS runner creates bookmarks while
+the Flutter process owns the user grant; authenticated reserved Sidecar controls
+grant and release the Go lease. Capabilities are bound to one Sidecar session,
+so a restart requires the application to grant the resource again.
+
+The macOS acceptance gate runs the native test binary inside two ad-hoc signed
+App Sandbox bundles. Only the creator receives a test-only read exception for
+one random folder outside its container. The receiver proves that a raw path is
+denied, the ordinary interprocess bookmark supplies temporary authority, and
+`stopAccessingSecurityScopedResource` on release removes that authority before a
+new open. The workflow never prints the bookmark or selected path and removes
+the temporary folder and bundles. Persistent bookmark behavior remains a
+separate application entitlement and relaunch contract.
 
 ## Contract generation
 
@@ -43,7 +63,9 @@ reviewed contract currently deployed to its peers. `bridra generate` produces Go
 protocol/route constants, Go Request and Response DTOs, and the Dart typed client,
 but never rewrites the baseline. Checked-in generated files act as golden outputs,
 while `make verify` runs both `schema-check` and `codegen-check` before compiling
-either language.
+either language. The CLI canonicalizes Dart output with the project-pinned FVM
+SDK before both write and check operations; generated freshness therefore uses
+the same bytes as the application's Dart formatting gate.
 
 Top-level schema `types` assign one stable reference name to each reusable
 object while preserving explicit Go and Dart generated names. Object fields use
@@ -97,7 +119,7 @@ contracts; neither command tags or publishes a release.
 
 `create` resolves `all`, `desktop`, `mobile`, or an explicit platform list into
 one canonical selection. It asks Flutter to generate only those runners inside a
-same-parent staging directory, then renders Project Template manifest v5 and
+same-parent staging directory, then renders Project Template manifest v6 and
 generates the typed contract. Go consumer tests, Flutter dependency resolution,
 and Dart formatting must succeed before one atomic rename exposes the destination;
 every earlier failure removes the staging directory.
@@ -178,19 +200,29 @@ a Sidecar unless an explicit backend URL selects HTTP, while mobile and Web alwa
 HTTP. Profile and release HTTP artifacts require an HTTPS `/rpc` endpoint and an
 explicit compile-time token.
 
-Sidecars are built with `CGO_ENABLED=0` for the target OS and host architecture.
+Sidecars are built with `CGO_ENABLED=0` for the target OS and host architecture
+by default. macOS may explicitly select a native mode that builds both
+architectures with CGO, enables the `bridra_macos_native` build tag, and links a
+small Foundation availability adapter. The build manifest records that opt-in;
+other platforms remain portable.
 macOS combines arm64 and amd64 binaries with `lipo`, installs the universal executable
 under the app's `libexec`, then re-applies and verifies an ad-hoc bundle signature.
+The app's pre-existing entitlements are preserved and compared after re-signing.
+An optional application-owned Sidecar entitlement plist is embedded and compared
+semantically after signing. Artifact and Sidecar checksums are computed only after
+these checks complete.
 Linux and Windows install the matching native executable after Flutter creates the
 bundle. This post-build installation also works for unmodified runners created by
 `bridra create`; application templates do not need repository-specific Xcode or CMake
 hooks.
 
 After validating the expected artifact and bundled Sidecar, the command computes a
-deterministic SHA-256 over the file or directory tree. A versioned, token-free manifest
-under `build/bridra` records target, mode, transport, relative artifact paths, backend
-URL, architecture, and checksums. Make targets and the Windows PowerShell entrypoint
-delegate release builds to this command so CI and local builds share one policy.
+deterministic SHA-256 over the file or directory tree. A schema-versioned,
+token-free manifest under `build/bridra` records target, mode, transport,
+relative artifact paths, backend URL, architecture, native macOS Sidecar
+opt-in, and checksums. Make targets and the Windows PowerShell entrypoint
+delegate release builds to this command so CI and local builds share one
+policy.
 
 CLI release metadata has one source in `backend/internal/releaseinfo`. The global
 help, `bridra version`, generated dependency versions, and release linker flags
@@ -560,11 +592,18 @@ termination or inherited pipe handles.
 - Methods declared with `stream: true` produce ordered `data`, `progress`, and
   terminal `complete` frames. HTTP transports encode them as NDJSON and flush
   each frame.
+- The raw request envelope uses string metadata. Streaming is enabled only by
+  the exact pair `"stream":"1"`; `"stream":"true"` remains a unary request and
+  a JSON boolean is not valid for the string-valued metadata map. Generated
+  Bridra clients always emit the canonical value.
 - Sidecar streams use an authenticated per-request credit window. The Flutter
   consumer sends reserved `rpc.stream_ack` control messages only after delivery;
   the Go producer blocks when all credits are in flight. The bounded window
   prevents an idle consumer from creating an unbounded response queue while
-  leaving other request workers available.
+  leaving other request workers available. Raw Sidecar clients may provide
+  `stream_window` as a base-10 string from `"1"` through `"256"`; an omitted,
+  malformed, or out-of-range value uses the default window of 16. HTTP ignores
+  this Sidecar-only field and relies on response-socket backpressure.
 - Request and response `file` fields serialize a short-lived descriptor rather
   than file bytes. The descriptor carries a random capability ID, safe display
   name, media type, byte count, SHA-256 digest, and expiry.
