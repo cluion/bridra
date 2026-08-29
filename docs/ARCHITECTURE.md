@@ -43,7 +43,9 @@ reviewed contract currently deployed to its peers. `bridra generate` produces Go
 protocol/route constants, Go Request and Response DTOs, and the Dart typed client,
 but never rewrites the baseline. Checked-in generated files act as golden outputs,
 while `make verify` runs both `schema-check` and `codegen-check` before compiling
-either language.
+either language. The CLI canonicalizes Dart output with the project-pinned FVM
+SDK before both write and check operations; generated freshness therefore uses
+the same bytes as the application's Dart formatting gate.
 
 Top-level schema `types` assign one stable reference name to each reusable
 object while preserving explicit Go and Dart generated names. Object fields use

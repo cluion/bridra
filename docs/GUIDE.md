@@ -514,10 +514,13 @@ make codegen-check
 ```
 
 `make generate` runs the `bridra generate` CLI and writes deterministic Go and
-Dart files. It never updates the baseline. Generated files are committed, marked
-`DO NOT EDIT`, and compiled by normal tests. `make verify` fails when the current
-schema breaks the baseline without a higher protocol or when the schema and
-checked-in output differ.
+Dart files. Generated Dart is canonicalized with the Dart formatter selected by
+the project's `.fvmrc` before either writing or freshness comparison, so the
+format and codegen gates use the same bytes. FVM and the pinned SDK must be
+available. Generation never updates the baseline. Generated files are committed,
+marked `DO NOT EDIT`, and compiled by normal tests. `make verify` fails when the
+current schema breaks the baseline without a higher protocol or when the schema
+and checked-in output differ.
 
 Generated Project Template v4 runs this comparison automatically. To compare
 with another reviewed deployed or released schema explicitly:

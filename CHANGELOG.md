@@ -3,6 +3,14 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
+## Unreleased
+
+### Fixed
+
+- `bridra generate` now canonicalizes generated Dart with the project-pinned
+  formatter before writing or checking output. Valid schemas no longer force
+  generated-file freshness and Dart formatting gates into conflicting states.
+
 ## [0.15.0] - 2026-08-29
 
 ### Added

@@ -43,7 +43,7 @@ func newApplication(system doctorSystem) *application {
 		makeCommand{},
 		devCommand{system: defaultDevSystem()},
 		buildCommand{system: defaultBuildSystem()},
-		generateCommand{},
+		newGenerateCommand(),
 		schemaCommand{},
 		doctorCommand{system: system},
 		newDiagnoseCommand(system),
