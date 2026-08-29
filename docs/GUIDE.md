@@ -498,8 +498,25 @@ Every successful build writes a token-free manifest to
 `build/bridra/<target>-<mode>.json`. It records the stable artifact path,
 transport, architecture, content-tree SHA-256, and Sidecar checksum when present.
 The iOS artifact is unsigned. The macOS command applies an ad-hoc signature after
-embedding its universal Sidecar; distribution signing, notarization, installers,
-and store submission remain product release tasks.
+embedding its universal Sidecar. It preserves the app entitlements embedded by
+the Flutter/Xcode build and fails if their signed value changes.
+
+An application that needs entitlements on the bundled Sidecar supplies its own
+plist explicitly:
+
+```bash
+go run ./cmd/bridra build macos --root .. \
+  --macos-sidecar-entitlements macos/Runner/Sidecar.entitlements
+```
+
+Bridra signs the Sidecar with that plist, reads the embedded entitlements back,
+compares their property-list values, verifies both signatures, and only then
+computes the manifest checksums. For an App Sandbox child, the application owns
+the exact contract; a typical Sidecar plist enables both
+`com.apple.security.app-sandbox` and `com.apple.security.inherit`.
+Distribution signing, notarization, installers, and store submission remain
+product release tasks. This option does not enable CGO or implement
+security-scoped bookmark handoff.
 
 ## Generate the RPC contract
 
@@ -879,7 +896,10 @@ build/windows/<x64|arm64>/runner/Release/
 ```
 
 Build Windows and Linux releases on the target OS and architecture. The macOS
-build phase produces and ad-hoc signs a universal `arm64`/`x86_64` sidecar.
+build phase produces and ad-hoc signs a universal `arm64`/`x86_64` sidecar. It
+preserves and verifies the app's existing entitlements; pass
+`--macos-sidecar-entitlements` when the child process needs an application-owned
+entitlement contract.
 The `make *-build` and Windows `-Task build` wrappers delegate to `bridra build`.
 
 ## Runtime configuration

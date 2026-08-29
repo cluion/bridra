@@ -134,6 +134,10 @@ func TestBuildWebReleaseUsesHTTPAndDoesNotPersistToken(t *testing.T) {
 
 func TestBuildMacOSCreatesUniversalSidecarAndResignsApp(t *testing.T) {
 	root := buildProjectRoot(t)
+	appEntitlements := `<?xml version="1.0"?><plist version="1.0"><dict><key>com.apple.security.app-sandbox</key><true/></dict></plist>`
+	sidecarEntitlements := `<?xml version="1.0"?><plist version="1.0"><dict><key>com.apple.security.app-sandbox</key><true/><key>com.apple.security.inherit</key><true/></dict></plist>`
+	sidecarEntitlementsPath := filepath.Join(root, "macos", "Runner", "Sidecar.entitlements")
+	writeBuildTestOutput(t, sidecarEntitlementsPath, sidecarEntitlements)
 	var specifications []buildProcessSpec
 	system := buildTestSystem("darwin", "arm64")
 	system.run = func(specification buildProcessSpec) error {
@@ -160,13 +164,37 @@ func TestBuildMacOSCreatesUniversalSidecarAndResignsApp(t *testing.T) {
 				"flutter-app",
 			)
 		case "codesign":
+			if containsString(specification.Arguments, "--display") {
+				destination := buildNamedArgument(t, specification.Arguments, "--entitlements")
+				target := specification.Arguments[len(specification.Arguments)-1]
+				contents := appEntitlements
+				if strings.HasSuffix(target, "bridra_backend") {
+					contents = sidecarEntitlements
+				}
+				writeBuildTestOutput(t, destination, contents)
+			}
+		case "plutil":
+			path := specification.Arguments[len(specification.Arguments)-1]
+			contents, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read entitlements for normalization: %v", err)
+			}
+			if bytes.Contains(contents, []byte("com.apple.security.inherit")) {
+				fmt.Fprint(specification.Stdout, `{"com.apple.security.app-sandbox":true,"com.apple.security.inherit":true}`)
+			} else {
+				fmt.Fprint(specification.Stdout, `{"com.apple.security.app-sandbox":true}`)
+			}
 		default:
 			t.Fatalf("unexpected command: %#v", specification)
 		}
 		return nil
 	}
 	if err := (buildCommand{system: system}).run(
-		[]string{"macos", "--root", root},
+		[]string{
+			"macos",
+			"--root", root,
+			"--macos-sidecar-entitlements", "macos/Runner/Sidecar.entitlements",
+		},
 		&bytes.Buffer{},
 		&bytes.Buffer{},
 	); err != nil {
@@ -175,6 +203,8 @@ func TestBuildMacOSCreatesUniversalSidecarAndResignsApp(t *testing.T) {
 
 	var goArchitectures []string
 	codesignCalls := 0
+	var sidecarSign buildProcessSpec
+	var appSign buildProcessSpec
 	for _, specification := range specifications {
 		if specification.Name == "go" {
 			goArchitectures = append(
@@ -184,10 +214,24 @@ func TestBuildMacOSCreatesUniversalSidecarAndResignsApp(t *testing.T) {
 		}
 		if specification.Name == "codesign" {
 			codesignCalls++
+			if containsString(specification.Arguments, "--sign") {
+				target := specification.Arguments[len(specification.Arguments)-1]
+				if strings.HasSuffix(target, "bridra_backend") {
+					sidecarSign = specification
+				} else {
+					appSign = specification
+				}
+			}
 		}
 	}
-	if strings.Join(goArchitectures, ",") != "arm64,amd64" || codesignCalls != 3 {
+	if strings.Join(goArchitectures, ",") != "arm64,amd64" || codesignCalls != 7 {
 		t.Fatalf("Go architectures = %v, codesign calls = %d", goArchitectures, codesignCalls)
+	}
+	if buildNamedArgument(t, sidecarSign.Arguments, "--entitlements") != sidecarEntitlementsPath {
+		t.Fatalf("Sidecar codesign arguments = %v", sidecarSign.Arguments)
+	}
+	if !containsString(appSign.Arguments, "--preserve-metadata=entitlements") {
+		t.Fatalf("app codesign arguments = %v", appSign.Arguments)
 	}
 	sidecar := filepath.Join(
 		root,
@@ -204,6 +248,70 @@ func TestBuildMacOSCreatesUniversalSidecarAndResignsApp(t *testing.T) {
 	manifest := readBuildTestManifest(t, filepath.Join(root, "build", "bridra", "macos-release.json"))
 	if manifest.Architecture != "universal" || manifest.Sidecar == "" {
 		t.Fatalf("manifest = %#v", manifest)
+	}
+	artifactChecksum, err := artifactSHA256(filepath.Join(
+		root,
+		"build", "macos", "Build", "Products", "Release", "example.app",
+	))
+	if err != nil {
+		t.Fatalf("checksum signed artifact: %v", err)
+	}
+	sidecarChecksum, err := artifactSHA256(sidecar)
+	if err != nil {
+		t.Fatalf("checksum signed Sidecar: %v", err)
+	}
+	if manifest.ArtifactSHA256 != artifactChecksum || manifest.SidecarSHA256 != sidecarChecksum {
+		t.Fatalf("manifest checksums were not computed from the final signed artifact: %#v", manifest)
+	}
+}
+
+func TestSignMacOSArtifactRejectsEntitlementDrift(t *testing.T) {
+	root := t.TempDir()
+	workDirectory := filepath.Join(root, "work")
+	app := filepath.Join(root, "example.app")
+	sidecar := filepath.Join(app, "Contents", "MacOS", "libexec", "bridra_backend")
+	writeBuildTestOutput(t, filepath.Join(app, "Contents", "MacOS", "example"), "app")
+	writeBuildTestOutput(t, sidecar, "sidecar")
+	system := buildTestSystem("darwin", "arm64")
+	system.run = func(specification buildProcessSpec) error {
+		switch specification.Name {
+		case "codesign":
+			if containsString(specification.Arguments, "--display") {
+				destination := buildNamedArgument(t, specification.Arguments, "--entitlements")
+				value := "before"
+				if strings.Contains(destination, "after") {
+					value = "after"
+				}
+				writeBuildTestOutput(
+					t,
+					destination,
+					`<plist version="1.0"><dict><key>value</key><string>`+value+`</string></dict></plist>`,
+				)
+			}
+		case "plutil":
+			path := specification.Arguments[len(specification.Arguments)-1]
+			value := "before"
+			if strings.Contains(path, "after") {
+				value = "after"
+			}
+			fmt.Fprintf(specification.Stdout, `{"value":%q}`, value)
+		default:
+			t.Fatalf("unexpected command: %#v", specification)
+		}
+		return nil
+	}
+	if err := os.MkdirAll(workDirectory, 0o755); err != nil {
+		t.Fatalf("create work directory: %v", err)
+	}
+	err := (buildCommand{system: system}).signMacOSArtifact(
+		buildOptions{root: root},
+		buildArtifact{path: app, sidecarPath: sidecar},
+		workDirectory,
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+	)
+	if !errors.Is(err, errBuildArtifact) || !strings.Contains(err.Error(), "do not match") {
+		t.Fatalf("error = %v, want entitlement drift", err)
 	}
 }
 
@@ -356,6 +464,22 @@ func TestBuildRejectsInvalidOptions(t *testing.T) {
 			message: "requires --backend-url",
 		},
 		{
+			name: "macOS Sidecar entitlements on Linux target", goos: "linux", goarch: "amd64",
+			options: buildOptions{
+				root: root, target: buildTargetLinux, mode: buildModeRelease,
+				macosSidecarEntitlements: "macos/Runner/Sidecar.entitlements",
+			},
+			message: "requires the macos target",
+		},
+		{
+			name: "missing macOS Sidecar entitlements", goos: "darwin", goarch: "arm64",
+			options: buildOptions{
+				root: root, target: buildTargetMacOS, mode: buildModeRelease,
+				macosSidecarEntitlements: "macos/Runner/missing.entitlements",
+			},
+			message: "entitlements are unavailable",
+		},
+		{
 			name: "unsupported architecture", goos: "linux", goarch: "386",
 			options: buildOptions{root: root, target: buildTargetLinux, mode: buildModeRelease},
 			message: "unsupported linux host architecture",
@@ -384,6 +508,22 @@ func TestBuildRejectsInvalidOptions(t *testing.T) {
 				t.Fatalf("error = %v, want invalid build containing %q", err, test.message)
 			}
 		})
+	}
+}
+
+func TestBuildRejectsMacOSSidecarEntitlementsWithHTTPTransport(t *testing.T) {
+	root := buildProjectRoot(t)
+	entitlements := filepath.Join(root, "macos", "Runner", "Sidecar.entitlements")
+	writeBuildTestOutput(t, entitlements, `<plist version="1.0"><dict/></plist>`)
+	_, err := (buildCommand{system: buildTestSystem("darwin", "arm64")}).resolveOptions(
+		buildOptions{
+			root: root, target: buildTargetMacOS, mode: buildModeDebug,
+			backendURL: "http://127.0.0.1:8080/rpc", token: "token",
+			macosSidecarEntitlements: entitlements,
+		},
+	)
+	if !errors.Is(err, errBuildInvalid) || !strings.Contains(err.Error(), "Sidecar transport") {
+		t.Fatalf("error = %v, want Sidecar transport requirement", err)
 	}
 }
 

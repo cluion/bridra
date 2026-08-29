@@ -10,12 +10,18 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 - Documented the exact raw streaming metadata contract and added Sidecar plus
   HTTP wire-level regressions for non-canonical stream flags and Sidecar window
   fallback behavior.
+- Added `bridra build macos --macos-sidecar-entitlements <path>` for
+  application-owned Sidecar sandbox and capability contracts.
 
 ### Fixed
 
 - `bridra generate` now canonicalizes generated Dart with the project-pinned
   formatter before writing or checking output. Valid schemas no longer force
   generated-file freshness and Dart formatting gates into conflicting states.
+- macOS Sidecar builds now preserve and verify the Flutter app's existing
+  entitlements when re-applying the ad-hoc bundle signature. Requested Sidecar
+  entitlements are also read back and compared before final artifact checksums
+  are written.
 
 ## [0.15.0] - 2026-08-29
 

@@ -183,6 +183,10 @@ explicit compile-time token.
 Sidecars are built with `CGO_ENABLED=0` for the target OS and host architecture.
 macOS combines arm64 and amd64 binaries with `lipo`, installs the universal executable
 under the app's `libexec`, then re-applies and verifies an ad-hoc bundle signature.
+The app's pre-existing entitlements are preserved and compared after re-signing.
+An optional application-owned Sidecar entitlement plist is embedded and compared
+semantically after signing. Artifact and Sidecar checksums are computed only after
+these checks complete.
 Linux and Windows install the matching native executable after Flutter creates the
 bundle. This post-build installation also works for unmodified runners created by
 `bridra create`; application templates do not need repository-specific Xcode or CMake
