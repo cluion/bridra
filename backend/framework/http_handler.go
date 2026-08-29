@@ -127,7 +127,7 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	markHTTPObservationRPCMethod(r.Context(), request.Method)
 
-	if request.Meta[streamRequestMeta] == "1" {
+	if requestsStream(request) {
 		h.writeStream(w, r, request)
 		return
 	}

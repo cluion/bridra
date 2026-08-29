@@ -562,11 +562,18 @@ termination or inherited pipe handles.
 - Methods declared with `stream: true` produce ordered `data`, `progress`, and
   terminal `complete` frames. HTTP transports encode them as NDJSON and flush
   each frame.
+- The raw request envelope uses string metadata. Streaming is enabled only by
+  the exact pair `"stream":"1"`; `"stream":"true"` remains a unary request and
+  a JSON boolean is not valid for the string-valued metadata map. Generated
+  Bridra clients always emit the canonical value.
 - Sidecar streams use an authenticated per-request credit window. The Flutter
   consumer sends reserved `rpc.stream_ack` control messages only after delivery;
   the Go producer blocks when all credits are in flight. The bounded window
   prevents an idle consumer from creating an unbounded response queue while
-  leaving other request workers available.
+  leaving other request workers available. Raw Sidecar clients may provide
+  `stream_window` as a base-10 string from `"1"` through `"256"`; an omitted,
+  malformed, or out-of-range value uses the default window of 16. HTTP ignores
+  this Sidecar-only field and relies on response-socket backpressure.
 - Request and response `file` fields serialize a short-lived descriptor rather
   than file bytes. The descriptor carries a random capability ID, safe display
   name, media type, byte count, SHA-256 digest, and expiry.

@@ -1848,6 +1848,21 @@ Declare a server-streaming method with `"stream": true` in
 `schema/bridra.json`. Code generation changes only that Dart method to return
 `Stream<RpcStreamEvent<ResultType>>`; unary methods keep returning `Future`.
 
+Generated Bridra clients add the required transport metadata automatically. A
+client that writes the raw RPC envelope must use string values and request a
+stream with the exact value `"1"`:
+
+```json
+{"id":"1","method":"reports.build","params":{},"meta":{"stream":"1","stream_window":"16"}}
+```
+
+The string `"true"` is not an alias: it dispatches the method as unary, so a
+stream producer returns `streaming_required`. A JSON boolean is invalid because
+request metadata is a string map. `stream_window` is Sidecar-only and accepts a
+base-10 string from `"1"` through `"256"`; an omitted, malformed, or out-of-range
+value falls back to 16. HTTP streaming ignores that field and uses NDJSON socket
+backpressure.
+
 Inside the Controller, bind and validate the request before producing the
 stream:
 

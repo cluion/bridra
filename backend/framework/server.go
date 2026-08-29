@@ -289,7 +289,7 @@ func (r *serverRequestRegistry) Register(
 		Request: request,
 		cancel:  cancel,
 	}
-	if request.Meta[streamRequestMeta] == "1" {
+	if requestsStream(request) {
 		registered.flow = newStreamFlow(parseStreamWindow(request.Meta[streamWindowMeta]))
 	}
 	if request.ID == "" {

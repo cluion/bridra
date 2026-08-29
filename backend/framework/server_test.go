@@ -623,6 +623,51 @@ func TestServerRejectsNegativePendingRequestLimit(t *testing.T) {
 	}
 }
 
+func TestServerTreatsNonCanonicalStreamMetadataAsUnary(t *testing.T) {
+	router := NewRouter()
+	router.Handle("numbers.list", func(ctx *Context) (any, error) {
+		return ProduceStream(ctx, func(stream *StreamWriter) error {
+			return stream.Send(1)
+		})
+	})
+	input := strings.NewReader(
+		`{"id":"stream","method":"numbers.list","meta":{"stream":"true"}}` + "\n",
+	)
+	var output bytes.Buffer
+	server := &Server{Router: router, Input: input, Output: &output}
+
+	if err := server.Serve(context.Background()); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	var response Response
+	if err := json.NewDecoder(&output).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.ID != "stream" ||
+		response.Stream != nil ||
+		response.Error == nil ||
+		response.Error.Code != "streaming_required" {
+		t.Fatalf("response = %#v", response)
+	}
+}
+
+func TestParseStreamWindowUsesDocumentedBoundsAndFallback(t *testing.T) {
+	tests := map[string]int{
+		"":    defaultStreamWindow,
+		"no":  defaultStreamWindow,
+		"0":   defaultStreamWindow,
+		"-1":  defaultStreamWindow,
+		"257": defaultStreamWindow,
+		"1":   1,
+		"256": maxStreamWindow,
+	}
+	for value, expected := range tests {
+		if actual := parseStreamWindow(value); actual != expected {
+			t.Fatalf("parseStreamWindow(%q) = %d, want %d", value, actual, expected)
+		}
+	}
+}
+
 func TestServerStreamWindowAppliesBackpressureUntilAcknowledged(t *testing.T) {
 	router := NewRouter()
 	router.Handle("numbers.list", func(ctx *Context) (any, error) {

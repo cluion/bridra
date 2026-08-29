@@ -5,6 +5,12 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 
 ## Unreleased
 
+### Added
+
+- Documented the exact raw streaming metadata contract and added Sidecar plus
+  HTTP wire-level regressions for non-canonical stream flags and Sidecar window
+  fallback behavior.
+
 ### Fixed
 
 - `bridra generate` now canonicalizes generated Dart with the project-pinned
