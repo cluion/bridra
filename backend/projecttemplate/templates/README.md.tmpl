@@ -21,6 +21,12 @@ make run
 terminate an acknowledged secondary application instance before it enters
 `runApp`, plus the bookmark creator used for native resource grants.
 
+`make macos-sandbox-smoke` signs two temporary sandboxed harness apps and uses
+an outside-container folder to prove raw-path denial, ephemeral bookmark grant
+success, and denial again after release. It removes the temporary folder and
+apps after the gate and reuses two fixed bundle identifiers to avoid per-run
+macOS container growth.
+
 For a sandboxed app that must give the Go Sidecar access to a user-selected
 resource, build the Sidecar with native mode and application-owned entitlements.
 Create the bookmark with `MacOSResourceBookmarks.create`, grant it through

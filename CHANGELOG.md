@@ -21,6 +21,9 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 - Added the macOS Swift bookmark creator, public Dart bookmark and Sidecar grant
   APIs, and authenticated reserved Sidecar grant／release controls. Capability
   values are session-bound and redacted from string output.
+- Added `make macos-sandbox-smoke` and a hosted macOS CI gate that signs isolated
+  creator／receiver harness apps and proves outside-container raw-path denial,
+  ephemeral bookmark access, and denial again after release.
 
 ### Changed
 

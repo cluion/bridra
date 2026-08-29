@@ -322,9 +322,10 @@ never overwrite them:
    and entitlement steps but still review the Sidecar provider change.
 6. Add regressions for native argument validation and redaction, reserved grant
    and release, active-grant limits, restart invalidation, and application
-   cleanup. Run `make verify`, `make macos-native-test`, the required macOS build,
-   and a signed App Sandbox outside-container smoke before declaring a sandboxed
-   user-selected-folder workflow accepted.
+   cleanup. Run `make verify`, `make macos-native-test`,
+   `make macos-sandbox-smoke`, and the required macOS build before declaring a
+   sandboxed current-session user-selected-folder workflow accepted. Persistent
+   relaunch remains an application-owned acceptance gate.
 7. Update both framework dependencies to `0.16.0`, record metadata schema `3`,
    Template version `6`, and Framework version `0.16.0` in
    `.bridra/project.json`, and preserve the application's RPC protocol and

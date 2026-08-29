@@ -579,6 +579,24 @@ entitlement, renewal, and consent policy remains application-owned. `toString`
 redacts both bookmarks and capabilities, but applications must still avoid
 logging their explicit `bytes` or `value` properties.
 
+Before accepting a sandboxed user-selected-folder workflow, run:
+
+```bash
+make macos-native-test
+make macos-sandbox-smoke
+```
+
+The first gate validates the application-owned Swift channel. The second builds
+and ad-hoc signs separate creator and receiver `.app` harnesses. A test-only
+read entitlement is scoped to one random outside-container folder on the
+creator; the receiver has no such exception. The receiver must fail a raw read,
+succeed only after an ephemeral bookmark grant, and fail again after release.
+Both harness bundles and the external fixture are removed after the test. This
+gate reuses two fixed bundle identifiers so macOS does not create a new managed
+container root on every run. It verifies current-session handoff; product-owned
+persistent bookmark storage still requires its own entitlement, consent,
+relaunch, and renewal acceptance.
+
 ## Generate the RPC contract
 
 `schema/bridra.json` is the source of truth for the proposed RPC contract.

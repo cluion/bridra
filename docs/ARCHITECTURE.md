@@ -45,6 +45,15 @@ the Flutter process owns the user grant; authenticated reserved Sidecar controls
 grant and release the Go lease. Capabilities are bound to one Sidecar session,
 so a restart requires the application to grant the resource again.
 
+The macOS acceptance gate runs the native test binary inside two ad-hoc signed
+App Sandbox bundles. Only the creator receives a test-only read exception for
+one random folder outside its container. The receiver proves that a raw path is
+denied, the ordinary interprocess bookmark supplies temporary authority, and
+`stopAccessingSecurityScopedResource` on release removes that authority before a
+new open. The workflow never prints the bookmark or selected path and removes
+the temporary folder and bundles. Persistent bookmark behavior remains a
+separate application entitlement and relaunch contract.
+
 ## Contract generation
 
 `schema/bridra.json` is the single source for protocol version, RPC methods,

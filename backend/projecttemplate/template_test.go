@@ -468,7 +468,10 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 	}
 	for _, expected := range []string{
 		"macos-native-test:",
+		"macos-sandbox-smoke:",
 		"$(FLUTTER) build macos --debug --config-only",
+		"BRIDRA_MACOS_SANDBOX_SMOKE=1 CGO_ENABLED=1",
+		"TestMacOSSandboxBookmarkHandoff",
 		"xcodebuild test",
 	} {
 		if !strings.Contains(string(generatedMakefile), expected) {
@@ -506,7 +509,7 @@ func TestRenderSelectsPlatformOwnedFilesTargetsAndMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read Makefile: %v", err)
 	}
-	for _, target := range []string{"macos-build:", "web-build:"} {
+	for _, target := range []string{"macos-build:", "macos-sandbox-smoke:", "web-build:"} {
 		if !strings.Contains(string(makefile), target) {
 			t.Fatalf("Makefile does not contain %q:\n%s", target, makefile)
 		}
