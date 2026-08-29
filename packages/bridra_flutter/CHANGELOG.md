@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.16.0 - Unreleased
+## 0.16.0 - 2026-08-29
 
 - Added `MacOSResourceBookmarks` and `ResourceBookmark` for application-owned
   ephemeral or persistent bookmark creation through the macOS runner.

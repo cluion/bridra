@@ -3,7 +3,7 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
-## [0.16.0] - Unreleased
+## [0.16.0] - 2026-08-29
 
 ### Added
 
@@ -41,6 +41,12 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
   entitlements when re-applying the ad-hoc bundle signature. Requested Sidecar
   entitlements are also read back and compared before final artifact checksums
   are written.
+
+### Support
+
+- The latest `0.16.x` release receives best-effort security fixes until the next
+  minor line is published. The `0.15.x` line is no longer supported after this
+  release.
 
 ## [0.15.0] - 2026-08-29
 
