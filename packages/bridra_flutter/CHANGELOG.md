@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.15.0 - Unreleased
+## 0.15.0 - 2026-08-29
 
 - Added `DesktopSingleInstance.terminateSecondary`, which closes the secondary
   coordination session and uses an explicit native lifecycle bridge on macOS.

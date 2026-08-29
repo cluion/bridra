@@ -3,7 +3,7 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
-## [0.15.0] - Unreleased
+## [0.15.0] - 2026-08-29
 
 ### Added
 
@@ -44,6 +44,12 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 Project metadata schema advances to `3` and Project Template to `5` for persisted
 platform scope; template RPC protocol baseline `1` remains unchanged. The Dart
 and Go public API changes are additive and do not alter the RPC wire protocol.
+
+### Support
+
+- The latest `0.15.x` release receives best-effort security fixes until the next
+  minor line is published. The `0.14.x` line is no longer supported after this
+  release.
 
 ## [0.14.0] - 2026-08-23
 
