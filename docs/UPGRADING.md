@@ -9,8 +9,8 @@ Run the read-only planner from a project root before changing dependencies:
 
 ```bash
 bridra upgrade
-bridra upgrade --plan --to 0.15.0
-bridra upgrade --plan --to 0.15.0 --json
+bridra upgrade --plan --to 0.16.0
+bridra upgrade --plan --to 0.16.0 --json
 ```
 
 When invoking the CLI through the backend dependency, use:
@@ -79,8 +79,8 @@ adding the necessary path fails verification.
 | Identity | Current | Compatibility rule |
 | --- | ---: | --- |
 | Project metadata schema | 3 | Schemas 1 and 2 remain readable and conservatively imply all six platforms. A newer schema requires a newer CLI. |
-| Framework SemVer | 0.15.0 | The project and selected target must match. An older version requires a complete registered migration path; downgrade plans are rejected. |
-| Project Template | 5 | Template v5 adds persisted platform scope and conditional runners, targets, checks, and documentation while retaining v4 lifecycle ownership. Older templates require manual review. |
+| Framework SemVer | 0.16.0 | The project and selected target must match. An older version requires a complete registered migration path; downgrade plans are rejected. |
+| Project Template | 6 | Template v6 adds the application-owned macOS bookmark bridge and ResourceBroker-enabled Sidecar entrypoint while retaining v5 platform scope. Older templates require manual review. |
 | Application RPC protocol | Application-owned | `.bridra/project.json`, `schema/bridra.json`, and generated Go/Dart contracts must agree exactly. It may be newer than the selected release's Project Template baseline. |
 
 Framework SemVer, the Project Template protocol baseline, and an application's
@@ -232,17 +232,18 @@ the Go and Flutter dependencies together, add the version contract:
   "projectName": "your_app",
   "goModule": "example.com/your/app",
   "frameworkModule": "github.com/cluion/bridra/backend",
-  "frameworkVersion": "0.15.0",
-  "templateVersion": 4,
+  "frameworkVersion": "0.16.0",
+  "templateVersion": 6,
   "protocolVersion": 1
 }
 ```
 
 Keep the existing project identity and module values. Template 2 introduced this
-upgrade contract; Template 3 adds the deployed-schema baseline gate and Template
-4 adds the generated Application shutdown lifecycle described below. Neither
-replaces Controllers, Services, Models, configuration, UI, or native runner
-files. Record the application's existing `schema/bridra.json`
+upgrade contract; Template 3 adds the deployed-schema baseline gate, Template 4
+adds generated Application shutdown lifecycle, Template 5 adds platform scope,
+and Template 6 adds native resource handoff. None replaces Controllers,
+Services, Models, configuration, UI, or native runner files. Record the
+application's existing `schema/bridra.json`
 protocol value; `1` above is only the default for an unchanged generated project.
 
 ## Project metadata schema 2 to 3
@@ -257,8 +258,8 @@ runner or release target:
   "projectName": "your_app",
   "goModule": "example.com/your/app",
   "frameworkModule": "github.com/cluion/bridra/backend",
-  "frameworkVersion": "0.15.0",
-  "templateVersion": 5,
+  "frameworkVersion": "0.16.0",
+  "templateVersion": 6,
   "protocolVersion": 1,
   "platforms": ["android", "ios", "linux", "macos", "windows", "web"]
 }
@@ -283,6 +284,58 @@ and release expectations. Bridra does not delete existing runner directories.
    template, and any explicit RPC changes it records have actually been applied.
 6. Run any platform builds required by the application before committing the
    upgrade.
+
+## Framework 0.15.0 to 0.16.0
+
+Project Template v6 completes the opt-in macOS bookmark-to-capability handoff.
+The Flutter process creates authority-bearing bookmark bytes while it owns the
+user-selected resource. Authenticated reserved Sidecar controls resolve those
+bytes through the bounded Go `ResourceBroker` and return only a session-local
+capability. Explicit release or `Application.Shutdown` closes the native lease.
+
+This transition is manual because `backend/cmd/sidecar/main.go` and
+`macos/Runner/MainFlutterWindow.swift` are application-owned and Bridra upgrades
+never overwrite them:
+
+1. Preserve the application's providers, routes, token handling, logging,
+   file-transfer configuration, native channels, and product cleanup.
+2. Register `NewResourceBrokerServiceProvider` with
+   `NewMacOSResourceBookmarkResolver` and reviewed broker limits. Resolve
+   `ResourceBrokerKey` from the booted Application container and assign it to
+   `framework.Server.Resources`. Keep the reserved resource methods outside the
+   application Router so product routes cannot override them.
+3. In the macOS runner, add the Template v6
+   `dev.cluion.bridra/resources` channel. Its `createBookmark` method must accept
+   only absolute `path`, `ephemeral`／`persistent` `scope`, and Boolean
+   `readOnly`; cap results at 1 MiB and return redacted stable errors. Persistent
+   mode uses security-scoped bookmark creation; ephemeral mode does not.
+4. Use `MacOSResourceBookmarks.create`, `SidecarClient.grantResource`, and
+   `releaseResource`. Pass only `SidecarResourceCapability.value` to an
+   application-owned RPC request, resolve it through `ResourceBroker` in Go, and
+   release it in a `finally`／defer path. Never log bookmark bytes, capability
+   values, or resolved paths. A Sidecar restart invalidates the capability and
+   requires a new grant.
+5. For a sandboxed macOS product, explicitly enable native Sidecar mode and
+   supply application-owned Sidecar entitlements. Persistent bookmark storage,
+   encryption, renewal, user consent, and app-scoped bookmark entitlements remain
+   product decisions. Projects without a selected macOS runner skip the Swift
+   and entitlement steps but still review the Sidecar provider change.
+6. Add regressions for native argument validation and redaction, reserved grant
+   and release, active-grant limits, restart invalidation, and application
+   cleanup. Run `make verify`, `make macos-native-test`, the required macOS build,
+   and a signed App Sandbox outside-container smoke before declaring a sandboxed
+   user-selected-folder workflow accepted.
+7. Update both framework dependencies to `0.16.0`, record metadata schema `3`,
+   Template version `6`, and Framework version `0.16.0` in
+   `.bridra/project.json`, and preserve the application's RPC protocol and
+   canonical platform list.
+
+This release does not change the application RPC protocol or Template protocol
+baseline. Bookmark bytes use authenticated framework-reserved control messages;
+only an opaque capability enters an application-owned request. Roll back by
+releasing active grants, restoring the 0.15.0 dependencies and lockfiles,
+Template version `5`, previous Sidecar wiring, previous macOS runner, and any
+product-owned persistent bookmark state that the older application cannot use.
 
 ## Framework 0.14.0 to 0.15.0
 

@@ -1,6 +1,6 @@
 # Bridra architecture decisions
 
-Bridra 0.13 supports Windows, macOS, Linux, Android, iOS, and Web while keeping
+Bridra 0.16 supports Windows, macOS, Linux, Android, iOS, and Web while keeping
 one Go application pipeline and one typed Flutter API.
 
 ## Layers
@@ -32,7 +32,7 @@ Models, Services, Responses, Controllers, and route registration remain under
 `backend/app`. `packages/bridra_flutter` owns transport-neutral RPC, HTTP, and
 desktop Sidecar clients. The generated `BridraRpcApi` owns the application RPC
 contract; `lib/api/backend_gateway.dart` adds connection lifecycle and health
-caching. Both packages remain in one Git repository and use Bridra 0.15.0.
+caching. Both packages remain in one Git repository and use Bridra 0.16.0.
 
 Native macOS Sidecars may register a `ResourceBroker` backed by
 `NewMacOSResourceBookmarkResolver`. The resolver alone handles Foundation's
@@ -40,9 +40,10 @@ different ephemeral and persistent bookmark lifecycles; the broker owns a
 bounded set of leases and gives application code only authenticated,
 process-local capabilities. Application shutdown releases all remaining leases.
 Bookmark bytes, capabilities, and resolved paths are authority-bearing secrets
-and must not enter logs or diagnostics. The reserved RPC control channel and
-Flutter／Swift bookmark creator are separate integration layers and are not yet
-available.
+and must not enter logs or diagnostics. The macOS runner creates bookmarks while
+the Flutter process owns the user grant; authenticated reserved Sidecar controls
+grant and release the Go lease. Capabilities are bound to one Sidecar session,
+so a restart requires the application to grant the resource again.
 
 ## Contract generation
 
@@ -109,7 +110,7 @@ contracts; neither command tags or publishes a release.
 
 `create` resolves `all`, `desktop`, `mobile`, or an explicit platform list into
 one canonical selection. It asks Flutter to generate only those runners inside a
-same-parent staging directory, then renders Project Template manifest v5 and
+same-parent staging directory, then renders Project Template manifest v6 and
 generates the typed contract. Go consumer tests, Flutter dependency resolution,
 and Dart formatting must succeed before one atomic rename exposes the destination;
 every earlier failure removes the staging directory.

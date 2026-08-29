@@ -441,6 +441,10 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 		`guard call.method == "terminateSecondary"`,
 		"result(nil)",
 		"terminateApplication()",
+		`static let channelName = "dev.cluion.bridra/resources"`,
+		`guard call.method == "createBookmark"`,
+		"URL.BookmarkCreationOptions",
+		"FlutterStandardTypedData(bytes: data)",
 	} {
 		if !strings.Contains(string(macOSWindow), expected) {
 			t.Fatalf("generated MainFlutterWindow.swift does not contain %q:\n%s", expected, macOSWindow)
@@ -453,7 +457,9 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 		t.Fatalf("read generated RunnerTests.swift: %v", err)
 	}
 	if !strings.Contains(string(macOSTests), "@testable import starter_app") ||
-		!strings.Contains(string(macOSTests), `["result", "terminate"]`) {
+		!strings.Contains(string(macOSTests), `["result", "terminate"]`) ||
+		!strings.Contains(string(macOSTests), "testPersistentBookmarkPreservesReadOnlyPolicy") ||
+		!strings.Contains(string(macOSTests), "resource_bookmark_too_large") {
 		t.Fatalf("generated RunnerTests.swift = %s", macOSTests)
 	}
 	generatedMakefile, err := os.ReadFile(filepath.Join(root, "Makefile"))

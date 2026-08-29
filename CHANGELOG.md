@@ -3,7 +3,7 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
-## Unreleased
+## [0.16.0] - Unreleased
 
 ### Added
 
@@ -15,10 +15,19 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 - Added opt-in `bridra build macos --macos-sidecar-native`, which builds both
   universal Sidecar architectures with CGO and Bridra's tagged Foundation
   adapter. Build manifest schema 2 records this as `sidecarNative`.
-- Added the bounded Go `ResourceBroker`, opaque authenticated capabilities,
+- Added a bounded Go `ResourceBroker`, opaque authenticated capabilities,
   lifecycle provider, and tagged Foundation resolver for ephemeral and
-  persistent macOS bookmark leases. Reserved RPC and Swift handoff remain a
-  later integration step.
+  persistent macOS bookmark leases.
+- Added the macOS Swift bookmark creator, public Dart bookmark and Sidecar grant
+  APIs, and authenticated reserved Sidecar grant／release controls. Capability
+  values are session-bound and redacted from string output.
+
+### Changed
+
+- Advanced the Project Template to version `6` for the application-owned macOS
+  bookmark bridge and ResourceBroker-enabled Sidecar entrypoint. Existing
+  projects require the documented manual migration. Project metadata schema `3`
+  and Template RPC protocol baseline `1` remain unchanged.
 
 ### Fixed
 

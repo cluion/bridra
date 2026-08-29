@@ -5,6 +5,7 @@ import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 
+import '../resource/resource_bookmark.dart';
 import '../rpc/rpc_client.dart';
 import 'sidecar_executable.dart';
 
@@ -21,6 +22,31 @@ class SidecarRestartExhaustedException extends BackendConnectionException {
 
   final int attempts;
   final Object? cause;
+}
+
+class SidecarResourceExpiredException extends BackendConnectionException {
+  const SidecarResourceExpiredException()
+    : super('The native resource grant expired when the Go sidecar restarted.');
+}
+
+final class SidecarResourceCapability {
+  SidecarResourceCapability._(this._value, this._sessionSerial, this._owner);
+
+  final String _value;
+  final int _sessionSerial;
+  final SidecarClient _owner;
+  var _released = false;
+
+  /// Opaque authority value passed to an application RPC request.
+  ///
+  /// Do not log, persist, or include this value in diagnostics. It is valid
+  /// only for the issuing [SidecarClient] process session.
+  String get value => _value;
+
+  bool get isReleased => _released;
+
+  @override
+  String toString() => 'SidecarResourceCapability([REDACTED])';
 }
 
 class SidecarRestartPolicy {
@@ -303,18 +329,39 @@ class SidecarClient implements RpcClient {
     Map<String, Object?> params = const {},
     Duration timeout = const Duration(seconds: 5),
     RpcCancellationToken? cancellationToken,
+  }) => _beginCall(
+    method,
+    params: params,
+    timeout: timeout,
+    cancellationToken: cancellationToken,
+  ).completer.future;
+
+  _PendingSidecarCall _beginCall(
+    String method, {
+    Map<String, Object?> params = const {},
+    Duration timeout = const Duration(seconds: 5),
+    RpcCancellationToken? cancellationToken,
+    int? requiredSessionSerial,
   }) {
     if (_state == _SidecarState.closing ||
         _state == _SidecarState.closed ||
         _state == _SidecarState.failed) {
-      return Future.error(_terminalError ?? const BackendClosedException());
+      final pending = _PendingSidecarCall();
+      pending.completeError(
+        _terminalError ?? const BackendClosedException(),
+        StackTrace.current,
+      );
+      return pending;
     }
     if (cancellationToken?.isCancelled ?? false) {
-      return Future.error(RpcCancelledException(method));
+      final pending = _PendingSidecarCall();
+      pending.completeError(RpcCancelledException(method), StackTrace.current);
+      return pending;
     }
 
     final id = '${++_nextID}';
     final pending = _PendingSidecarCall();
+    pending.requiredSessionSerial = requiredSessionSerial;
     _pending[id] = pending;
     pending.timeout = Timer(
       timeout,
@@ -332,7 +379,74 @@ class SidecarClient implements RpcClient {
         encodeRpcRequest(id: id, method: method, params: params, token: _token),
       ),
     );
-    return pending.completer.future;
+    return pending;
+  }
+
+  Future<SidecarResourceCapability> grantResource(
+    ResourceBookmark bookmark, {
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
+    final pending = _beginCall(
+      'rpc.resource_grant',
+      params: {
+        'bookmark': base64Encode(bookmark.bytes),
+        'scope': bookmark.scope.wireName,
+      },
+      timeout: timeout,
+    );
+    final reply = await pending.completer.future;
+    final result = reply.result;
+    if (result is! Map || result['capability'] is! String) {
+      throw const BackendProtocolException(
+        'The Go sidecar returned an invalid native resource grant.',
+      );
+    }
+    final capability = result['capability'] as String;
+    if (!RegExp(r'^[0-9a-f]{96}$').hasMatch(capability) ||
+        pending.sessionSerial == null) {
+      throw const BackendProtocolException(
+        'The Go sidecar returned an invalid native resource grant.',
+      );
+    }
+    return SidecarResourceCapability._(
+      capability,
+      pending.sessionSerial!,
+      this,
+    );
+  }
+
+  Future<void> releaseResource(
+    SidecarResourceCapability capability, {
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
+    if (!identical(capability._owner, this)) {
+      throw ArgumentError.value(
+        '[REDACTED]',
+        'capability',
+        'Use a capability issued by this SidecarClient.',
+      );
+    }
+    if (capability._released) return;
+    final session = _session;
+    if (_state != _SidecarState.running ||
+        session == null ||
+        session.serial != capability._sessionSerial) {
+      throw const SidecarResourceExpiredException();
+    }
+    final pending = _beginCall(
+      'rpc.resource_release',
+      params: {'capability': capability._value},
+      timeout: timeout,
+      requiredSessionSerial: capability._sessionSerial,
+    );
+    final reply = await pending.completer.future;
+    final result = reply.result;
+    if (result is! Map || result['released'] != true) {
+      throw const BackendProtocolException(
+        'The Go sidecar returned an invalid native resource release.',
+      );
+    }
+    capability._released = true;
   }
 
   @override
@@ -731,6 +845,7 @@ class SidecarClient implements RpcClient {
     _recordDiagnostic(SidecarDiagnosticEventType.processStarted);
     final session = _SidecarSession(
       process,
+      serial: _processStarts,
       expectsLaunchReady: expectsLaunchReady,
     );
     _session = session;
@@ -913,6 +1028,20 @@ class SidecarClient implements RpcClient {
     try {
       session = await _waitForRunning();
       if (!_pending.containsKey(id) && !_streams.containsKey(id)) return;
+      final pending = _pending[id];
+      if (pending != null) {
+        final requiredSessionSerial = pending.requiredSessionSerial;
+        if (requiredSessionSerial != null &&
+            requiredSessionSerial != session.serial) {
+          _pending.remove(id);
+          pending.completeError(
+            const SidecarResourceExpiredException(),
+            StackTrace.current,
+          );
+          return;
+        }
+        pending.sessionSerial = session.serial;
+      }
       await _writeRequest(session, request);
     } on Object catch (error, stackTrace) {
       final transportError = error is BackendConnectionException
@@ -1503,10 +1632,14 @@ class SidecarClient implements RpcClient {
 }
 
 class _SidecarSession {
-  _SidecarSession(this.process, {required bool expectsLaunchReady})
-    : launchCompleter = expectsLaunchReady ? Completer<void>() : null;
+  _SidecarSession(
+    this.process, {
+    required this.serial,
+    required bool expectsLaunchReady,
+  }) : launchCompleter = expectsLaunchReady ? Completer<void>() : null;
 
   final SidecarProcess process;
+  final int serial;
   final Completer<void>? launchCompleter;
   late StreamSubscription<String> stdoutSubscription;
   late StreamSubscription<String> stderrSubscription;
@@ -1525,6 +1658,8 @@ class _LegacySidecarLaunchUnsupported implements Exception {
 
 class _PendingSidecarCall {
   final completer = Completer<RpcReply>();
+  int? sessionSerial;
+  int? requiredSessionSerial;
   Timer? timeout;
   StreamSubscription<void>? cancellationSubscription;
 

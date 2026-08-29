@@ -8,7 +8,7 @@ Go module: `github.com/cluion/bridra/backend`
 
 License: [MIT](../LICENSE), Copyright (c) 2026 Cluion
 
-Bridra 0.13 is a six-platform framework starter with a typed
+Bridra 0.16 is a six-platform framework starter with a typed
 Flutter gateway and a Laravel-inspired Go application pipeline. Windows,
 macOS, and Linux bundle Go as a child-process sidecar; Android, iOS, and Web
 use the same backend through an HTTP RPC adapter.
@@ -27,7 +27,7 @@ Flutter UI -> typed gateway -> RPC client
 
 The application entrypoint is `lib/main.dart`. Both transports use the same
 versioned request, response, error, and health-handshake contract. Framework
-SemVer (`0.15.0`), the Project Template protocol baseline (`1`), and each
+SemVer (`0.16.0`), the Project Template protocol baseline (`1`), and each
 application's internally consistent RPC protocol evolve independently.
 
 ## Platform support
@@ -141,7 +141,7 @@ this starter currently uses Flutter's Swift Package Manager integration.
 Install the exact CLI version through Go:
 
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.15.0
+go install github.com/cluion/bridra/backend/cmd/bridra@v0.16.0
 bridra version
 bridra version --json
 ```
@@ -175,20 +175,21 @@ Upgrade by installing an explicit newer version, then inspect it before updating
 projects:
 
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.15.0
+go install github.com/cluion/bridra/backend/cmd/bridra@v0.16.0
 bridra version --json
-bridra upgrade --plan --to 0.15.0 --root /path/to/project
+bridra upgrade --plan --to 0.16.0 --root /path/to/project
 ```
 
 Bridra does not silently auto-update the CLI. Project compatibility,
 migration, deprecation, and rollback rules are documented in
 [UPGRADING.md](UPGRADING.md). Maintainer release steps are documented in
-[RELEASING.md](RELEASING.md). The `0.9.0` to `0.15.0` path contains the
+[RELEASING.md](RELEASING.md). The `0.9.0` to `0.16.0` path contains the
 automatic `0.10.0` HTTP-security step, the `0.10.1` diagnostics and
 upgrade-planner patch, the runtime-neutral `0.11.0` supply-chain release, and
-the `0.12.0` bounded-stdin Sidecar launch update. The `0.14.0` baseline-gate and
-final `0.15.0` Application lifecycle steps are manual because Bridra does not
-overwrite application-owned schema baselines, app wiring, or Sidecar entrypoints.
+the `0.12.0` bounded-stdin Sidecar launch update. The `0.14.0` baseline-gate,
+`0.15.0` Application lifecycle, and `0.16.0` macOS resource-handoff steps are
+manual because Bridra does not overwrite application-owned schema baselines,
+app wiring, Sidecar entrypoints, or native runners.
 Existing application-owned server entrypoints are not overwritten; adopt the
 production controls deliberately using
 [HTTP_SECURITY.md](HTTP_SECURITY.md). The planner validates each application's
@@ -203,9 +204,9 @@ path.
 Framework maintainers enter the public SemVer once:
 
 ```bash
-make release-prepare VERSION=0.15.0
-make release-check VERSION=0.15.0
-make release-check VERSION=0.15.0 FINAL=1
+make release-prepare VERSION=0.16.0
+make release-check VERSION=0.16.0
+make release-check VERSION=0.16.0 FINAL=1
 ```
 
 `release-prepare` synchronizes the root `VERSION`, Go Framework and CLI metadata,
@@ -216,7 +217,7 @@ independent and change only when their compatibility contracts change.
 
 The command prepares a reviewable change only. It never creates or pushes a Git
 tag, publishes to pub.dev, or creates a GitHub Release. Windows maintainers use
-`.\tool\windows.ps1 -Task release-prepare -Version 0.15.0` and the corresponding
+`.\tool\windows.ps1 -Task release-prepare -Version 0.16.0` and the corresponding
 `release-check` task. The final check rejects a release while either changelog is
 still marked `Unreleased`; on Windows, add `-Final`.
 
@@ -238,7 +239,7 @@ The release packager builds with `CGO_ENABLED=0`, `-trimpath`, disabled VCS
 stamping, an empty Go build ID, and ldflag-injected version/commit/date metadata.
 Archive timestamps come from the source commit date, so identical inputs produce
 identical archives and checksums. Outputs are written under `build/bridra/cli/`.
-Each version has its own directory, such as `build/bridra/cli/0.15.0/`, so stale
+Each version has its own directory, such as `build/bridra/cli/0.16.0/`, so stale
 assets from an earlier release cannot be uploaded accidentally.
 
 ## Verify
@@ -520,9 +521,8 @@ architectures with `CGO_ENABLED=1`, enables the `bridra_macos_native` build tag,
 and links Bridra's Foundation adapter. The default remains a portable
 `CGO_ENABLED=0` Sidecar.
 Distribution signing, notarization, installers, and store submission remain
-product release tasks. Native mode provides the prerequisite adapter but does
-not yet implement the Flutter／Swift bookmark handoff or reserved RPC control
-messages.
+product release tasks. Native mode enables the Foundation adapter used by the
+Flutter／Swift bookmark handoff and reserved Sidecar resource controls.
 
 Build manifests use schema version 2. `sidecarNative: true` distinguishes an
 opt-in Foundation-enabled macOS Sidecar; the field is omitted for portable
@@ -544,10 +544,40 @@ security-scoped stored bookmark. It rejects bookmarks over 1 MiB and more than
 64 concurrent grants by default, and returns only an authenticated opaque
 capability. Controllers may call `ResolvePath` while the lease is active and
 must call `Release` when finished; `Application.Shutdown` releases all remaining
-leases through the provider. Bookmark bytes, capability values, and resolved
-paths must never be logged, persisted as diagnostics, or included in RPC schema
-baselines. Non-native builds return `ErrResourceBookmarkUnavailable` from the
-macOS resolver. No public RPC route accepts bookmark data yet.
+leases through the provider. Non-native builds return
+`ErrResourceBookmarkUnavailable` from the macOS resolver.
+
+The Flutter owner creates and grants a bookmark without putting its bytes in the
+application RPC schema:
+
+```dart
+final bookmark = await MacOSResourceBookmarks.create(
+  path: selectedPath,
+  scope: ResourceBookmarkScope.ephemeral,
+  readOnly: true,
+);
+final capability = await sidecar.grantResource(bookmark);
+try {
+  await api.importFolder(
+    ImportFolderRequest(resourceCapability: capability.value),
+  );
+} finally {
+  await sidecar.releaseResource(capability);
+}
+```
+
+The `resourceCapability` field above is an application-owned string request
+field. Its controller resolves that value through the injected `ResourceBroker`;
+the path never crosses back to Flutter. A capability is valid only for the
+issuing Sidecar session. Restart produces `SidecarResourceExpiredException` and
+the application must create or load a bookmark and grant it again.
+
+Bookmark bytes, capability values, and resolved paths must never be logged,
+persisted as diagnostics, included in schema baselines, or sent through deep
+links. Only persistent bookmark bytes may be stored, and that encrypted storage,
+entitlement, renewal, and consent policy remains application-owned. `toString`
+redacts both bookmarks and capabilities, but applications must still avoid
+logging their explicit `bytes` or `value` properties.
 
 ## Generate the RPC contract
 
