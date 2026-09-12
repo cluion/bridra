@@ -114,6 +114,45 @@ func TestRenderInitializesSchemaBaselineOnce(t *testing.T) {
 	}
 }
 
+func TestRenderPreservesApplicationOwnedEmbeddedCoreSeeds(t *testing.T) {
+	root := t.TempDir()
+	config := testConfig(t)
+	config.Platforms = []string{"ios"}
+	if err := Render(root, config); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+
+	paths := []string{
+		"backend/mobilebridge/runtime.go",
+		"backend/mobilebridge/runtime_test.go",
+		"ios/Runner/BridraEmbeddedRuntime.swift",
+		"tool/gomobile/go.mod",
+		"tool/gomobile/binddeps/deps.go",
+	}
+	for _, relative := range paths {
+		path := filepath.Join(root, filepath.FromSlash(relative))
+		contents := []byte("application-owned " + relative + "\n")
+		if err := os.WriteFile(path, contents, 0o644); err != nil {
+			t.Fatalf("write %s: %v", relative, err)
+		}
+	}
+
+	if err := Render(root, config); err != nil {
+		t.Fatalf("rerender: %v", err)
+	}
+	for _, relative := range paths {
+		path := filepath.Join(root, filepath.FromSlash(relative))
+		actual, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", relative, err)
+		}
+		want := "application-owned " + relative + "\n"
+		if string(actual) != want {
+			t.Fatalf("rerender overwrote %s:\n%s", relative, actual)
+		}
+	}
+}
+
 func TestInitializeSchemaBaselineRequiresCurrentSchema(t *testing.T) {
 	err := initializeSchemaBaseline(t.TempDir())
 	if err == nil || !strings.Contains(err.Error(), "read current schema for baseline") {
@@ -373,6 +412,22 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 		!strings.Contains(string(iosInfo), "NSLocalNetworkUsageDescription") {
 		t.Fatalf("generated iOS Info.plist = %s", iosInfo)
 	}
+	iosEmbeddedRuntime, err := os.ReadFile(
+		filepath.Join(root, "ios", "Runner", "BridraEmbeddedRuntime.swift"),
+	)
+	if err != nil {
+		t.Fatalf("read generated embedded runtime adapter: %v", err)
+	}
+	for _, expected := range []string{
+		"#if canImport(AppCore)",
+		"ApplicationEmbeddedRuntime: BridraEmbeddedRuntime",
+		"APPMobilebridgeNewRuntime",
+		"installBridraEmbeddedRuntime(token: String)",
+	} {
+		if !strings.Contains(string(iosEmbeddedRuntime), expected) {
+			t.Fatalf("generated embedded runtime adapter does not contain %q:\n%s", expected, iosEmbeddedRuntime)
+		}
+	}
 	projectMetadata, err := os.ReadFile(filepath.Join(root, ".bridra", "project.json"))
 	if err != nil {
 		t.Fatalf("read generated project metadata: %v", err)
@@ -473,9 +528,57 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 		"BRIDRA_MACOS_SANDBOX_SMOKE=1 CGO_ENABLED=1",
 		"TestMacOSSandboxBookmarkHandoff",
 		"xcodebuild test",
+		"ios-embedded-core-build:",
+		"example.test/acme/starter/mobilebridge",
 	} {
 		if !strings.Contains(string(generatedMakefile), expected) {
 			t.Fatalf("generated Makefile does not contain %q:\n%s", expected, generatedMakefile)
+		}
+	}
+}
+
+func TestRenderedIOSEmbeddedCoreBuildsOutsideRepository(t *testing.T) {
+	if os.Getenv("BRIDRA_IOS_EMBEDDED_TEMPLATE_INTEGRATION") != "1" {
+		t.Skip("set BRIDRA_IOS_EMBEDDED_TEMPLATE_INTEGRATION=1 to build the generated XCFramework")
+	}
+	root := t.TempDir()
+	config := testConfig(t)
+	config.Platforms = []string{"ios"}
+	if err := Render(root, config); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	runProjectTemplateCommand(t, filepath.Join(root, "backend"), "go", "mod", "tidy")
+	runProjectTemplateCommand(t, filepath.Join(root, "tool", "gomobile"), "go", "mod", "tidy")
+	runProjectTemplateCommand(t, root, "make", "ios-embedded-core-build")
+
+	frameworkRoot := filepath.Join(root, "ios", "Frameworks", "AppCore.xcframework")
+	if _, err := os.Stat(filepath.Join(frameworkRoot, "Info.plist")); err != nil {
+		t.Fatalf("generated XCFramework: %v", err)
+	}
+	var headers []string
+	err := filepath.WalkDir(frameworkRoot, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !entry.IsDir() && strings.HasSuffix(path, ".h") {
+			headers = append(headers, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk generated XCFramework: %v", err)
+	}
+	var exported []byte
+	for _, header := range headers {
+		contents, err := os.ReadFile(header)
+		if err != nil {
+			t.Fatalf("read %s: %v", header, err)
+		}
+		exported = append(exported, contents...)
+	}
+	for _, signature := range []string{"callJSON:", "cancel:", "close:"} {
+		if !bytes.Contains(exported, []byte(signature)) {
+			t.Fatalf("generated Objective-C headers do not contain %q", signature)
 		}
 	}
 }

@@ -1,7 +1,4 @@
-// Package mobilebridge is the reference Go binding surface used by the iOS
-// Embedded Core proof of concept. Applications should own an equivalent narrow
-// package so gomobile exports only lifecycle and JSON RPC entry points while
-// the complete Go implementation remains private.
+// Package mobilebridge is the narrow application-owned API exported to Swift.
 package mobilebridge
 
 import (
@@ -9,8 +6,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/cluion/bridra/backend/app"
-	"github.com/cluion/bridra/backend/framework"
+	"{{.GoModule}}/app"
+	"{{.BridraGoModule}}/framework"
 )
 
 const embeddedRuntimeName = "Go embedded mobile"
@@ -22,27 +19,17 @@ type Runtime struct {
 }
 
 func NewRuntime(token string) (*Runtime, error) {
-	application, err := app.Build(app.Config{
-		Token:   token,
-		Runtime: embeddedRuntimeName,
-	})
+	application, err := app.Build(app.Config{Token: token, Runtime: embeddedRuntimeName})
 	if err != nil {
 		return nil, err
 	}
-	embedded, err := framework.NewEmbeddedRuntime(
-		application.Router(),
-		application.Shutdown,
-	)
+	embedded, err := framework.NewEmbeddedRuntime(application.Router(), application.Shutdown)
 	if err != nil {
 		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		return nil, errors.Join(err, application.Shutdown(shutdownContext))
 	}
 	return &Runtime{embedded: embedded}, nil
-}
-
-func FrameworkVersion() string {
-	return framework.FrameworkVersion
 }
 
 func (runtime *Runtime) CallJSON(requestJSON string) (string, error) {

@@ -164,6 +164,107 @@ func TestEmbeddedRuntimeCloseTimeoutDoesNotAbandonShutdown(t *testing.T) {
 	}
 }
 
+func TestEmbeddedRuntimeCancelInterruptsOnlyMatchingRequest(t *testing.T) {
+	started := make(chan string, 2)
+	router := NewRouter()
+	router.Handle("wait", func(ctx *Context) (any, error) {
+		started <- ctx.Request.ID
+		<-ctx.Done()
+		return map[string]any{"cause": context.Cause(ctx).Error()}, nil
+	})
+	runtime, err := NewEmbeddedRuntime(router, func(context.Context) error { return nil })
+	if err != nil {
+		t.Fatalf("NewEmbeddedRuntime() error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = runtime.Close(context.Background())
+	})
+
+	type callResult struct {
+		encoded string
+		err     error
+	}
+	firstDone := make(chan callResult, 1)
+	secondDone := make(chan callResult, 1)
+	go func() {
+		encoded, err := runtime.CallJSON(`{"id":"first","method":"wait"}`)
+		firstDone <- callResult{encoded: encoded, err: err}
+	}()
+	go func() {
+		encoded, err := runtime.CallJSON(`{"id":"second","method":"wait"}`)
+		secondDone <- callResult{encoded: encoded, err: err}
+	}()
+
+	seen := map[string]bool{<-started: true, <-started: true}
+	if !seen["first"] || !seen["second"] {
+		t.Fatalf("started requests = %#v", seen)
+	}
+	if runtime.Cancel("") || runtime.Cancel("missing") {
+		t.Fatal("Cancel() accepted an empty or unknown request id")
+	}
+	if !runtime.Cancel("first") || !runtime.Cancel("first") {
+		t.Fatal("Cancel() did not remain idempotent for the active request")
+	}
+	first := <-firstDone
+	if first.err != nil {
+		t.Fatalf("first CallJSON() error = %v", first.err)
+	}
+	var response Response
+	if err := json.Unmarshal([]byte(first.encoded), &response); err != nil {
+		t.Fatalf("decode first response: %v", err)
+	}
+	result, ok := response.Result.(map[string]any)
+	if !ok || result["cause"] != context.Canceled.Error() {
+		t.Fatalf("first response result = %#v", response.Result)
+	}
+	select {
+	case second := <-secondDone:
+		t.Fatalf("second request completed early: %#v", second)
+	case <-time.After(10 * time.Millisecond):
+	}
+	if !runtime.Cancel("second") {
+		t.Fatal("Cancel() did not find the second request")
+	}
+	if second := <-secondDone; second.err != nil {
+		t.Fatalf("second CallJSON() error = %v", second.err)
+	}
+}
+
+func TestEmbeddedRuntimeRejectsDuplicateActiveRequestID(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	router := NewRouter()
+	router.Handle("wait", func(*Context) (any, error) {
+		close(started)
+		<-release
+		return "done", nil
+	})
+	runtime, err := NewEmbeddedRuntime(router, func(context.Context) error { return nil })
+	if err != nil {
+		t.Fatalf("NewEmbeddedRuntime() error = %v", err)
+	}
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := runtime.CallJSON(`{"id":"duplicate","method":"wait"}`)
+		firstDone <- err
+	}()
+	<-started
+
+	if _, err := runtime.CallJSON(`{"id":"duplicate","method":"wait"}`); !errors.Is(
+		err,
+		ErrEmbeddedRuntimeDuplicateRequest,
+	) {
+		t.Fatalf("duplicate CallJSON() error = %v", err)
+	}
+	close(release)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first CallJSON() error = %v", err)
+	}
+	if err := runtime.Close(context.Background()); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+}
+
 func TestEmbeddedRuntimeRejectsInvalidConfiguration(t *testing.T) {
 	shutdown := func(context.Context) error { return nil }
 	if _, err := NewEmbeddedRuntime(nil, shutdown); !errors.Is(err, ErrEmbeddedRuntimeInvalid) {
@@ -178,6 +279,12 @@ func TestEmbeddedRuntimeRejectsInvalidConfiguration(t *testing.T) {
 		t.Fatalf("negative timeout error = %v", err)
 	}
 	var runtime *EmbeddedRuntime
+	if _, err := runtime.CallJSON(`{"id":"request-1","method":"echo"}`); !errors.Is(
+		err,
+		ErrEmbeddedRuntimeInvalid,
+	) {
+		t.Fatalf("nil runtime call error = %v", err)
+	}
 	if err := runtime.Close(context.Background()); !errors.Is(err, ErrEmbeddedRuntimeInvalid) {
 		t.Fatalf("nil runtime close error = %v", err)
 	}

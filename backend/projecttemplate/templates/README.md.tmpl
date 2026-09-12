@@ -101,6 +101,22 @@ Configure an Apple Development Team before running it and accept the one-time
 Local Network prompt for a new bundle identifier; signing remains
 application-owned.
 
+For an opt-in device-local unary backend, run `make ios-embedded-core-build`.
+This builds the application package at `backend/mobilebridge` into the ignored
+`ios/Frameworks/AppCore.xcframework`; it does not bind Bridra's reference app.
+Add that XCFramework and `ios/Runner/BridraEmbeddedRuntime.swift` to the Runner
+target, then call `installBridraEmbeddedRuntime(token:)` once from the
+application-owned `AppDelegate`. Construct `EmbeddedRpcClient` with the same
+token and `MethodChannelEmbeddedRpcBridge` in Dart. Bridra never edits the Xcode
+project or chooses the app's runtime automatically, so signing, capabilities,
+persistence, and rollback remain explicit application decisions.
+
+The generated Go wrapper, Swift adapter, and isolated gomobile module are
+application-owned create-time seeds. Re-rendering the Project Template leaves
+existing copies unchanged. Unary calls, request cancellation, and bounded close
+are supported; streaming, managed file transfer, security-scoped URL handoff,
+background interruption, and physical-device acceptance remain separate gates.
+
 {{end}}
 ## Builds
 

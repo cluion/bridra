@@ -1,0 +1,35 @@
+package mobilebridge
+
+import (
+	"encoding/json"
+	"testing"
+)
+
+func TestRuntimeDispatchesApplicationRPC(t *testing.T) {
+	runtime, err := NewRuntime("embedded-test-token")
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+	defer func() {
+		if err := runtime.Close(5_000); err != nil {
+			t.Errorf("close runtime: %v", err)
+		}
+	}()
+
+	responseJSON, err := runtime.CallJSON(
+		`{"id":"health","method":"system.health","meta":{"token":"embedded-test-token"}}`,
+	)
+	if err != nil {
+		t.Fatalf("call runtime: %v", err)
+	}
+	var response struct {
+		ID    string `json:"id"`
+		Error any    `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(responseJSON), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.ID != "health" || response.Error != nil {
+		t.Fatalf("response = %s", responseJSON)
+	}
+}

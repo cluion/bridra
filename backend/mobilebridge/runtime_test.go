@@ -76,3 +76,20 @@ func TestRuntimeValidatesCloseTimeout(t *testing.T) {
 		t.Fatalf("Close() error = %v", err)
 	}
 }
+
+func TestRuntimeCancelRejectsUnknownRequest(t *testing.T) {
+	runtime, err := NewRuntime("embedded-test-token")
+	if err != nil {
+		t.Fatalf("NewRuntime() error = %v", err)
+	}
+	if runtime.Cancel("") || runtime.Cancel("missing") {
+		t.Fatal("Cancel() accepted an empty or unknown request id")
+	}
+	if err := runtime.Close(5000); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	var nilRuntime *Runtime
+	if nilRuntime.Cancel("request-1") {
+		t.Fatal("nil Runtime.Cancel() returned true")
+	}
+}

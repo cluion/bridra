@@ -3,6 +3,7 @@ import Foundation
 
 public enum BridgeHostError: Error {
     case runtimeCreationFailed
+    case unexpectedCancellationMatch
 }
 
 public enum BridgeHost {
@@ -24,6 +25,9 @@ public enum BridgeHost {
         )
         if let callError {
             throw callError
+        }
+        if runtime.cancel("not-active") {
+            throw BridgeHostError.unexpectedCancellationMatch
         }
         try runtime.close(5_000)
         return response

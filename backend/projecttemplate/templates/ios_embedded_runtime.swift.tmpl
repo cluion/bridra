@@ -1,0 +1,47 @@
+import bridra_flutter
+import Foundation
+
+#if canImport(AppCore)
+import AppCore
+
+private final class ApplicationEmbeddedRuntime: BridraEmbeddedRuntime {
+  private let runtime: APPMobilebridgeRuntime
+
+  init(token: String) throws {
+    var error: NSError?
+    guard let runtime = APPMobilebridgeNewRuntime(token, &error) else {
+      throw error ?? ApplicationEmbeddedRuntimeError.creationFailed
+    }
+    self.runtime = runtime
+  }
+
+  func callJSON(_ requestJSON: String) throws -> String {
+    var error: NSError?
+    let response = runtime.callJSON(requestJSON, error: &error)
+    if let error {
+      throw error
+    }
+    return response
+  }
+
+  func cancel(_ requestID: String) -> Bool {
+    runtime.cancel(requestID)
+  }
+
+  func close(timeoutMilliseconds: Int64) throws {
+    try runtime.close(timeoutMilliseconds)
+  }
+}
+
+private enum ApplicationEmbeddedRuntimeError: Error {
+  case creationFailed
+}
+
+/// Installs the application-owned Go Core. Call this once from AppDelegate
+/// after AppCore.xcframework is linked and before Dart sends embedded RPCs.
+func installBridraEmbeddedRuntime(token: String) throws {
+  try BridraFlutterPlugin.installEmbeddedRuntime(
+    ApplicationEmbeddedRuntime(token: token)
+  )
+}
+#endif

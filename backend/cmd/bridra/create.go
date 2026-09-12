@@ -305,6 +305,14 @@ func (item createCommand) create(options createOptions, stdout io.Writer) (resul
 	if err := item.execute(filepath.Join(staging, "backend"), "go", "mod", "tidy"); err != nil {
 		return fmt.Errorf("create: resolve Go dependencies: %w", err)
 	}
+	if projectplatform.Contains(options.selectedPlatforms, "ios") {
+		if err := item.execute(
+			filepath.Join(staging, "tool", "gomobile"),
+			"go", "mod", "tidy",
+		); err != nil {
+			return fmt.Errorf("create: resolve iOS embedded tool dependencies: %w", err)
+		}
+	}
 	if err := item.execute(filepath.Join(staging, "backend"), "go", "test", "./..."); err != nil {
 		return fmt.Errorf("create: verify Go consumer: %w", err)
 	}

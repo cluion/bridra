@@ -34,6 +34,32 @@ that compatibility mode across restarts.
 Application-specific methods and response models do not belong in this package.
 Define those in the consuming application's typed gateway.
 
+## Embedded mobile Core
+
+`EmbeddedRpcClient` adapts an application-owned native bridge to the common
+`RpcClient` API without opening an HTTP socket:
+
+    final client = EmbeddedRpcClient(
+      token: embeddedToken,
+      bridge: AppEmbeddedRpcBridge(),
+    );
+
+The bridge must send unary JSON requests to one in-process Go runtime, cancel
+the exact request id on timeout or manual cancellation, and wait for bounded Go
+shutdown from `close`. Bridra does not select this transport automatically: the
+application owns XCFramework packaging and the Swift／Flutter platform channel.
+
+The current embedded transport fails closed for streaming and out-of-band file
+transfer. Continue using HTTP or a Desktop Sidecar when those capabilities are
+required.
+
+On iOS, `MethodChannelEmbeddedRpcBridge` uses the stable
+`dev.cluion.bridra/embedded_rpc` channel. The application must build and link its
+own Go XCFramework, adapt the gomobile runtime to the native
+`BridraEmbeddedRuntime` protocol, and install it once with
+`BridraFlutterPlugin.installEmbeddedRuntime`. Bridra does not create a reference
+Core or silently select this transport for the application.
+
 ## Install
 
     flutter pub add bridra_flutter

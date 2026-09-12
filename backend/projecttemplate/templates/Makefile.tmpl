@@ -17,6 +17,11 @@ BUILD_MODE ?= release
 {{if hasPlatform "ios"}}IOS_SIMULATOR_PORT ?= 18080
 IOS_DEVICE_PORT ?= 18081
 IOS_DEVICE_HOST ?=
+IOS_EMBEDDED_FRAMEWORK := $(CURDIR)/ios/Frameworks/AppCore.xcframework
+IOS_EMBEDDED_TOOL_DIR := $(CURDIR)/build/gomobile/bin
+IOS_EMBEDDED_TOOL_MODULE := $(CURDIR)/tool/gomobile
+IOS_GOBIND := $(IOS_EMBEDDED_TOOL_DIR)/gobind
+IOS_GOMOBILE := $(IOS_EMBEDDED_TOOL_DIR)/gomobile
 {{end}}{{if hasPlatform "android"}}ANDROID_EMULATOR_PORT ?= 18082
 {{end}}
 
@@ -25,7 +30,7 @@ IOS_DEVICE_HOST ?=
 {{end}}{{if hasPlatform "macos"}}.PHONY: macos-build macos-native-test macos-sandbox-smoke
 {{end}}{{if hasPlatform "windows"}}.PHONY: windows-build
 {{end}}{{if hasPlatform "android"}}.PHONY: android-build android-emulator-smoke
-{{end}}{{if hasPlatform "ios"}}.PHONY: ios-build ios-simulator-smoke ios-device-smoke
+{{end}}{{if hasPlatform "ios"}}.PHONY: ios-build ios-embedded-core-build ios-simulator-smoke ios-device-smoke
 {{end}}{{if hasPlatform "web"}}.PHONY: web-build
 {{end}}
 
@@ -108,6 +113,17 @@ android-emulator-smoke: backend-build
 {{end}}{{if hasPlatform "ios"}}ios-build:
 	cd backend && $(BRIDRA) build ios --root .. --mode $(BUILD_MODE) \
 		--backend-url '$(BACKEND_URL)' --token '$(BACKEND_TOKEN)'
+
+ios-embedded-core-build:
+	mkdir -p $(IOS_EMBEDDED_TOOL_DIR) $(dir $(IOS_EMBEDDED_FRAMEWORK))
+	cd $(IOS_EMBEDDED_TOOL_MODULE) && $(GO) build -trimpath -o $(IOS_GOBIND) golang.org/x/mobile/cmd/gobind
+	cd $(IOS_EMBEDDED_TOOL_MODULE) && $(GO) build -trimpath -o $(IOS_GOMOBILE) golang.org/x/mobile/cmd/gomobile
+	cd $(IOS_EMBEDDED_TOOL_MODULE) && PATH='$(IOS_EMBEDDED_TOOL_DIR)':"$$PATH" $(IOS_GOMOBILE) bind \
+		-target=ios,iossimulator -iosversion=13.0 -trimpath \
+		-ldflags='-s -w' -prefix=APP \
+		-o $(IOS_EMBEDDED_FRAMEWORK) {{.GoModule}}/mobilebridge
+	@test -f $(IOS_EMBEDDED_FRAMEWORK)/Info.plist
+	@echo "Application-owned embedded Go Core: $(IOS_EMBEDDED_FRAMEWORK)"
 
 ios-simulator-smoke: backend-build
 	BRIDRA_SERVER_PATH='$(SERVER)' \

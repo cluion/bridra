@@ -19,6 +19,7 @@ var (
 	ErrEmbeddedRuntimeContextUnavailable   = errors.New("framework: embedded runtime context is unavailable")
 	ErrEmbeddedRuntimeInvalidJSON          = errors.New("framework: embedded runtime request is not valid JSON")
 	ErrEmbeddedRuntimeRequestTooLarge      = errors.New("framework: embedded runtime request is too large")
+	ErrEmbeddedRuntimeDuplicateRequest     = errors.New("framework: embedded runtime request id is already active")
 	ErrEmbeddedRuntimeStreamingUnsupported = errors.New("framework: embedded runtime streaming requires the streaming API")
 )
 
@@ -49,6 +50,7 @@ type EmbeddedRuntime struct {
 	mu        sync.Mutex
 	state     embeddedRuntimeState
 	active    sync.WaitGroup
+	requests  map[string]context.CancelCauseFunc
 	closeDone chan struct{}
 	closeErr  error
 }
@@ -86,6 +88,7 @@ func NewEmbeddedRuntimeWithOptions(
 		shutdownTimeout: shutdownTimeout,
 		rootContext:     rootContext,
 		cancelRoot:      cancelRoot,
+		requests:        make(map[string]context.CancelCauseFunc),
 		closeDone:       make(chan struct{}),
 	}, nil
 }
@@ -94,12 +97,9 @@ func NewEmbeddedRuntimeWithOptions(
 // Transport failures are returned as Go errors; application RPC failures remain
 // encoded in the response envelope.
 func (runtime *EmbeddedRuntime) CallJSON(requestJSON string) (string, error) {
-	requestContext, finish, err := runtime.beginRequest()
-	if err != nil {
-		return "", err
+	if runtime == nil {
+		return "", ErrEmbeddedRuntimeInvalid
 	}
-	defer finish()
-
 	if len(requestJSON) > MaxRequestBytes {
 		return "", ErrEmbeddedRuntimeRequestTooLarge
 	}
@@ -114,6 +114,11 @@ func (runtime *EmbeddedRuntime) CallJSON(requestJSON string) (string, error) {
 	if requestsStream(request) {
 		return "", ErrEmbeddedRuntimeStreamingUnsupported
 	}
+	requestContext, finish, err := runtime.beginRequest(request.ID)
+	if err != nil {
+		return "", err
+	}
+	defer finish()
 
 	response := runtime.router.Dispatch(requestContext, request)
 	encoded, err := json.Marshal(response)
@@ -121,6 +126,22 @@ func (runtime *EmbeddedRuntime) CallJSON(requestJSON string) (string, error) {
 		return "", fmt.Errorf("framework: encode embedded runtime response: %w", err)
 	}
 	return string(encoded), nil
+}
+
+// Cancel interrupts one active request by its RPC id. It returns false when
+// the id is empty or no matching request is active. Cancellation is idempotent
+// while the request remains active.
+func (runtime *EmbeddedRuntime) Cancel(requestID string) bool {
+	if runtime == nil || requestID == "" {
+		return false
+	}
+	runtime.mu.Lock()
+	cancel, exists := runtime.requests[requestID]
+	runtime.mu.Unlock()
+	if exists {
+		cancel(context.Canceled)
+	}
+	return exists
 }
 
 // Close cancels active requests and waits for the runtime's asynchronous,
@@ -154,7 +175,7 @@ func (runtime *EmbeddedRuntime) Close(ctx context.Context) error {
 	}
 }
 
-func (runtime *EmbeddedRuntime) beginRequest() (
+func (runtime *EmbeddedRuntime) beginRequest(requestID string) (
 	context.Context,
 	func(),
 	error,
@@ -167,8 +188,23 @@ func (runtime *EmbeddedRuntime) beginRequest() (
 	if runtime.state != embeddedRuntimeOpen {
 		return nil, nil, ErrEmbeddedRuntimeClosed
 	}
+	if requestID != "" {
+		if _, exists := runtime.requests[requestID]; exists {
+			return nil, nil, ErrEmbeddedRuntimeDuplicateRequest
+		}
+	}
+	requestContext, cancelRequest := context.WithCancelCause(runtime.rootContext)
 	runtime.active.Add(1)
-	return runtime.rootContext, runtime.active.Done, nil
+	if requestID != "" {
+		runtime.requests[requestID] = cancelRequest
+	}
+	return requestContext, func() {
+		cancelRequest(nil)
+		runtime.mu.Lock()
+		delete(runtime.requests, requestID)
+		runtime.mu.Unlock()
+		runtime.active.Done()
+	}, nil
 }
 
 func (runtime *EmbeddedRuntime) finishClose() {

@@ -59,6 +59,7 @@ type ManifestFile struct {
 	Source      string   `json:"source"`
 	Destination string   `json:"destination"`
 	Mode        string   `json:"mode"`
+	Ownership   string   `json:"ownership,omitempty"`
 	Platforms   []string `json:"platforms,omitempty"`
 }
 
@@ -81,6 +82,12 @@ func LoadManifest() (Manifest, error) {
 		return Manifest{}, errors.New("project template: manifest contains no files")
 	}
 	for _, file := range manifest.Files {
+		if file.Ownership != "" && file.Ownership != "application" {
+			return Manifest{}, fmt.Errorf(
+				"project template: invalid ownership for %s",
+				file.Destination,
+			)
+		}
 		if len(file.Platforms) == 0 {
 			continue
 		}
@@ -205,8 +212,29 @@ func renderFile(root string, file ManifestFile, config Config) error {
 	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
 		return fmt.Errorf("project template: create directory for %s: %w", file.Destination, err)
 	}
-	if err := os.WriteFile(destination, contents, os.FileMode(mode)); err != nil {
+	flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+	if file.Ownership == "application" {
+		flags = os.O_WRONLY | os.O_CREATE | os.O_EXCL
+	}
+	output, err := os.OpenFile(destination, flags, os.FileMode(mode))
+	if errors.Is(err, fs.ErrExist) && file.Ownership == "application" {
+		return nil
+	}
+	if err != nil {
 		return fmt.Errorf("project template: write %s: %w", file.Destination, err)
+	}
+	if _, err := output.Write(contents); err != nil {
+		_ = output.Close()
+		if file.Ownership == "application" {
+			_ = os.Remove(destination)
+		}
+		return fmt.Errorf("project template: write %s: %w", file.Destination, err)
+	}
+	if err := output.Close(); err != nil {
+		if file.Ownership == "application" {
+			_ = os.Remove(destination)
+		}
+		return fmt.Errorf("project template: close %s: %w", file.Destination, err)
 	}
 	return nil
 }
