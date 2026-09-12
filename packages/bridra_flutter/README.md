@@ -44,21 +44,38 @@ Define those in the consuming application's typed gateway.
       bridge: AppEmbeddedRpcBridge(),
     );
 
-The bridge must send unary JSON requests to one in-process Go runtime, cancel
-the exact request id on timeout or manual cancellation, and wait for bounded Go
-shutdown from `close`. Bridra does not select this transport automatically: the
-application owns XCFramework packaging and the Swift／Flutter platform channel.
+The bridge must send unary JSON requests and pull-backed server-stream frames to
+one in-process Go runtime, cancel the exact request id on timeout, subscription
+disposal, or manual cancellation, and wait for bounded Go shutdown from
+`close`. Each `streamNext` call transfers one ordered JSON frame, so the Go
+producer cannot build an unbounded native or Dart queue. Bridra does not select
+this transport automatically: the application owns XCFramework packaging and
+the Swift／Flutter platform channel.
 
-The current embedded transport fails closed for streaming and out-of-band file
-transfer. Continue using HTTP or a Desktop Sidecar when those capabilities are
-required.
+When the native bridge implements `EmbeddedFileTransferBridge`, downloads pull
+64 KiB typed-byte chunks through opaque native handles, resume from the last
+verified offset, and consume the staged capability only after the declared byte
+count is received. Uploads send the same bounded chunks and recover the
+Go-confirmed offset after a lost channel response. Both directions verify the
+declared size and SHA-256; bridges without that optional surface still fail
+closed instead of falling back to HTTP.
 
 On iOS, `MethodChannelEmbeddedRpcBridge` uses the stable
 `dev.cluion.bridra/embedded_rpc` channel. The application must build and link its
-own Go XCFramework, adapt the gomobile runtime to the native
-`BridraEmbeddedRuntime` protocol, and install it once with
+own Go XCFramework, adapt the gomobile runtime, stream, and download handles to
+the native `BridraEmbeddedRuntime`／`BridraEmbeddedStream`／
+`BridraEmbeddedDownload` protocols, and install it once with
 `BridraFlutterPlugin.installEmbeddedRuntime`. Bridra does not create a reference
 Core or silently select this transport for the application.
+
+For an iOS document-picker URL, call
+`BridraFlutterPlugin.grantSecurityScopedResource(url)` on the main thread. The
+plugin starts and retains native security-scoped access, asks the
+application-owned runtime for an opaque capability, and never returns the path
+to Dart. Call `releaseSecurityScopedResource(capability)` after the application
+detaches the resource. Runtime close releases any remaining scopes. The runtime
+adapter must implement `grantResourcePath` and `releaseResource` with its own
+`ResourceBroker`; capabilities are process-local and are not persisted.
 
 ## Install
 

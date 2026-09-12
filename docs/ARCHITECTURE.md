@@ -651,6 +651,35 @@ context. Keeping it out of the current process argument list avoids routine
 process-list exposure, but it is not an isolation boundary against another
 process running as the same OS user.
 
+## Embedded iOS model
+
+- The application builds and links its own Go Core XCFramework; Bridra never
+  selects an application package or installs a runtime implicitly.
+- `EmbeddedRpcClient` preserves the common JSON envelope for unary calls and
+  server streams. Native `streamStart` returns an opaque handle and each
+  `streamNext` pulls exactly one ordered frame from an unbuffered Go channel.
+  This bounds native and Dart queues without Sidecar acknowledgement messages.
+- Timeout, manual cancellation, stream subscription disposal, and runtime close
+  cancel the exact request context. One native stream handle permits only one
+  pending `next` operation.
+- Managed file bytes stay outside JSON RPC. Downloads use opaque native handles
+  and pull bounded typed-byte chunks; an interrupted handle is released and
+  reopened at the verified offset, while successful completion consumes the
+  staged capability. Uploads append bounded chunks and query the Go-owned offset
+  before retrying a response that may have been lost. Size and SHA-256 are
+  verified at completion.
+- The application presents `UIDocumentPickerViewController`. After selection,
+  `BridraFlutterPlugin.grantSecurityScopedResource` starts and retains the
+  security-scoped URL while the application-owned Go `ResourceBroker` maps its
+  native-authorized absolute directory to a random 96-character process-local
+  capability. Dart and application RPC see only that capability and a validated
+  display name. Explicit release and runtime close revoke Go authority before
+  calling `stopAccessingSecurityScopedResource()`.
+- The application remains responsible for picker presentation, background
+  interruption, cold launch, physical-device acceptance, and persistence
+  compatibility. Embedded resource capabilities are session-only and must be
+  selected again after process restart.
+
 ## HTTP model
 
 - One RPC request is sent as one JSON `POST /rpc`.
@@ -671,7 +700,7 @@ process running as the same OS user.
 - A real integration test starts the compiled Go server on an ephemeral port
   and exercises the full Flutter-to-Go pipeline.
 
-Both file paths retain transport backpressure and verify byte count plus
+All managed-file paths retain transport backpressure and verify byte count plus
 SHA-256 at completion. They are an out-of-band resumable file transport, not
 binary RPC framing, shared memory, client/bidirectional RPC streaming, or
 durable object storage.

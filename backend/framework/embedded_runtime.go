@@ -21,6 +21,8 @@ var (
 	ErrEmbeddedRuntimeRequestTooLarge      = errors.New("framework: embedded runtime request is too large")
 	ErrEmbeddedRuntimeDuplicateRequest     = errors.New("framework: embedded runtime request id is already active")
 	ErrEmbeddedRuntimeStreamingUnsupported = errors.New("framework: embedded runtime streaming requires the streaming API")
+	ErrEmbeddedRuntimeStreamingRequired    = errors.New("framework: embedded runtime streaming request metadata is required")
+	ErrEmbeddedRuntimeStreamIDRequired     = errors.New("framework: embedded runtime streaming request id is required")
 )
 
 type EmbeddedRuntimeShutdown func(context.Context) error
@@ -53,6 +55,17 @@ type EmbeddedRuntime struct {
 	requests  map[string]context.CancelCauseFunc
 	closeDone chan struct{}
 	closeErr  error
+}
+
+// EmbeddedJSONStream exposes one server-streaming RPC as ordered JSON frames.
+// NextJSON applies pull-based backpressure: the Router cannot produce the next
+// frame until the current call receives it.
+type EmbeddedJSONStream struct {
+	requestID string
+	frames    chan string
+
+	mu  sync.Mutex
+	err error
 }
 
 func NewEmbeddedRuntime(
@@ -100,16 +113,9 @@ func (runtime *EmbeddedRuntime) CallJSON(requestJSON string) (string, error) {
 	if runtime == nil {
 		return "", ErrEmbeddedRuntimeInvalid
 	}
-	if len(requestJSON) > MaxRequestBytes {
-		return "", ErrEmbeddedRuntimeRequestTooLarge
-	}
-	decoder := json.NewDecoder(strings.NewReader(requestJSON))
-	var request Request
-	if err := decoder.Decode(&request); err != nil {
-		return "", fmt.Errorf("%w: %v", ErrEmbeddedRuntimeInvalidJSON, err)
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return "", ErrEmbeddedRuntimeInvalidJSON
+	request, err := decodeEmbeddedRuntimeRequest(requestJSON)
+	if err != nil {
+		return "", err
 	}
 	if requestsStream(request) {
 		return "", ErrEmbeddedRuntimeStreamingUnsupported
@@ -126,6 +132,87 @@ func (runtime *EmbeddedRuntime) CallJSON(requestJSON string) (string, error) {
 		return "", fmt.Errorf("framework: encode embedded runtime response: %w", err)
 	}
 	return string(encoded), nil
+}
+
+// StreamJSON starts one server-streaming JSON RPC request. The caller must read
+// NextJSON until it returns an empty string. Application RPC errors remain in a
+// terminal completion frame; transport and lifecycle failures are Go errors.
+func (runtime *EmbeddedRuntime) StreamJSON(requestJSON string) (*EmbeddedJSONStream, error) {
+	if runtime == nil {
+		return nil, ErrEmbeddedRuntimeInvalid
+	}
+	request, err := decodeEmbeddedRuntimeRequest(requestJSON)
+	if err != nil {
+		return nil, err
+	}
+	if !requestsStream(request) {
+		return nil, ErrEmbeddedRuntimeStreamingRequired
+	}
+	if request.ID == "" {
+		return nil, ErrEmbeddedRuntimeStreamIDRequired
+	}
+	requestContext, finish, err := runtime.beginRequest(request.ID)
+	if err != nil {
+		return nil, err
+	}
+	stream := &EmbeddedJSONStream{
+		requestID: request.ID,
+		frames:    make(chan string),
+	}
+	go func() {
+		dispatchErr := runtime.router.DispatchStream(
+			requestContext,
+			request,
+			func(response Response) error {
+				encoded, encodeErr := json.Marshal(response)
+				if encodeErr != nil {
+					return fmt.Errorf(
+						"framework: encode embedded runtime stream response: %w",
+						encodeErr,
+					)
+				}
+				select {
+				case stream.frames <- string(encoded):
+					return nil
+				case <-requestContext.Done():
+					return context.Cause(requestContext)
+				}
+			},
+		)
+		stream.finish(dispatchErr)
+		finish()
+	}()
+	return stream, nil
+}
+
+func (stream *EmbeddedJSONStream) RequestID() string {
+	if stream == nil {
+		return ""
+	}
+	return stream.requestID
+}
+
+// NextJSON blocks until the next ordered stream frame is available. An empty
+// response with a nil error marks a normally completed stream.
+func (stream *EmbeddedJSONStream) NextJSON() (string, error) {
+	if stream == nil || stream.frames == nil {
+		return "", ErrEmbeddedRuntimeInvalid
+	}
+	frame, ok := <-stream.frames
+	if ok {
+		return frame, nil
+	}
+	stream.mu.Lock()
+	err := stream.err
+	stream.mu.Unlock()
+	return "", err
+}
+
+func (stream *EmbeddedJSONStream) finish(err error) {
+	stream.mu.Lock()
+	stream.err = err
+	close(stream.frames)
+	stream.mu.Unlock()
 }
 
 // Cancel interrupts one active request by its RPC id. It returns false when
@@ -221,4 +308,19 @@ func (runtime *EmbeddedRuntime) finishClose() {
 	runtime.state = embeddedRuntimeClosed
 	close(runtime.closeDone)
 	runtime.mu.Unlock()
+}
+
+func decodeEmbeddedRuntimeRequest(requestJSON string) (Request, error) {
+	if len(requestJSON) > MaxRequestBytes {
+		return Request{}, ErrEmbeddedRuntimeRequestTooLarge
+	}
+	decoder := json.NewDecoder(strings.NewReader(requestJSON))
+	var request Request
+	if err := decoder.Decode(&request); err != nil {
+		return Request{}, fmt.Errorf("%w: %v", ErrEmbeddedRuntimeInvalidJSON, err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return Request{}, ErrEmbeddedRuntimeInvalidJSON
+	}
+	return request, nil
 }

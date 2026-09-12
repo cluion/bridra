@@ -2,26 +2,97 @@
 package mobilebridge
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
 	"time"
 
-	"{{.GoModule}}/app"
 	"{{.BridraGoModule}}/framework"
+	"{{.GoModule}}/app"
 )
 
 const embeddedRuntimeName = "Go embedded mobile"
 
-var ErrInvalidCloseTimeout = errors.New("mobilebridge: close timeout must be positive")
+const maxFileTransferChunkBytes = 256 * 1024
+
+var (
+	ErrInvalidCloseTimeout = errors.New("mobilebridge: close timeout must be positive")
+	ErrInvalidChunkSize    = errors.New("mobilebridge: file transfer chunk size is invalid")
+	ErrDownloadClosed      = errors.New("mobilebridge: file download is closed")
+)
 
 type Runtime struct {
-	embedded *framework.EmbeddedRuntime
+	embedded  *framework.EmbeddedRuntime
+	transfers *framework.FileTransferStore
+	resources *framework.ResourceBroker
+}
+
+type embeddedPathResolver struct{}
+
+type embeddedPathLease struct {
+	path string
+}
+
+func (lease embeddedPathLease) LocalPath() string { return lease.path }
+
+func (embeddedPathLease) Release() error { return nil }
+
+func (embeddedPathResolver) ResolveBookmark(
+	bookmark []byte,
+	scope framework.ResourceBookmarkScope,
+) (framework.ResourceLease, error) {
+	path := string(bookmark)
+	if scope != framework.ResourceBookmarkEphemeral || len(path) > 4096 ||
+		strings.ContainsRune(path, '\x00') || !filepath.IsAbs(path) {
+		return nil, framework.ErrResourceBookmarkInvalid
+	}
+	path = filepath.Clean(path)
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() {
+		return nil, framework.ErrResourceBookmarkResolve
+	}
+	return embeddedPathLease{path: path}, nil
+}
+
+type Stream struct {
+	embedded *framework.EmbeddedJSONStream
+}
+
+type Download struct {
+	mu       sync.Mutex
+	transfer *framework.FileDownload
+	closed   bool
 }
 
 func NewRuntime(token string) (*Runtime, error) {
-	application, err := app.Build(app.Config{Token: token, Runtime: embeddedRuntimeName})
+	application, err := app.Build(
+		app.Config{Token: token, Runtime: embeddedRuntimeName},
+		framework.NewFileTransferServiceProvider(framework.DefaultFileTransferOptions()),
+		framework.NewResourceBrokerServiceProvider(
+			embeddedPathResolver{},
+			framework.DefaultResourceBrokerOptions(),
+		),
+	)
 	if err != nil {
 		return nil, err
+	}
+	resources, err := framework.Resolve(application.Container(), framework.ResourceBrokerKey)
+	if err != nil {
+		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return nil, errors.Join(err, application.Shutdown(shutdownContext))
+	}
+	transfers, err := framework.Resolve(application.Container(), framework.FileTransferStoreKey)
+	if err != nil {
+		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return nil, errors.Join(err, application.Shutdown(shutdownContext))
 	}
 	embedded, err := framework.NewEmbeddedRuntime(application.Router(), application.Shutdown)
 	if err != nil {
@@ -29,7 +100,7 @@ func NewRuntime(token string) (*Runtime, error) {
 		defer cancel()
 		return nil, errors.Join(err, application.Shutdown(shutdownContext))
 	}
-	return &Runtime{embedded: embedded}, nil
+	return &Runtime{embedded: embedded, transfers: transfers, resources: resources}, nil
 }
 
 func (runtime *Runtime) CallJSON(requestJSON string) (string, error) {
@@ -39,8 +110,143 @@ func (runtime *Runtime) CallJSON(requestJSON string) (string, error) {
 	return runtime.embedded.CallJSON(requestJSON)
 }
 
+func (runtime *Runtime) StreamJSON(requestJSON string) (*Stream, error) {
+	if runtime == nil || runtime.embedded == nil {
+		return nil, framework.ErrEmbeddedRuntimeInvalid
+	}
+	stream, err := runtime.embedded.StreamJSON(requestJSON)
+	if err != nil {
+		return nil, err
+	}
+	return &Stream{embedded: stream}, nil
+}
+
+func (stream *Stream) NextJSON() (string, error) {
+	if stream == nil || stream.embedded == nil {
+		return "", framework.ErrEmbeddedRuntimeInvalid
+	}
+	return stream.embedded.NextJSON()
+}
+
+func (stream *Stream) RequestID() string {
+	if stream == nil || stream.embedded == nil {
+		return ""
+	}
+	return stream.embedded.RequestID()
+}
+
 func (runtime *Runtime) Cancel(requestID string) bool {
 	return runtime != nil && runtime.embedded != nil && runtime.embedded.Cancel(requestID)
+}
+
+func (runtime *Runtime) GrantResourcePath(path string) (string, error) {
+	if runtime == nil || runtime.resources == nil {
+		return "", framework.ErrEmbeddedRuntimeInvalid
+	}
+	capability, err := runtime.resources.Grant(
+		[]byte(path), framework.ResourceBookmarkEphemeral,
+	)
+	return string(capability), err
+}
+
+func (runtime *Runtime) ReleaseResource(capability string) error {
+	if runtime == nil || runtime.resources == nil {
+		return framework.ErrEmbeddedRuntimeInvalid
+	}
+	return runtime.resources.Release(framework.ResourceCapability(capability))
+}
+
+func (runtime *Runtime) OpenDownload(fileID string, offset int64) (*Download, error) {
+	if runtime == nil || runtime.transfers == nil {
+		return nil, framework.ErrEmbeddedRuntimeInvalid
+	}
+	transfer, err := runtime.transfers.OpenDownload(fileID, offset)
+	if err != nil {
+		return nil, err
+	}
+	return &Download{transfer: transfer}, nil
+}
+
+func (download *Download) NextChunk(maxBytes int) ([]byte, error) {
+	if download == nil || maxBytes <= 0 || maxBytes > maxFileTransferChunkBytes {
+		return nil, ErrInvalidChunkSize
+	}
+	download.mu.Lock()
+	defer download.mu.Unlock()
+	if download.closed || download.transfer == nil {
+		return nil, ErrDownloadClosed
+	}
+	buffer := make([]byte, maxBytes)
+	read, err := download.transfer.Read(buffer)
+	if errors.Is(err, io.EOF) {
+		err = nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if read == 0 {
+		return nil, nil
+	}
+	return buffer[:read], nil
+}
+
+func (download *Download) Close(commit bool) error {
+	if download == nil {
+		return ErrDownloadClosed
+	}
+	download.mu.Lock()
+	defer download.mu.Unlock()
+	if download.closed {
+		return nil
+	}
+	download.closed = true
+	if download.transfer == nil {
+		return ErrDownloadClosed
+	}
+	if commit {
+		return download.transfer.Commit()
+	}
+	return download.transfer.Close()
+}
+
+func (runtime *Runtime) BeginUploadJSON(name, mediaType string, size int64, checksum string) (string, error) {
+	if runtime == nil || runtime.transfers == nil {
+		return "", framework.ErrEmbeddedRuntimeInvalid
+	}
+	status, err := runtime.transfers.BeginUpload(name, mediaType, size, checksum)
+	return marshalUploadStatus(status, err)
+}
+
+func (runtime *Runtime) AppendUploadJSON(fileID string, offset int64, chunk []byte) (string, error) {
+	if runtime == nil || runtime.transfers == nil {
+		return "", framework.ErrEmbeddedRuntimeInvalid
+	}
+	if len(chunk) == 0 || len(chunk) > maxFileTransferChunkBytes {
+		return "", ErrInvalidChunkSize
+	}
+	status, err := runtime.transfers.AppendUpload(
+		context.Background(), fileID, offset, bytes.NewReader(chunk),
+	)
+	return marshalUploadStatus(status, err)
+}
+
+func (runtime *Runtime) UploadStatusJSON(fileID string) (string, error) {
+	if runtime == nil || runtime.transfers == nil {
+		return "", framework.ErrEmbeddedRuntimeInvalid
+	}
+	status, err := runtime.transfers.UploadStatus(fileID)
+	return marshalUploadStatus(status, err)
+}
+
+func marshalUploadStatus(status framework.FileUploadStatus, err error) (string, error) {
+	if err != nil {
+		return "", err
+	}
+	encoded, err := json.Marshal(status)
+	if err != nil {
+		return "", err
+	}
+	return string(encoded), nil
 }
 
 func (runtime *Runtime) Close(timeoutMilliseconds int64) error {

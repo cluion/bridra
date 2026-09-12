@@ -421,7 +421,16 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 	for _, expected := range []string{
 		"#if canImport(AppCore)",
 		"ApplicationEmbeddedRuntime: BridraEmbeddedRuntime",
+		"ApplicationEmbeddedStream: BridraEmbeddedStream",
+		"ApplicationEmbeddedDownload: BridraEmbeddedDownload",
 		"APPMobilebridgeNewRuntime",
+		"runtime.streamJSON",
+		"stream.nextJSON",
+		"runtime.openDownload",
+		"runtime.beginUploadJSON",
+		"runtime.grantResourcePath",
+		"runtime.releaseResource",
+		"download.nextChunk",
 		"installBridraEmbeddedRuntime(token: String)",
 	} {
 		if !strings.Contains(string(iosEmbeddedRuntime), expected) {
@@ -576,7 +585,19 @@ func TestRenderedIOSEmbeddedCoreBuildsOutsideRepository(t *testing.T) {
 		}
 		exported = append(exported, contents...)
 	}
-	for _, signature := range []string{"callJSON:", "cancel:", "close:"} {
+	for _, signature := range []string{
+		"callJSON:",
+		"streamJSON:",
+		"nextJSON:",
+		"requestID",
+		"cancel:",
+		"openDownload:",
+		"nextChunk:",
+		"beginUploadJSON:",
+		"appendUploadJSON:",
+		"uploadStatusJSON:",
+		"close:",
+	} {
 		if !bytes.Contains(exported, []byte(signature)) {
 			t.Fatalf("generated Objective-C headers do not contain %q", signature)
 		}

@@ -2010,8 +2010,34 @@ Desktop Sidecar streams start with a 16-event credit window, configurable from
 1 to 256 through `SidecarClient.start(streamWindow: ...)`. Flutter acknowledges
 an event only after its listener consumes it, so a paused listener cannot create
 an unbounded queue. HTTP streams use NDJSON and the response socket's write
-backpressure. `rpc.stream_ack` is a reserved Sidecar control method and must not
-be registered as an application route.
+backpressure. An opt-in iOS `EmbeddedRpcClient` pulls one frame per native
+`streamNext` call from an unbuffered Go channel, so it needs no acknowledgement
+control message and cannot queue an unbounded stream in the bridge.
+`rpc.stream_ack` is a reserved Sidecar control method and must not be registered
+as an application route.
+
+The opt-in iOS Embedded Core uses the same `RpcClient.download`／`upload` API.
+File contents do not enter the JSON envelope: MethodChannel carries at most
+64 KiB of typed bytes per operation, Go rejects chunks above its 256 KiB safety
+ceiling, interrupted downloads reopen at the received offset, and uploads query
+the Go-owned offset before retrying. Runtime close releases every open download
+before shutting down the application-owned file store.
+
+For a directory returned by an application-owned iOS document picker, keep the
+raw URL in native code and call:
+
+```swift
+let capability = try BridraFlutterPlugin.grantSecurityScopedResource(url)
+// Return only capability plus a validated display name to Dart.
+// After application RPC detaches the selected source:
+try BridraFlutterPlugin.releaseSecurityScopedResource(capability)
+```
+
+Both calls run on the main thread. The plugin holds the security-scoped URL for
+the capability lifetime, asks the application's gomobile wrapper to register the
+path with `ResourceBroker`, and releases Go authority before stopping native
+access. Capabilities are bounded, process-local, must not be logged or persisted,
+and are automatically released during embedded runtime close.
 
 ### Large-file transfers
 

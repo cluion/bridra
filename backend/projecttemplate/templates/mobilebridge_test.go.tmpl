@@ -1,8 +1,16 @@
 package mobilebridge
 
 import (
+	"bytes"
+	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"path/filepath"
 	"testing"
+
+	"{{.BridraGoModule}}/framework"
 )
 
 func TestRuntimeDispatchesApplicationRPC(t *testing.T) {
@@ -31,5 +39,137 @@ func TestRuntimeDispatchesApplicationRPC(t *testing.T) {
 	}
 	if response.ID != "health" || response.Error != nil {
 		t.Fatalf("response = %s", responseJSON)
+	}
+}
+
+func TestRuntimeTransfersFilesWithoutHTTP(t *testing.T) {
+	runtime, err := NewRuntime("embedded-test-token")
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+	defer func() {
+		if err := runtime.Close(5_000); err != nil {
+			t.Errorf("close runtime: %v", err)
+		}
+	}()
+	content := []byte("embedded file transfer")
+	reference, err := runtime.transfers.Stage(
+		context.Background(), "result.txt", "text/plain", bytes.NewReader(content),
+	)
+	if err != nil {
+		t.Fatalf("stage download: %v", err)
+	}
+	download, err := runtime.OpenDownload(reference.ID, 0)
+	if err != nil {
+		t.Fatalf("open download: %v", err)
+	}
+	chunk, err := download.NextChunk(64 * 1024)
+	if err != nil || !bytes.Equal(chunk, content) {
+		t.Fatalf("download chunk = %q, %v", chunk, err)
+	}
+	if err := download.Close(true); err != nil {
+		t.Fatalf("commit download: %v", err)
+	}
+
+	checksum := fmt.Sprintf("%x", sha256.Sum256(content))
+	statusJSON, err := runtime.BeginUploadJSON(
+		"input.txt", "text/plain", int64(len(content)), checksum,
+	)
+	if err != nil {
+		t.Fatalf("begin upload: %v", err)
+	}
+	var status struct {
+		File struct {
+			ID string `json:"id"`
+		} `json:"file"`
+	}
+	if err := json.Unmarshal([]byte(statusJSON), &status); err != nil {
+		t.Fatalf("decode upload: %v", err)
+	}
+	statusJSON, err = runtime.AppendUploadJSON(status.File.ID, 0, content)
+	if err != nil {
+		t.Fatalf("append upload: %v", err)
+	}
+	var complete struct {
+		Complete bool `json:"complete"`
+	}
+	if err := json.Unmarshal([]byte(statusJSON), &complete); err != nil || !complete.Complete {
+		t.Fatalf("complete upload = %s, %v", statusJSON, err)
+	}
+}
+
+func TestRuntimeStreamsApplicationRPC(t *testing.T) {
+	runtime, err := NewRuntime("embedded-test-token")
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+	defer func() {
+		if err := runtime.Close(5_000); err != nil {
+			t.Errorf("close runtime: %v", err)
+		}
+	}()
+
+	stream, err := runtime.StreamJSON(
+		`{"id":"health-stream","method":"system.health","meta":{"token":"embedded-test-token","stream":"1"}}`,
+	)
+	if err != nil {
+		t.Fatalf("stream runtime: %v", err)
+	}
+	if stream.RequestID() != "health-stream" {
+		t.Fatalf("stream request id = %q", stream.RequestID())
+	}
+	var kinds []string
+	for {
+		frameJSON, nextErr := stream.NextJSON()
+		if nextErr != nil {
+			t.Fatalf("next frame: %v", nextErr)
+		}
+		if frameJSON == "" {
+			break
+		}
+		var response struct {
+			Error  any `json:"error"`
+			Stream struct {
+				Kind string `json:"kind"`
+			} `json:"stream"`
+		}
+		if err := json.Unmarshal([]byte(frameJSON), &response); err != nil {
+			t.Fatalf("decode frame: %v", err)
+		}
+		if response.Error != nil {
+			t.Fatalf("stream response = %s", frameJSON)
+		}
+		kinds = append(kinds, response.Stream.Kind)
+	}
+	if len(kinds) != 2 || kinds[0] != "data" || kinds[1] != "complete" {
+		t.Fatalf("stream kinds = %#v", kinds)
+	}
+}
+
+func TestRuntimeGrantsOpaqueDirectoryCapabilities(t *testing.T) {
+	runtime, err := NewRuntime("embedded-test-token")
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+	defer func() { _ = runtime.Close(5_000) }()
+	directory := filepath.Clean(t.TempDir())
+
+	capability, err := runtime.GrantResourcePath(directory)
+	if err != nil {
+		t.Fatalf("grant resource: %v", err)
+	}
+	if len(capability) != 96 || capability == directory {
+		t.Fatal("capability shape is invalid")
+	}
+	resolved, err := runtime.resources.ResolvePath(framework.ResourceCapability(capability))
+	if err != nil || resolved != directory {
+		t.Fatalf("resolve capability = [REDACTED], %v", err)
+	}
+	if err := runtime.ReleaseResource(capability); err != nil {
+		t.Fatalf("release resource: %v", err)
+	}
+	if _, err := runtime.resources.ResolvePath(framework.ResourceCapability(capability));
+		!errors.Is(err, framework.ErrResourceCapabilityNotFound) {
+		t.Fatalf("released capability error = %v", err)
 	}
 }

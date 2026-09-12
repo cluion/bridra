@@ -37,6 +37,139 @@ func TestEmbeddedRuntimeDispatchesUnaryJSON(t *testing.T) {
 	}
 }
 
+func TestEmbeddedRuntimeStreamsOrderedJSONWithPullBackpressure(t *testing.T) {
+	router := NewRouter()
+	router.Handle("reports.build", func(ctx *Context) (any, error) {
+		return ProduceStream(ctx, func(stream *StreamWriter) error {
+			if err := stream.Report(Progress{Completed: 1, Total: 2}); err != nil {
+				return err
+			}
+			return stream.Send(map[string]any{"page": 1})
+		})
+	})
+	runtime, err := NewEmbeddedRuntime(router, func(context.Context) error { return nil })
+	if err != nil {
+		t.Fatalf("NewEmbeddedRuntime() error = %v", err)
+	}
+	t.Cleanup(func() { _ = runtime.Close(context.Background()) })
+
+	stream, err := runtime.StreamJSON(
+		`{"id":"stream-1","method":"reports.build","meta":{"stream":"1"}}`,
+	)
+	if err != nil {
+		t.Fatalf("StreamJSON() error = %v", err)
+	}
+	var responses []Response
+	for {
+		encoded, nextErr := stream.NextJSON()
+		if nextErr != nil {
+			t.Fatalf("NextJSON() error = %v", nextErr)
+		}
+		if encoded == "" {
+			break
+		}
+		var response Response
+		if err := json.Unmarshal([]byte(encoded), &response); err != nil {
+			t.Fatalf("decode stream response: %v", err)
+		}
+		responses = append(responses, response)
+	}
+	if len(responses) != 3 {
+		t.Fatalf("responses = %d, want 3", len(responses))
+	}
+	for index, response := range responses {
+		if response.ID != "stream-1" || response.Stream == nil ||
+			response.Stream.Sequence != int64(index+1) {
+			t.Fatalf("response %d = %#v", index, response)
+		}
+	}
+	if responses[0].Stream.Kind != streamProgressKind ||
+		responses[1].Stream.Kind != streamDataKind ||
+		responses[2].Stream.Kind != streamCompleteKind {
+		t.Fatalf("responses = %#v", responses)
+	}
+}
+
+func TestEmbeddedRuntimeStreamCancellationUnblocksNext(t *testing.T) {
+	started := make(chan struct{})
+	router := NewRouter()
+	router.Handle("wait", func(ctx *Context) (any, error) {
+		return ProduceStream(ctx, func(stream *StreamWriter) error {
+			close(started)
+			<-stream.Context().Done()
+			return stream.Context().Err()
+		})
+	})
+	runtime, err := NewEmbeddedRuntime(router, func(context.Context) error { return nil })
+	if err != nil {
+		t.Fatalf("NewEmbeddedRuntime() error = %v", err)
+	}
+	t.Cleanup(func() { _ = runtime.Close(context.Background()) })
+
+	stream, err := runtime.StreamJSON(
+		`{"id":"stream-1","method":"wait","meta":{"stream":"1"}}`,
+	)
+	if err != nil {
+		t.Fatalf("StreamJSON() error = %v", err)
+	}
+	<-started
+	if !runtime.Cancel("stream-1") {
+		t.Fatal("Cancel() did not match active stream")
+	}
+	if encoded, err := stream.NextJSON(); encoded != "" || !errors.Is(err, context.Canceled) {
+		t.Fatalf("NextJSON() = %q, %v", encoded, err)
+	}
+}
+
+func TestEmbeddedRuntimeStreamRequiresMetadataAndID(t *testing.T) {
+	runtime, err := NewEmbeddedRuntime(NewRouter(), func(context.Context) error { return nil })
+	if err != nil {
+		t.Fatalf("NewEmbeddedRuntime() error = %v", err)
+	}
+	t.Cleanup(func() { _ = runtime.Close(context.Background()) })
+
+	if _, err := runtime.StreamJSON(`{"id":"one","method":"echo"}`); !errors.Is(
+		err,
+		ErrEmbeddedRuntimeStreamingRequired,
+	) {
+		t.Fatalf("missing stream metadata error = %v", err)
+	}
+	if _, err := runtime.StreamJSON(`{"method":"echo","meta":{"stream":"1"}}`); !errors.Is(
+		err,
+		ErrEmbeddedRuntimeStreamIDRequired,
+	) {
+		t.Fatalf("missing stream id error = %v", err)
+	}
+	var stream *EmbeddedJSONStream
+	if _, err := stream.NextJSON(); !errors.Is(err, ErrEmbeddedRuntimeInvalid) {
+		t.Fatalf("nil stream error = %v", err)
+	}
+}
+
+func TestEmbeddedRuntimeCloseCancelsUnconsumedStream(t *testing.T) {
+	started := make(chan struct{})
+	router := NewRouter()
+	router.Handle("blocked", func(ctx *Context) (any, error) {
+		return ProduceStream(ctx, func(stream *StreamWriter) error {
+			close(started)
+			return stream.Send("never consumed")
+		})
+	})
+	runtime, err := NewEmbeddedRuntime(router, func(context.Context) error { return nil })
+	if err != nil {
+		t.Fatalf("NewEmbeddedRuntime() error = %v", err)
+	}
+	if _, err := runtime.StreamJSON(
+		`{"id":"stream-1","method":"blocked","meta":{"stream":"1"}}`,
+	); err != nil {
+		t.Fatalf("StreamJSON() error = %v", err)
+	}
+	<-started
+	if err := runtime.Close(context.Background()); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+}
+
 func TestEmbeddedRuntimeRejectsInvalidTransportRequests(t *testing.T) {
 	runtime, err := NewEmbeddedRuntime(
 		NewRouter(),

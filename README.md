@@ -96,7 +96,13 @@ token is delivered through a bounded stdin launch handshake, not process
 arguments. The Sidecar independently watches its Flutter parent and exits if
 that owner dies.
 Mobile and Web applications connect to a separately deployed Go HTTP backend
-through the same typed contract.
+through the same typed contract by default. iOS applications may instead opt
+into an application-owned Go XCFramework: Bridra supplies the unary and
+pull-backed server-streaming bridge plus bounded resumable managed file
+transfer and security-scoped resource lifecycle. The application explicitly
+owns the document picker, Core, Xcode linking, persistence, signing, and runtime
+installation; Flutter and application RPC receive only an opaque capability,
+never the selected URL path.
 
 ## Quick start
 
