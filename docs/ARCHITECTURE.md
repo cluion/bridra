@@ -32,7 +32,7 @@ Models, Services, Responses, Controllers, and route registration remain under
 `backend/app`. `packages/bridra_flutter` owns transport-neutral RPC, HTTP, and
 desktop Sidecar clients. The generated `BridraRpcApi` owns the application RPC
 contract; `lib/api/backend_gateway.dart` adds connection lifecycle and health
-caching. Both packages remain in one Git repository and use Bridra 0.16.0.
+caching. Both packages remain in one Git repository and use Bridra 0.17.0.
 
 Native macOS Sidecars may register a `ResourceBroker` backed by
 `NewMacOSResourceBookmarkResolver`. The resolver alone handles Foundation's
@@ -119,7 +119,7 @@ contracts; neither command tags or publishes a release.
 
 `create` resolves `all`, `desktop`, `mobile`, or an explicit platform list into
 one canonical selection. It asks Flutter to generate only those runners inside a
-same-parent staging directory, then renders Project Template manifest v6 and
+same-parent staging directory, then renders Project Template manifest v7 and
 generates the typed contract. Go consumer tests, Flutter dependency resolution,
 and Dart formatting must succeed before one atomic rename exposes the destination;
 every earlier failure removes the staging directory.
