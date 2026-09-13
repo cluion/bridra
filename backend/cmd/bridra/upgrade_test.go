@@ -1205,6 +1205,33 @@ func TestCurrentUpgradeCatalogPlansIOSEmbeddedCoreForCustomProtocol(t *testing.T
 	}
 }
 
+func TestCurrentUpgradeCatalogPlansNumberScalarReleaseForCustomProtocol(t *testing.T) {
+	root := makeUpgradeProjectRoot(t, currentProjectMetadata("0.17.0", 7, 3))
+	var stdout bytes.Buffer
+	err := testUpgradeCommand().run(
+		[]string{"--plan", "--to", "0.18.0", "--json", "--root", root},
+		&stdout,
+		&bytes.Buffer{},
+	)
+	if !errors.Is(err, errUpgradeRequired) {
+		t.Fatalf("upgrade error = %v, want errUpgradeRequired", err)
+	}
+	var report upgradeReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode report: %v", err)
+	}
+	if report.Status != upgradeMigrationRequired || !report.PlanAvailable ||
+		!report.ApplyAvailable || len(report.Steps) != 1 ||
+		report.Steps[0].ID != "framework-0.17.0-to-0.18.0" ||
+		!report.Steps[0].Automatic ||
+		report.Project.ProtocolVersion != 3 ||
+		report.Target.TemplateVersion != 7 ||
+		report.Target.TemplateProtocolVersion != 1 ||
+		!hasUpgradeDiagnostic(report, "application_protocol_custom") {
+		t.Fatalf("report = %#v", report)
+	}
+}
+
 func TestCurrentUpgradeCatalogPlansSchemaCompatibilityForCustomApplicationProtocol(t *testing.T) {
 	root := makeUpgradeProjectRoot(t, currentProjectMetadata("0.12.0", 2, 3))
 	var stdout bytes.Buffer

@@ -155,6 +155,12 @@ var registeredUpgradeReleases = []upgradeRelease{
 		TemplateVersion:         7,
 		TemplateProtocolVersion: 1,
 	},
+	{
+		FrameworkVersion:        "0.18.0",
+		ProjectMetadataVersion:  3,
+		TemplateVersion:         7,
+		TemplateProtocolVersion: 1,
+	},
 }
 
 var registeredFrameworkMigrations = []frameworkMigration{
@@ -290,6 +296,13 @@ var registeredFrameworkMigrations = []frameworkMigration{
 		To:          "0.17.0",
 		Description: "Adopt the application-owned iOS Embedded Core bridge, XCFramework packaging, and security-scoped resource lifecycle, then update both framework dependencies.",
 		Automatic:   false,
+	},
+	{
+		ID:          "framework-0.17.0-to-0.18.0",
+		From:        "0.17.0",
+		To:          "0.18.0",
+		Description: "Update the Go and Flutter framework dependencies for opt-in RPC number scalar codegen without changing existing application contracts.",
+		Automatic:   true,
 	},
 }
 
