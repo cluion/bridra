@@ -3,6 +3,29 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
+## [0.18.0] - 2026-09-13
+
+### Added
+
+- Added RPC schema `number` fields for finite JSON numeric values. Codegen maps
+  scalars, nullable fields, and arrays to Go `float64` and Dart `double`.
+- Dart response decoding accepts integer and fractional JSON numbers as
+  `double` and rejects non-numeric or non-finite values.
+
+### Changed
+
+- `integer` ↔ `number` field changes are treated as wire-shape changes and
+  require an application-owned Protocol bump. Schema `minimum`／`maximum` remain
+  integer-only; coordinate and distance bounds remain application validation.
+- Project Template `7`, project metadata schema `3`, and Template RPC protocol
+  baseline `1` remain unchanged. Existing application schemas do not need edits.
+
+### Support
+
+- The latest `0.18.x` release receives best-effort security fixes until the next
+  minor line is published. The `0.17.x` line is no longer supported after this
+  release.
+
 ## [0.17.0] - 2026-09-13
 
 ### Added

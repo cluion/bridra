@@ -9,8 +9,8 @@ Run the read-only planner from a project root before changing dependencies:
 
 ```bash
 bridra upgrade
-bridra upgrade --plan --to 0.17.0
-bridra upgrade --plan --to 0.17.0 --json
+bridra upgrade --plan --to 0.18.0
+bridra upgrade --plan --to 0.18.0 --json
 ```
 
 When invoking the CLI through the backend dependency, use:
@@ -79,7 +79,7 @@ adding the necessary path fails verification.
 | Identity | Current | Compatibility rule |
 | --- | ---: | --- |
 | Project metadata schema | 3 | Schemas 1 and 2 remain readable and conservatively imply all six platforms. A newer schema requires a newer CLI. |
-| Framework SemVer | 0.17.0 | The project and selected target must match. An older version requires a complete registered migration path; downgrade plans are rejected. |
+| Framework SemVer | 0.18.0 | The project and selected target must match. An older version requires a complete registered migration path; downgrade plans are rejected. |
 | Project Template | 7 | Template v7 adds the application-owned iOS Embedded Core wrapper, Swift adapter, XCFramework build, and resource lifecycle while retaining v6 macOS resource handoff. Older templates require manual review. |
 | Application RPC protocol | Application-owned | `.bridra/project.json`, `schema/bridra.json`, and generated Go/Dart contracts must agree exactly. It may be newer than the selected release's Project Template baseline. |
 
@@ -232,7 +232,7 @@ the Go and Flutter dependencies together, add the version contract:
   "projectName": "your_app",
   "goModule": "example.com/your/app",
   "frameworkModule": "github.com/cluion/bridra/backend",
-  "frameworkVersion": "0.17.0",
+  "frameworkVersion": "0.18.0",
   "templateVersion": 7,
   "protocolVersion": 1
 }
@@ -258,7 +258,7 @@ runner or release target:
   "projectName": "your_app",
   "goModule": "example.com/your/app",
   "frameworkModule": "github.com/cluion/bridra/backend",
-  "frameworkVersion": "0.17.0",
+  "frameworkVersion": "0.18.0",
   "templateVersion": 7,
   "protocolVersion": 1,
   "platforms": ["android", "ios", "linux", "macos", "windows", "web"]
@@ -284,6 +284,30 @@ and release expectations. Bridra does not delete existing runner directories.
    template, and any explicit RPC changes it records have actually been applied.
 6. Run any platform builds required by the application before committing the
    upgrade.
+
+## Framework 0.17.0 to 0.18.0
+
+This release adds opt-in RPC schema `number` fields. Existing application-owned
+schemas, generated contracts, Project Template `7`, project metadata schema `3`,
+and Template protocol baseline `1` remain unchanged. Projects with no schema
+changes can upgrade both Go and Flutter dependencies and lockfiles together,
+record Framework version `0.18.0`, then run `make verify` and relevant platform
+builds. The upgrade planner marks this dependency-only transition automatic.
+
+When adopting `number`, regenerate both Go and Dart contracts from the same
+application schema. The generated types are Go `float64` and Dart `double`,
+including nullable and array fields. Dart decodes finite integer or fractional
+JSON numeric values to `double`; schema `minimum`／`maximum` remain integer-only,
+so applications validate coordinate and radius bounds themselves. Before
+deploying a changed RPC contract, run `bridra schema check` against the saved
+deployed baseline and advance the application-owned Protocol whenever the
+compatibility report requires it; changing an existing field between `integer`
+and `number` is breaking. Never overwrite the deployed baseline automatically.
+
+Roll back a dependency-only upgrade by restoring the reviewed `0.17.0` Go and
+Flutter dependencies, lockfiles, and framework metadata. If the application
+also adopted `number`, coordinate a rollback of its schema, generated contracts,
+Protocol, and deployed baseline with the application release.
 
 ## Framework 0.16.0 to 0.17.0
 

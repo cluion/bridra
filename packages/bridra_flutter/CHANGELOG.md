@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.18.0 - 2026-09-13
+
+- Aligned package metadata with Bridra 0.18.0's generated `number` scalar
+  contracts. Generated Dart models decode finite integer and fractional JSON
+  numbers to `double`; the public Flutter runtime API is unchanged.
+
 ## 0.17.0 - 2026-09-13
 
 - Added `EmbeddedRpcClient`, `EmbeddedRpcBridge`, and the iOS
