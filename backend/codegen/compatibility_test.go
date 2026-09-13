@@ -175,6 +175,38 @@ func TestCompareSchemasRequiresProtocolBumpForIntegerRequestBoundChange(t *testi
 	}
 }
 
+func TestCompareSchemasTreatsNumberAsDistinctWireShape(t *testing.T) {
+	baseline := compatibilityTestSchema(1)
+	current := compatibilityTestSchema(1)
+	for _, schema := range []*Schema{&baseline, &current} {
+		schema.Methods[0].Params.Fields = append(
+			schema.Methods[0].Params.Fields,
+			Field{Name: "latitude", Type: "number"},
+		)
+	}
+
+	report, err := CompareSchemas(baseline, current)
+	if err != nil || report.Status != SchemaCompatible {
+		t.Fatalf("unchanged number field = %#v, %v", report, err)
+	}
+
+	current.Methods[0].Params.Fields[1].Type = "integer"
+	report, err = CompareSchemas(baseline, current)
+	if err != nil {
+		t.Fatalf("compare number to integer: %v", err)
+	}
+	if report.Status != SchemaIncompatible ||
+		!compatibilityHasChange(report, "field_shape_changed") {
+		t.Fatalf("unversioned number shape change = %#v", report)
+	}
+
+	current.ProtocolVersion = 2
+	report, err = CompareSchemas(baseline, current)
+	if err != nil || report.Status != SchemaVersionedBreak {
+		t.Fatalf("versioned number shape change = %#v, %v", report, err)
+	}
+}
+
 func TestCompareSchemasAcceptsNullableResponseFieldRemoval(t *testing.T) {
 	baseline := compatibilityTestSchema(1)
 	current := compatibilityTestSchema(1)

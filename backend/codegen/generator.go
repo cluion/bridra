@@ -819,6 +819,40 @@ func writeDartDecoders(output *strings.Builder, schema Schema) {
 		output.WriteString("  return value;\n")
 		output.WriteString("}\n\n")
 	}
+	if usage.requiredNumber {
+		output.WriteString("double _requireNumberField(Map<String, dynamic> data, String field) {\n")
+		output.WriteString("  final value = data[field];\n")
+		output.WriteString("  if (value is! num || !value.isFinite) {\n")
+		output.WriteString("    throw BackendProtocolException('$field must be a finite number.');\n")
+		output.WriteString("  }\n")
+		output.WriteString("  return value.toDouble();\n")
+		output.WriteString("}\n\n")
+	}
+	if usage.optionalNumber {
+		output.WriteString("double? _optionalNumberField(Map<String, dynamic> data, String field) {\n")
+		output.WriteString("  if (data[field] == null) {\n")
+		output.WriteString("    return null;\n")
+		output.WriteString("  }\n")
+		output.WriteString("  return _requireNumberField(data, field);\n")
+		output.WriteString("}\n\n")
+	}
+	if usage.requiredNumberList {
+		output.WriteString("List<double> _requireNumberListField(Map<String, dynamic> data, String field) {\n")
+		output.WriteString("  final value = data[field];\n")
+		output.WriteString("  if (value is! List || value.any((item) => item is! num || !item.isFinite)) {\n")
+		output.WriteString("    throw BackendProtocolException('$field must be a list of finite numbers.');\n")
+		output.WriteString("  }\n")
+		output.WriteString("  return List<double>.unmodifiable(value.map((item) => (item as num).toDouble()));\n")
+		output.WriteString("}\n\n")
+	}
+	if usage.optionalNumberList {
+		output.WriteString("List<double>? _optionalNumberListField(Map<String, dynamic> data, String field) {\n")
+		output.WriteString("  if (data[field] == null) {\n")
+		output.WriteString("    return null;\n")
+		output.WriteString("  }\n")
+		output.WriteString("  return _requireNumberListField(data, field);\n")
+		output.WriteString("}\n\n")
+	}
 	if usage.requiredDateTime {
 		output.WriteString("DateTime _requireDateTimeField(Map<String, dynamic> data, String field) =>\n")
 		output.WriteString("    DateTime.parse(_requireField<String>(data, field));\n\n")
@@ -938,6 +972,10 @@ func writeDartDecoders(output *strings.Builder, schema Schema) {
 type dartDecoderUsage struct {
 	requiredField        bool
 	optionalField        bool
+	requiredNumber       bool
+	optionalNumber       bool
+	requiredNumberList   bool
+	optionalNumberList   bool
 	requiredDateTime     bool
 	optionalDateTime     bool
 	requiredDateTimeList bool
@@ -967,6 +1005,12 @@ func collectDartDecoderUsage(schema Schema) dartDecoderUsage {
 func collectDartFieldUsage(fields []Field, usage *dartDecoderUsage) {
 	for _, field := range fields {
 		switch {
+		case field.Type == "number" && field.Array:
+			usage.requiredNumberList = true
+			usage.optionalNumberList = usage.optionalNumberList || field.Nullable
+		case field.Type == "number":
+			usage.requiredNumber = true
+			usage.optionalNumber = usage.optionalNumber || field.Nullable
 		case field.Type == "file":
 			if field.Nullable {
 				usage.optionalFile = true
@@ -1049,6 +1093,7 @@ func goType(field Field) string {
 	value := map[string]string{
 		"string":  "string",
 		"integer": "int",
+		"number":  "float64",
 		"boolean": "bool",
 		"file":    "framework.FileReference",
 	}[field.Type]
@@ -1068,6 +1113,7 @@ func dartType(field Field) string {
 	value := map[string]string{
 		"string":  "String",
 		"integer": "int",
+		"number":  "double",
 		"boolean": "bool",
 		"file":    "RpcFileReference",
 	}[field.Type]
@@ -1087,6 +1133,18 @@ func dartType(field Field) string {
 }
 
 func dartDecodeExpression(source string, field Field) string {
+	if field.Type == "number" {
+		helper := "_requireNumberField"
+		switch {
+		case field.Array && field.Nullable:
+			helper = "_optionalNumberListField"
+		case field.Array:
+			helper = "_requireNumberListField"
+		case field.Nullable:
+			helper = "_optionalNumberField"
+		}
+		return fmt.Sprintf("%s(%s, %s)", helper, source, dartString(field.Name))
+	}
 	if field.Type == "file" {
 		helper := "_requireFileField"
 		if field.Nullable {

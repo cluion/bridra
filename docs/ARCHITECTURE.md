@@ -98,6 +98,10 @@ structured violations. Object arrays use `NestedListField` or
 `rules[2].pattern`. The Router passes every returned error through its
 `ExceptionRenderer`; an `ExceptionRegistry` can map typed domain errors while
 retaining the framework's safe fallback behavior.
+Schema `number` fields map to Go `float64` and Dart `double`; the Dart decoder
+normalizes either integer or fractional JSON numbers to `double` and rejects
+non-numeric or non-finite values. Numeric range rules are application-owned;
+schema `minimum`／`maximum` remain specific to scalar integers.
 
 ## Framework CLI
 

@@ -144,6 +144,51 @@ func TestGenerateCommandWritesAndChecksProjectOutputs(t *testing.T) {
 	}
 }
 
+func TestGenerateCommandAcceptsNumberScalar(t *testing.T) {
+	root := t.TempDir()
+	schema := codegen.Schema{
+		SchemaVersion:   codegen.SupportedSchemaVersion,
+		ProtocolVersion: 1,
+		Methods: []codegen.Method{{
+			Name:       "areas.nearby",
+			ClientName: "nearbyAreas",
+			Params: &codegen.Object{
+				GoType:   "NearbyAreasRequest",
+				DartType: "NearbyAreasRequest",
+				Fields: []codegen.Field{{
+					Name: "latitude", Type: "number",
+				}},
+			},
+			Result: codegen.Object{
+				GoType:   "NearbyAreasResponse",
+				DartType: "NearbyAreasResult",
+				Fields: []codegen.Field{{
+					Name: "distanceMeters", Type: "number",
+				}},
+			},
+		}},
+	}
+	contents, err := json.Marshal(schema)
+	if err != nil {
+		t.Fatalf("marshal number schema: %v", err)
+	}
+	path := filepath.Join(root, "bridra.json")
+	if err := os.WriteFile(path, contents, 0o644); err != nil {
+		t.Fatalf("write number schema: %v", err)
+	}
+	command := generateCommand{formatDart: func(_ string, source []byte) ([]byte, error) {
+		return source, nil
+	}}
+	for _, arguments := range [][]string{
+		{"--schema", path, "--root", root},
+		{"--schema", path, "--root", root, "--check"},
+	} {
+		if err := command.run(arguments, io.Discard, io.Discard); err != nil {
+			t.Fatalf("generate %v: %v", arguments, err)
+		}
+	}
+}
+
 func TestGenerateCommandReportsDartFormatterFailureBeforeWriting(t *testing.T) {
 	root := t.TempDir()
 	schema := filepath.Join(repositoryRoot(t), "schema", "bridra.json")
