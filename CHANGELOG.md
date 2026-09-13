@@ -3,6 +3,39 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
+## [0.17.0] - 2026-09-13
+
+### Added
+
+- Added an opt-in application-owned iOS Embedded Core transport that runs the Go
+  Core in the app process without opening an HTTP socket. The generated seed
+  includes gomobile XCFramework packaging, a Swift adapter, and explicit runtime
+  installation from the application-owned `AppDelegate`.
+- Added pull-backed Embedded RPC streaming with ordered frames, exact request-id
+  cancellation, bounded native and Dart queues, and bounded runtime shutdown.
+- Added Embedded managed downloads and uploads using opaque native handles,
+  bounded typed-byte chunks, resume from verified offsets, and declared size and
+  SHA-256 validation.
+- Added application-owned security-scoped document-directory handoff. Swift
+  retains the native URL while Dart and RPC receive only a process-local opaque
+  `ResourceBroker` capability; detach, explicit release, and runtime close revoke
+  the authority.
+
+### Changed
+
+- Advanced the Project Template to version `7` for the application-owned iOS
+  Embedded Core wrapper, Swift bridge, XCFramework build target, and lifecycle
+  tests. Existing projects require the documented manual migration. Project
+  metadata schema `3` and Template RPC protocol baseline `1` remain unchanged.
+- The public Flutter barrel now conditionally exports the MethodChannel bridge,
+  preserving pure-Dart desktop helper compatibility without loading `dart:ui`.
+
+### Support
+
+- The latest `0.17.x` release receives best-effort security fixes until the next
+  minor line is published. The `0.16.x` line is no longer supported after this
+  release.
+
 ## [0.16.0] - 2026-08-29
 
 ### Added

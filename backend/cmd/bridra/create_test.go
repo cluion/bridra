@@ -52,9 +52,9 @@ func TestCreateBuildsAndAtomicallyPublishesProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v, stderr: %s", err, stderr.String())
 	}
-	if len(invocations) != 5 {
+	if len(invocations) != 6 {
 		t.Fatalf(
-			"invocations = %#v, want Flutter create, Go tidy, Go test, pub get, and format",
+			"invocations = %#v, want Flutter create, backend and gomobile tidy, Go test, pub get, and format",
 			invocations,
 		)
 	}
@@ -72,16 +72,21 @@ func TestCreateBuildsAndAtomicallyPublishesProject(t *testing.T) {
 		t.Fatalf("Go dependency invocation = %#v", invocations[1])
 	}
 	if invocations[2].name != "go" ||
-		!containsArguments(invocations[2].arguments, "test", "./...") ||
-		invocations[2].directory != filepath.Join(invocations[0].directory, "backend") {
-		t.Fatalf("Go verification invocation = %#v", invocations[2])
+		!containsArguments(invocations[2].arguments, "mod", "tidy") ||
+		invocations[2].directory != filepath.Join(invocations[0].directory, "tool", "gomobile") {
+		t.Fatalf("gomobile dependency invocation = %#v", invocations[2])
 	}
-	if invocations[4].name != "fvm" ||
+	if invocations[3].name != "go" ||
+		!containsArguments(invocations[3].arguments, "test", "./...") ||
+		invocations[3].directory != filepath.Join(invocations[0].directory, "backend") {
+		t.Fatalf("Go verification invocation = %#v", invocations[3])
+	}
+	if invocations[5].name != "fvm" ||
 		!containsArguments(
-			invocations[4].arguments,
+			invocations[5].arguments,
 			"dart", "format", "lib", "test", "integration_test",
 		) {
-		t.Fatalf("Dart format invocation = %#v", invocations[4])
+		t.Fatalf("Dart format invocation = %#v", invocations[5])
 	}
 	if _, err := os.Stat(filepath.Join(destination, "flutter-runner.marker")); err != nil {
 		t.Fatalf("published Flutter marker: %v", err)
@@ -218,9 +223,9 @@ func TestCreateDefaultsToVersionedPublishedDependencies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if len(invocations) != 5 {
+	if len(invocations) != 6 {
 		t.Fatalf(
-			"invocations = %#v, want Flutter create, Go tidy, Go test, pub get, and format",
+			"invocations = %#v, want Flutter create, backend and gomobile tidy, Go test, pub get, and format",
 			invocations,
 		)
 	}
@@ -229,8 +234,13 @@ func TestCreateDefaultsToVersionedPublishedDependencies(t *testing.T) {
 		t.Fatalf("Go dependency invocation = %#v", invocations[1])
 	}
 	if invocations[2].name != "go" ||
-		!containsArguments(invocations[2].arguments, "test", "./...") {
-		t.Fatalf("Go verification invocation = %#v", invocations[2])
+		!containsArguments(invocations[2].arguments, "mod", "tidy") ||
+		!strings.HasSuffix(invocations[2].directory, filepath.Join("tool", "gomobile")) {
+		t.Fatalf("gomobile dependency invocation = %#v", invocations[2])
+	}
+	if invocations[3].name != "go" ||
+		!containsArguments(invocations[3].arguments, "test", "./...") {
+		t.Fatalf("Go verification invocation = %#v", invocations[3])
 	}
 	goMod, err := os.ReadFile(filepath.Join(destination, "backend", "go.mod"))
 	if err != nil {

@@ -1,0 +1,158 @@
+import bridra_flutter
+import Foundation
+
+#if canImport(AppCore)
+import AppCore
+
+private final class ApplicationEmbeddedRuntime: BridraEmbeddedRuntime {
+  private let runtime: APPMobilebridgeRuntime
+
+  init(token: String) throws {
+    var error: NSError?
+    guard let runtime = APPMobilebridgeNewRuntime(token, &error) else {
+      throw error ?? ApplicationEmbeddedRuntimeError.creationFailed
+    }
+    self.runtime = runtime
+  }
+
+  func callJSON(_ requestJSON: String) throws -> String {
+    var error: NSError?
+    let response = runtime.callJSON(requestJSON, error: &error)
+    if let error {
+      throw error
+    }
+    return response
+  }
+
+  func streamJSON(_ requestJSON: String) throws -> any BridraEmbeddedStream {
+    let stream = try runtime.streamJSON(requestJSON)
+    return ApplicationEmbeddedStream(stream)
+  }
+
+  func cancel(_ requestID: String) -> Bool {
+    runtime.cancel(requestID)
+  }
+
+  func grantResourcePath(_ path: String) throws -> String {
+    var error: NSError?
+    let capability = runtime.grantResourcePath(path, error: &error)
+    if let error {
+      throw error
+    }
+    return capability
+  }
+
+  func releaseResource(_ capability: String) throws {
+    try runtime.releaseResource(capability)
+  }
+
+  func openDownload(
+    _ fileID: String,
+    offset: Int64
+  ) throws -> any BridraEmbeddedDownload {
+    let download = try runtime.openDownload(fileID, offset: offset)
+    return ApplicationEmbeddedDownload(download)
+  }
+
+  func beginUploadJSON(
+    _ name: String,
+    mediaType: String,
+    size: Int64,
+    sha256: String
+  ) throws -> String {
+    var error: NSError?
+    let status = runtime.beginUploadJSON(
+      name,
+      mediaType: mediaType,
+      size: size,
+      checksum: sha256,
+      error: &error
+    )
+    if let error {
+      throw error
+    }
+    return status
+  }
+
+  func appendUploadJSON(
+    _ fileID: String,
+    offset: Int64,
+    chunk: Data
+  ) throws -> String {
+    var error: NSError?
+    let status = runtime.appendUploadJSON(
+      fileID,
+      offset: offset,
+      chunk: chunk,
+      error: &error
+    )
+    if let error {
+      throw error
+    }
+    return status
+  }
+
+  func uploadStatusJSON(_ fileID: String) throws -> String {
+    var error: NSError?
+    let status = runtime.uploadStatusJSON(fileID, error: &error)
+    if let error {
+      throw error
+    }
+    return status
+  }
+
+  func close(timeoutMilliseconds: Int64) throws {
+    try runtime.close(timeoutMilliseconds)
+  }
+}
+
+private final class ApplicationEmbeddedDownload: BridraEmbeddedDownload {
+  private let download: APPMobilebridgeDownload
+
+  init(_ download: APPMobilebridgeDownload) {
+    self.download = download
+  }
+
+  func nextChunk(_ maxBytes: Int) throws -> Data? {
+    let chunk = try download.nextChunk(maxBytes)
+    return chunk.isEmpty ? nil : chunk
+  }
+
+  func close(commit: Bool) throws {
+    try download.close(commit)
+  }
+}
+
+private final class ApplicationEmbeddedStream: BridraEmbeddedStream {
+  private let stream: APPMobilebridgeStream
+
+  init(_ stream: APPMobilebridgeStream) {
+    self.stream = stream
+  }
+
+  func requestID() -> String {
+    stream.requestID()
+  }
+
+  func nextJSON() throws -> String? {
+    var error: NSError?
+    let frame = stream.nextJSON(&error)
+    if let error {
+      throw error
+    }
+    return frame.isEmpty ? nil : frame
+  }
+}
+
+private enum ApplicationEmbeddedRuntimeError: Error {
+  case creationFailed
+}
+
+/// Installs the application-owned Go Core. Call this once from AppDelegate
+/// after AppCore.xcframework is linked and before Dart sends embedded RPCs.
+func installBridraEmbeddedRuntime(token: String) throws {
+  try BridraFlutterPlugin.installEmbeddedRuntime(
+    ApplicationEmbeddedRuntime(token: token)
+  )
+}
+#endif

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.17.0 - 2026-09-13
+
+- Added `EmbeddedRpcClient`, `EmbeddedRpcBridge`, and the iOS
+  `MethodChannelEmbeddedRpcBridge` for application-owned in-process Go Core RPC
+  without an HTTP socket.
+- Added pull-backed server streaming, exact cancellation, and bounded close for
+  the Embedded transport.
+- Added optional `EmbeddedFileTransferBridge` support for resumable,
+  size-and-SHA-verified downloads and uploads over bounded typed-byte chunks.
+- Added the native iOS runtime, stream, download, and security-scoped resource
+  protocols used by an application-owned XCFramework adapter.
+- Made the public MethodChannel export conditional so pure-Dart desktop helpers
+  fail closed without importing Flutter `dart:ui` runtime libraries.
+
 ## 0.16.0 - 2026-08-29
 
 - Added `MacOSResourceBookmarks` and `ResourceBookmark` for application-owned

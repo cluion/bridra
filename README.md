@@ -21,7 +21,7 @@ Flutter UI -> typed gateway -> RPC transport
                               Middleware -> Controller -> Service
 ```
 
-Framework version `0.16.0` and the Project Template protocol baseline `1`
+Framework version `0.17.0` and the Project Template protocol baseline `1`
 evolve independently. Applications own their RPC protocol and may increment it
 when regenerating a coordinated Go/Dart contract.
 Bridra is licensed under the [MIT License](LICENSE), Copyright (c) 2026 Cluion.
@@ -96,7 +96,13 @@ token is delivered through a bounded stdin launch handshake, not process
 arguments. The Sidecar independently watches its Flutter parent and exits if
 that owner dies.
 Mobile and Web applications connect to a separately deployed Go HTTP backend
-through the same typed contract.
+through the same typed contract by default. iOS applications may instead opt
+into an application-owned Go XCFramework: Bridra supplies the unary and
+pull-backed server-streaming bridge plus bounded resumable managed file
+transfer and security-scoped resource lifecycle. The application explicitly
+owns the document picker, Core, Xcode linking, persistence, signing, and runtime
+installation; Flutter and application RPC receive only an opaque capability,
+never the selected URL path.
 
 ## Quick start
 
@@ -104,7 +110,7 @@ Install Go 1.25+, FVM 4.x, and the native toolchain required by your target
 platform. Then install the exact Bridra CLI version:
 
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.16.0
+go install github.com/cluion/bridra/backend/cmd/bridra@v0.17.0
 bridra version
 ```
 

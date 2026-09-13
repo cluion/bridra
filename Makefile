@@ -18,6 +18,14 @@ endif
 
 SIDECAR := $(CURDIR)/build/sidecar/bridra_backend$(EXECUTABLE_SUFFIX)
 HTTP_SERVER := $(CURDIR)/build/server/bridra_server$(EXECUTABLE_SUFFIX)
+MOBILE_TOOL_DIR := $(CURDIR)/build/mobile/tools
+MOBILE_TOOL_MODULE := $(CURDIR)/tool/gomobile
+GOBIND := $(MOBILE_TOOL_DIR)/gobind
+GOMOBILE := $(MOBILE_TOOL_DIR)/gomobile
+IOS_EMBEDDED_FRAMEWORK := $(CURDIR)/build/mobile/BridraMobile.xcframework
+IOS_EMBEDDED_HARNESS_SOURCE := $(CURDIR)/tool/ios_embedded_core_harness
+IOS_EMBEDDED_HARNESS := $(CURDIR)/build/mobile/apple-smoke
+IOS_EMBEDDED_SIMULATOR ?= platform=iOS Simulator,name=iPhone 17 Pro,OS=latest
 BACKEND_TOKEN ?= dev-token
 BACKEND_LISTEN ?= 127.0.0.1:8080
 BACKEND_CORS_ORIGIN ?= *
@@ -51,7 +59,7 @@ RUNTIME_RESOURCE_MAX_RSS_GROWTH_MIB ?= 32
 	flutter-format flutter-package-test flutter-web-test flutter-test analyze verify coverage backend-coverage flutter-package-coverage flutter-app-coverage coverage-check linux-check linux-run linux-build \
 	linux-smoke macos-check macos-run macos-build macos-native-test macos-sandbox-smoke macos-smoke windows-run \
 	windows-build windows-smoke windows-verify android-run android-build android-emulator-smoke \
-	ios-run ios-build ios-simulator-build ios-simulator-smoke ios-device-smoke web-run web-build remote-release-check \
+	ios-run ios-build ios-embedded-core-poc ios-embedded-core-smoke ios-simulator-build ios-simulator-smoke ios-device-smoke web-run web-build remote-release-check \
 	release-prepare release-check cli-release runtime-fuzz runtime-resources runtime-stress run
 
 help:
@@ -88,6 +96,8 @@ help:
 	@echo "make android-emulator-smoke Exercise HTTP recovery and transfers on an Android Emulator"
 	@echo "make ios-run      Run on an iOS device (DEVICE=<id> optional)"
 	@echo "make ios-build    Build an unsigned iOS release (HTTPS URL required)"
+	@echo "make ios-embedded-core-poc Build the in-process Go Core XCFramework proof"
+	@echo "make ios-embedded-core-smoke Run the Embedded Core inside an iPhone Simulator"
 	@echo "make ios-simulator-smoke Exercise RPC and transfer resume on an iOS Simulator"
 	@echo "make ios-device-smoke Exercise transfer/reconnect and Profile launches on an iPhone"
 	@echo "make web-run      Run the Web app in Chrome"
@@ -341,6 +351,31 @@ ios-run: macos-check
 ios-build: macos-check remote-release-check
 	$(BRIDRA) build ios --root .. \
 		--backend-url '$(BACKEND_URL)' --token '$(BACKEND_TOKEN)'
+
+ios-embedded-core-poc: macos-check
+	mkdir -p $(MOBILE_TOOL_DIR) $(dir $(IOS_EMBEDDED_FRAMEWORK))
+	cd $(MOBILE_TOOL_MODULE) && $(GO) build -trimpath -o $(GOBIND) golang.org/x/mobile/cmd/gobind
+	cd $(MOBILE_TOOL_MODULE) && $(GO) build -trimpath -o $(GOMOBILE) golang.org/x/mobile/cmd/gomobile
+	cd $(MOBILE_TOOL_MODULE) && PATH='$(MOBILE_TOOL_DIR)':"$$PATH" $(GOMOBILE) bind \
+		-target=ios,iossimulator -iosversion=13.0 -trimpath \
+		-ldflags='-s -w' -prefix=BRD \
+		-o $(IOS_EMBEDDED_FRAMEWORK) github.com/cluion/bridra/backend/mobilebridge
+	@test -f $(IOS_EMBEDDED_FRAMEWORK)/Info.plist
+	@echo "Embedded Go Core: $(IOS_EMBEDDED_FRAMEWORK)"
+
+ios-embedded-core-smoke: ios-embedded-core-poc
+	mkdir -p $(IOS_EMBEDDED_HARNESS)/Sources/BridgeHost \
+		$(IOS_EMBEDDED_HARNESS)/Tests/BridgeHostTests
+	cp $(IOS_EMBEDDED_HARNESS_SOURCE)/Package.swift $(IOS_EMBEDDED_HARNESS)/Package.swift
+	cp $(IOS_EMBEDDED_HARNESS_SOURCE)/Sources/BridgeHost/BridgeHost.swift \
+		$(IOS_EMBEDDED_HARNESS)/Sources/BridgeHost/BridgeHost.swift
+	cp $(IOS_EMBEDDED_HARNESS_SOURCE)/Tests/BridgeHostTests/BridgeHostTests.swift \
+		$(IOS_EMBEDDED_HARNESS)/Tests/BridgeHostTests/BridgeHostTests.swift
+	ditto $(IOS_EMBEDDED_FRAMEWORK) $(IOS_EMBEDDED_HARNESS)/BridraMobile.xcframework
+	cd $(IOS_EMBEDDED_HARNESS) && xcodebuild test \
+		-scheme BridraMobileSmoke \
+		-destination '$(IOS_EMBEDDED_SIMULATOR)' \
+		-derivedDataPath $(IOS_EMBEDDED_HARNESS)/DerivedData
 
 ios-simulator-build: macos-check
 	$(FLUTTER) build ios --simulator --debug $(DART_DEFINES)

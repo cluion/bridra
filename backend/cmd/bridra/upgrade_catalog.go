@@ -149,6 +149,12 @@ var registeredUpgradeReleases = []upgradeRelease{
 		TemplateVersion:         6,
 		TemplateProtocolVersion: 1,
 	},
+	{
+		FrameworkVersion:        "0.17.0",
+		ProjectMetadataVersion:  3,
+		TemplateVersion:         7,
+		TemplateProtocolVersion: 1,
+	},
 }
 
 var registeredFrameworkMigrations = []frameworkMigration{
@@ -276,6 +282,13 @@ var registeredFrameworkMigrations = []frameworkMigration{
 		From:        "0.15.0",
 		To:          "0.16.0",
 		Description: "Adopt the application-owned macOS bookmark bridge and ResourceBroker-enabled Sidecar entrypoint, then update both framework dependencies.",
+		Automatic:   false,
+	},
+	{
+		ID:          "framework-0.16.0-to-0.17.0",
+		From:        "0.16.0",
+		To:          "0.17.0",
+		Description: "Adopt the application-owned iOS Embedded Core bridge, XCFramework packaging, and security-scoped resource lifecycle, then update both framework dependencies.",
 		Automatic:   false,
 	},
 }

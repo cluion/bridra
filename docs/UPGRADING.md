@@ -9,8 +9,8 @@ Run the read-only planner from a project root before changing dependencies:
 
 ```bash
 bridra upgrade
-bridra upgrade --plan --to 0.16.0
-bridra upgrade --plan --to 0.16.0 --json
+bridra upgrade --plan --to 0.17.0
+bridra upgrade --plan --to 0.17.0 --json
 ```
 
 When invoking the CLI through the backend dependency, use:
@@ -79,8 +79,8 @@ adding the necessary path fails verification.
 | Identity | Current | Compatibility rule |
 | --- | ---: | --- |
 | Project metadata schema | 3 | Schemas 1 and 2 remain readable and conservatively imply all six platforms. A newer schema requires a newer CLI. |
-| Framework SemVer | 0.16.0 | The project and selected target must match. An older version requires a complete registered migration path; downgrade plans are rejected. |
-| Project Template | 6 | Template v6 adds the application-owned macOS bookmark bridge and ResourceBroker-enabled Sidecar entrypoint while retaining v5 platform scope. Older templates require manual review. |
+| Framework SemVer | 0.17.0 | The project and selected target must match. An older version requires a complete registered migration path; downgrade plans are rejected. |
+| Project Template | 7 | Template v7 adds the application-owned iOS Embedded Core wrapper, Swift adapter, XCFramework build, and resource lifecycle while retaining v6 macOS resource handoff. Older templates require manual review. |
 | Application RPC protocol | Application-owned | `.bridra/project.json`, `schema/bridra.json`, and generated Go/Dart contracts must agree exactly. It may be newer than the selected release's Project Template baseline. |
 
 Framework SemVer, the Project Template protocol baseline, and an application's
@@ -232,8 +232,8 @@ the Go and Flutter dependencies together, add the version contract:
   "projectName": "your_app",
   "goModule": "example.com/your/app",
   "frameworkModule": "github.com/cluion/bridra/backend",
-  "frameworkVersion": "0.16.0",
-  "templateVersion": 6,
+  "frameworkVersion": "0.17.0",
+  "templateVersion": 7,
   "protocolVersion": 1
 }
 ```
@@ -258,8 +258,8 @@ runner or release target:
   "projectName": "your_app",
   "goModule": "example.com/your/app",
   "frameworkModule": "github.com/cluion/bridra/backend",
-  "frameworkVersion": "0.16.0",
-  "templateVersion": 6,
+  "frameworkVersion": "0.17.0",
+  "templateVersion": 7,
   "protocolVersion": 1,
   "platforms": ["android", "ios", "linux", "macos", "windows", "web"]
 }
@@ -284,6 +284,51 @@ and release expectations. Bridra does not delete existing runner directories.
    template, and any explicit RPC changes it records have actually been applied.
 6. Run any platform builds required by the application before committing the
    upgrade.
+
+## Framework 0.16.0 to 0.17.0
+
+Project Template v7 adds an opt-in application-owned iOS Embedded Core. The Go
+Core runs inside the app process and uses a Flutter MethodChannel bridge for
+unary and pull-backed streaming RPC, exact cancellation, managed file transfer,
+and bounded shutdown. A security-scoped document URL remains owned by Swift;
+only an opaque process-local capability crosses into Dart and application RPC.
+
+This transition is manual because `backend/mobilebridge`, the Xcode project,
+`AppDelegate`, document-picker UI, signing, capabilities, and application data
+are application-owned and Bridra upgrades never overwrite them:
+
+1. Preserve the application's providers, routes, persistence, shutdown order,
+   transport selection, iOS signing, capabilities, and rollback path.
+2. Review and merge the Template v7 `backend/mobilebridge` runtime and tests,
+   isolated gomobile dependency module, `ios-embedded-core-build` Make target,
+   ignored XCFramework path, and `ios/Runner/BridraEmbeddedRuntime.swift` seed.
+   Do not replace application-owned files wholesale.
+3. Build the application package into `AppCore.xcframework`, add the framework
+   and Swift adapter to the Runner target, and call
+   `installBridraEmbeddedRuntime(token:)` once from the application-owned
+   `AppDelegate` before Dart sends Embedded RPCs.
+4. Construct `EmbeddedRpcClient` with the matching token and
+   `MethodChannelEmbeddedRpcBridge`. Keep transport selection explicit and fail
+   closed; never fall back silently to an external HTTP backend.
+5. For a `UIDocumentPicker` directory URL, grant security-scoped access on the
+   main thread, pass only the opaque capability to Dart／RPC, detach the
+   application Files source before native release, and close all remaining
+   streams, transfers, scopes, and the runtime during application shutdown.
+6. Run Go race tests, Flutter package tests, XCFramework device and Simulator
+   builds, Runner native tests, and application-specific Simulator／physical
+   device acceptance. Background interruption and cold launch remain consumer
+   gates even when framework tests pass.
+7. After the application-owned integration succeeds, update both framework
+   dependencies to `0.17.0` and record metadata schema `3`, Template version
+   `7`, Framework version `0.17.0`, the existing application RPC protocol, and
+   the canonical platform list in `.bridra/project.json`.
+
+This release does not change the application RPC protocol or Template protocol
+baseline. Roll back by releasing active resources and transfers, closing the
+Embedded runtime, restoring the `0.16.0` dependencies and lockfiles, recording
+Template version `6`, restoring the reviewed pre-v7 iOS runner／bridge state,
+and selecting the application's previous transport. Preserve application data
+that must remain readable by the restored version.
 
 ## Framework 0.15.0 to 0.16.0
 
