@@ -234,7 +234,7 @@ func validateFields(
 		}
 		names[field.Name] = struct{}{}
 		switch field.Type {
-		case "string", "integer", "boolean":
+		case "string", "integer", "number", "boolean":
 			if field.Object != nil || field.Ref != "" {
 				return fmt.Errorf("codegen: %s object or ref requires type object", fieldPath)
 			}

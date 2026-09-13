@@ -82,6 +82,66 @@ func TestGenerateSupportsCustomRuntimeImports(t *testing.T) {
 	}
 }
 
+func TestGenerateSupportsNumberFieldsAcrossRequestsAndResponses(t *testing.T) {
+	schema := Schema{
+		SchemaVersion:   SupportedSchemaVersion,
+		ProtocolVersion: 1,
+		Methods: []Method{{
+			Name:       "areas.nearby",
+			ClientName: "nearbyAreas",
+			Params: &Object{
+				GoType:   "NearbyAreasRequest",
+				DartType: "NearbyAreasRequest",
+				Fields: []Field{
+					{Name: "latitude", Type: "number"},
+					{Name: "longitude", Type: "number", Nullable: true},
+					{Name: "bounds", Type: "number", Array: true},
+				},
+			},
+			Result: Object{
+				GoType:   "NearbyAreasResponse",
+				DartType: "NearbyAreasResult",
+				Fields: []Field{
+					{Name: "distanceMeters", Type: "number"},
+					{Name: "optionalDistances", Type: "number", Array: true, Nullable: true},
+				},
+			},
+		}},
+	}
+	outputs, err := Generate(schema)
+	if err != nil {
+		t.Fatalf("generate number fields: %v", err)
+	}
+	requests := generatedContent(t, outputs, GoRequestsPath)
+	for _, fragment := range []string{"Latitude  float64", "Longitude *float64", "Bounds    []float64"} {
+		if !strings.Contains(requests, fragment) {
+			t.Errorf("Go requests do not contain %q:\n%s", fragment, requests)
+		}
+	}
+	responses := generatedContent(t, outputs, GoResponsesPath)
+	for _, fragment := range []string{"DistanceMeters    float64", "OptionalDistances *[]float64"} {
+		if !strings.Contains(responses, fragment) {
+			t.Errorf("Go responses do not contain %q:\n%s", fragment, responses)
+		}
+	}
+	dart := generatedContent(t, outputs, DartClientPath)
+	for _, fragment := range []string{
+		"final double latitude;",
+		"final double? longitude;",
+		"final List<double> bounds;",
+		"final double distanceMeters;",
+		"final List<double>? optionalDistances;",
+		"_requireNumberField(result, 'distanceMeters')",
+		"_optionalNumberListField(result, 'optionalDistances')",
+		"value is! num || !value.isFinite",
+		"(item as num).toDouble()",
+	} {
+		if !strings.Contains(dart, fragment) {
+			t.Errorf("Dart client does not contain %q:\n%s", fragment, dart)
+		}
+	}
+}
+
 func TestGenerateSupportsTypedStreamingMethods(t *testing.T) {
 	schema := Schema{
 		SchemaVersion:   SupportedSchemaVersion,
@@ -401,6 +461,11 @@ func TestSchemaValidatesIntegerBounds(t *testing.T) {
 			name:  "maximum on array",
 			field: Field{Name: "values", Type: "integer", Array: true, Maximum: integerPointer(5)},
 			want:  "maximum requires a scalar integer",
+		},
+		{
+			name:  "integer minimum on number",
+			field: Field{Name: "latitude", Type: "number", Minimum: integerPointer(-90)},
+			want:  "minimum requires a scalar integer",
 		},
 		{
 			name: "reversed bounds",
