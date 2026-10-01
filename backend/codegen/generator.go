@@ -494,7 +494,7 @@ func writeDartRequest(
 	writeDartConstructor(output, object.DartType, object.Fields)
 	output.WriteString("\n")
 	for _, field := range object.Fields {
-		fmt.Fprintf(output, "  final %s %s;\n", dartType(field), field.Name)
+		fmt.Fprintf(output, "  final %s %s;\n", dartType(field), dartFieldIdentifier(field.Name))
 	}
 	writeDartToJson(output, object.Fields)
 	output.WriteString("}\n")
@@ -515,7 +515,7 @@ func writeDartResult(
 	writeDartConstructor(output, method.Result.DartType, fields)
 	output.WriteString("\n")
 	for _, field := range fields {
-		fmt.Fprintf(output, "  final %s %s;\n", dartType(field), field.Name)
+		fmt.Fprintf(output, "  final %s %s;\n", dartType(field), dartFieldIdentifier(field.Name))
 	}
 	output.WriteString("}\n")
 }
@@ -538,7 +538,7 @@ func writeDartResponseObject(
 	writeDartConstructor(output, object.DartType, object.Fields)
 	output.WriteString("\n")
 	for _, field := range object.Fields {
-		fmt.Fprintf(output, "  final %s %s;\n", dartType(field), field.Name)
+		fmt.Fprintf(output, "  final %s %s;\n", dartType(field), dartFieldIdentifier(field.Name))
 	}
 	writeDartFromJsonFactory(output, object)
 	output.WriteString("}\n")
@@ -562,7 +562,7 @@ func writeDartReusableObject(
 	writeDartConstructor(output, object.DartType, object.Fields)
 	output.WriteString("\n")
 	for _, field := range object.Fields {
-		fmt.Fprintf(output, "  final %s %s;\n", dartType(field), field.Name)
+		fmt.Fprintf(output, "  final %s %s;\n", dartType(field), dartFieldIdentifier(field.Name))
 	}
 	writeDartToJson(output, object.Fields)
 	writeDartFromJsonFactory(output, object)
@@ -574,7 +574,7 @@ func writeDartToJson(output *strings.Builder, fields []Field) {
 	for _, field := range fields {
 		entry := fmt.Sprintf("%s: %s", dartString(field.Name), dartEncodeExpression(field))
 		if field.Nullable {
-			entry = fmt.Sprintf("if (%s != null) %s", field.Name, entry)
+			entry = fmt.Sprintf("if (%s != null) %s", dartFieldIdentifier(field.Name), entry)
 		}
 		entries = append(entries, entry)
 	}
@@ -595,7 +595,7 @@ func writeDartFromJsonFactory(output *strings.Builder, object Object) {
 	for _, field := range object.Fields {
 		arguments = append(
 			arguments,
-			fmt.Sprintf("%s: %s", field.Name, dartDecodeExpression("json", field)),
+			fmt.Sprintf("%s: %s", dartFieldIdentifier(field.Name), dartDecodeExpression("json", field)),
 		)
 	}
 	inline := fmt.Sprintf(
@@ -641,7 +641,7 @@ func writeDartDecodedArgument(
 			output,
 			"%s%s: %s,\n",
 			indent,
-			field.Name,
+			dartFieldIdentifier(field.Name),
 			dartDecodeExpression(source, field),
 		)
 		return
@@ -654,7 +654,7 @@ func writeDartDecodedArgument(
 		output,
 		"%s%s: %s<%s>(\n",
 		indent,
-		field.Name,
+		dartFieldIdentifier(field.Name),
 		helper,
 		field.Object.DartType,
 	)
@@ -667,9 +667,9 @@ func writeDartDecodedArgument(
 func writeDartConstructor(output *strings.Builder, dartType string, fields []Field) {
 	parameters := make([]string, 0, len(fields))
 	for _, field := range fields {
-		parameter := "required this." + field.Name
+		parameter := "required this." + dartFieldIdentifier(field.Name)
 		if field.Nullable {
-			parameter = "this." + field.Name
+			parameter = "this." + dartFieldIdentifier(field.Name)
 		}
 		parameters = append(parameters, parameter)
 	}
@@ -1228,7 +1228,7 @@ func dartDecodeExpression(source string, field Field) string {
 }
 
 func dartEncodeExpression(field Field) string {
-	value := field.Name
+	value := dartFieldIdentifier(field.Name)
 	if field.Type == "file" {
 		if field.Nullable {
 			return value + "?.toJson()"
@@ -1354,7 +1354,31 @@ func goIdentifier(name string) string {
 	if name == "" {
 		return "Field"
 	}
-	return string(unicode.ToUpper(rune(name[0]))) + name[1:]
+	return string(unicode.ToUpper(rune(name[0]))) + camelizeUnderscores(name[1:])
+}
+
+func dartFieldIdentifier(name string) string {
+	if name == "" {
+		return "field"
+	}
+	return name[:1] + camelizeUnderscores(name[1:])
+}
+
+func camelizeUnderscores(name string) string {
+	var output strings.Builder
+	upper := false
+	for _, character := range name {
+		if character == '_' {
+			upper = true
+			continue
+		}
+		if upper {
+			character = unicode.ToUpper(character)
+			upper = false
+		}
+		output.WriteRune(character)
+	}
+	return output.String()
 }
 
 func identifierFromSeparated(value string) string {

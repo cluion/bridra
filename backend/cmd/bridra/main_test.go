@@ -303,6 +303,62 @@ func TestDartFormatterCanonicalizesClurivaShapes(t *testing.T) {
 	}
 }
 
+func TestDartFormatterPreservesAshPinWireNames(t *testing.T) {
+	if os.Getenv("BRIDRA_DART_FORMATTER_INTEGRATION") != "1" {
+		t.Skip("set BRIDRA_DART_FORMATTER_INTEGRATION=1 to run the pinned Dart formatter")
+	}
+	repository := repositoryRoot(t)
+	root, err := os.MkdirTemp(repository, ".bridra-dart-format-test-*")
+	if err != nil {
+		t.Fatalf("create project root: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(root); err != nil {
+			t.Errorf("remove project root: %v", err)
+		}
+	})
+	schema := codegen.Schema{
+		SchemaVersion:   codegen.SupportedSchemaVersion,
+		ProtocolVersion: 1,
+		Methods: []codegen.Method{{
+			Name: "areas.listByBounds", ClientName: "listAreasByBounds",
+			Params: &codegen.Object{
+				GoType: "BoundsRequest", DartType: "BoundsRequest",
+				Fields: []codegen.Field{{Name: "radius_meters", Type: "number"}},
+			},
+			Result: codegen.Object{
+				GoType: "BoundsResponse", DartType: "BoundsResult",
+				Fields: []codegen.Field{{Name: "distance_meters", Type: "number"}},
+			},
+		}},
+	}
+	encoded, err := json.Marshal(schema)
+	if err != nil {
+		t.Fatalf("encode schema: %v", err)
+	}
+	schemaPath := filepath.Join(root, "schema.json")
+	if err := os.WriteFile(schemaPath, encoded, 0o644); err != nil {
+		t.Fatalf("write schema: %v", err)
+	}
+	command := newGenerateCommand()
+	arguments := []string{"--schema", schemaPath, "--root", root}
+	if err := command.run(arguments, io.Discard, io.Discard); err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if err := command.run(append(append([]string(nil), arguments...), "--check"), io.Discard, io.Discard); err != nil {
+		t.Fatalf("check generated output: %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(codegen.DartClientPath)))
+	if err != nil {
+		t.Fatalf("read generated Dart: %v", err)
+	}
+	for _, fragment := range []string{"final double radiusMeters;", "'radius_meters': radiusMeters", "final double distanceMeters;", "'areas.listByBounds'"} {
+		if !bytes.Contains(content, []byte(fragment)) {
+			t.Errorf("formatted Dart does not contain %q", fragment)
+		}
+	}
+}
+
 func generatedOutput(t *testing.T, outputs []codegen.Output, path string) []byte {
 	t.Helper()
 	for _, output := range outputs {
