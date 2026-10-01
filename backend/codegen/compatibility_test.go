@@ -308,6 +308,63 @@ func TestCompareSchemasIgnoresOrderingAndGeneratedNames(t *testing.T) {
 	}
 }
 
+func TestCompareSchemasTreatsAshPinStyleWireRenamesAsBreaking(t *testing.T) {
+	baseline := Schema{
+		SchemaVersion:   SupportedSchemaVersion,
+		ProtocolVersion: 1,
+		Methods: []Method{{
+			Name: "areas.listByBounds", ClientName: "listAreasByBounds",
+			Params: &Object{
+				GoType: "BoundsRequest", DartType: "BoundsRequest",
+				Fields: []Field{{Name: "radius_meters", Type: "number"}},
+			},
+			Result: Object{
+				GoType: "BoundsResponse", DartType: "BoundsResult",
+				Fields: []Field{{Name: "distance_meters", Type: "number"}},
+			},
+		}},
+	}
+	tests := []struct {
+		name   string
+		change func(*Schema)
+		code   string
+	}{
+		{
+			name: "method rename",
+			change: func(schema *Schema) {
+				schema.Methods[0].Name = "areas.listbybounds"
+			},
+			code: "method_removed",
+		},
+		{
+			name: "field rename",
+			change: func(schema *Schema) {
+				schema.Methods[0].Params.Fields[0].Name = "radiusMeters"
+			},
+			code: "field_removed",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			current := baseline
+			current.Methods = append([]Method(nil), baseline.Methods...)
+			current.Methods[0].Params = &Object{
+				GoType:   baseline.Methods[0].Params.GoType,
+				DartType: baseline.Methods[0].Params.DartType,
+				Fields:   append([]Field(nil), baseline.Methods[0].Params.Fields...),
+			}
+			test.change(&current)
+			report, err := CompareSchemas(baseline, current)
+			if err != nil {
+				t.Fatalf("compare schemas: %v", err)
+			}
+			if report.Status != SchemaIncompatible || !report.ProtocolBumpRequired || !compatibilityHasChange(report, test.code) {
+				t.Fatalf("report = %#v, want breaking %s", report, test.code)
+			}
+		})
+	}
+}
+
 func TestCompareSchemasResolvesReusableTypeWireShapes(t *testing.T) {
 	baseline := compatibilityTestSchema(1)
 	baseline.Types = []NamedObject{{

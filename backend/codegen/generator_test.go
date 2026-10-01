@@ -142,6 +142,79 @@ func TestGenerateSupportsNumberFieldsAcrossRequestsAndResponses(t *testing.T) {
 	}
 }
 
+func TestGeneratePreservesCamelCaseMethodsAndSnakeCaseWireFields(t *testing.T) {
+	schema := Schema{
+		SchemaVersion:   SupportedSchemaVersion,
+		ProtocolVersion: 1,
+		Methods: []Method{{
+			Name:       "areas.listByBounds",
+			ClientName: "listAreasByBounds",
+			Params: &Object{
+				GoType:   "ListByBoundsRequest",
+				DartType: "ListByBoundsRequest",
+				Fields: []Field{
+					{Name: "latitude", Type: "number"},
+					{Name: "radius_meters", Type: "number", Nullable: true},
+				},
+			},
+			Result: Object{
+				GoType:   "ListByBoundsResponse",
+				DartType: "ListByBoundsResult",
+				Fields:   []Field{{Name: "distance_meters", Type: "number"}},
+			},
+			Meta: []Field{{Name: "dataset_version", Type: "string", Nullable: true}},
+		}, {
+			Name: "meta.getDataset", ClientName: "getDataset",
+			Result: Object{
+				GoType: "DatasetResponse", DartType: "DatasetResult",
+				Fields: []Field{{Name: "dataset_version", Type: "string"}},
+			},
+		}},
+	}
+	outputs, err := Generate(schema)
+	if err != nil {
+		t.Fatalf("generate AshPin-style names: %v", err)
+	}
+	routes := generatedContent(t, outputs, GoRoutesPath)
+	for _, fragment := range []string{
+		`MethodAreasListByBounds      = "areas.listByBounds"`,
+		`RouteActionAreasListByBounds = "listByBounds"`,
+		`MethodMetaGetDataset`,
+		`"meta.getDataset"`,
+	} {
+		if !strings.Contains(routes, fragment) {
+			t.Errorf("Go routes do not contain %q:\n%s", fragment, routes)
+		}
+	}
+	requests := generatedContent(t, outputs, GoRequestsPath)
+	for _, fragment := range []string{`RadiusMeters *float64 ` + "`json:\"radius_meters,omitempty\"`"} {
+		if !strings.Contains(requests, fragment) {
+			t.Errorf("Go requests do not contain %q:\n%s", fragment, requests)
+		}
+	}
+	responses := generatedContent(t, outputs, GoResponsesPath)
+	for _, fragment := range []string{`DistanceMeters float64 ` + "`json:\"distance_meters\"`"} {
+		if !strings.Contains(responses, fragment) {
+			t.Errorf("Go responses do not contain %q:\n%s", fragment, responses)
+		}
+	}
+	dart := generatedContent(t, outputs, DartClientPath)
+	for _, fragment := range []string{
+		"final double? radiusMeters;",
+		"'radius_meters': radiusMeters",
+		"final double distanceMeters;",
+		"_requireNumberField(result, 'distance_meters')",
+		"final String? datasetVersion;",
+		"'dataset_version'",
+		"'areas.listByBounds'",
+		"'meta.getDataset'",
+	} {
+		if !strings.Contains(dart, fragment) {
+			t.Errorf("Dart client does not contain %q:\n%s", fragment, dart)
+		}
+	}
+}
+
 func TestGenerateSupportsTypedStreamingMethods(t *testing.T) {
 	schema := Schema{
 		SchemaVersion:   SupportedSchemaVersion,
@@ -344,12 +417,108 @@ func TestSchemaExplainsValidMethodNames(t *testing.T) {
 	}
 	for _, expected := range []string{
 		`methods[0].name "Users_Create" is invalid`,
-		"at least two lowercase dot-separated segments",
-		`for example, "users.create"`,
+		"at least two dot-separated segments",
+		`for example, "areas.listByBounds"`,
 	} {
 		if !strings.Contains(err.Error(), expected) {
 			t.Fatalf("error = %q, want %q", err, expected)
 		}
+	}
+}
+
+func TestSchemaRejectsGeneratedNameCollisions(t *testing.T) {
+	result := func(name string) Object {
+		return Object{
+			GoType:   name + "Response",
+			DartType: name + "Result",
+			Fields:   []Field{{Name: "ok", Type: "boolean"}},
+		}
+	}
+	tests := []struct {
+		name    string
+		methods []Method
+		want    string
+	}{
+		{
+			name: "field alias",
+			methods: []Method{{
+				Name: "areas.nearby", ClientName: "nearbyAreas",
+				Params: &Object{
+					GoType: "NearbyRequest", DartType: "NearbyRequest",
+					Fields: []Field{{Name: "radius_meters", Type: "number"}, {Name: "radiusMeters", Type: "number"}},
+				},
+				Result: result("Nearby"),
+			}},
+			want: `generate the same Go field "RadiusMeters"`,
+		},
+		{
+			name: "response and meta alias",
+			methods: []Method{{
+				Name: "meta.getDataset", ClientName: "getDataset",
+				Result: Object{
+					GoType: "DatasetResponse", DartType: "DatasetResult",
+					Fields: []Field{{Name: "dataset_version", Type: "string"}},
+				},
+				Meta: []Field{{Name: "datasetVersion", Type: "string"}},
+			}},
+			want: `generate the same Dart field "datasetVersion"`,
+		},
+		{
+			name: "response and meta duplicate",
+			methods: []Method{{
+				Name: "meta.getDataset", ClientName: "getDataset",
+				Result: Object{
+					GoType: "DatasetResponse", DartType: "DatasetResult",
+					Fields: []Field{{Name: "dataset_version", Type: "string"}},
+				},
+				Meta: []Field{{Name: "dataset_version", Type: "string"}},
+			}},
+			want: `generate the same Dart field "datasetVersion"`,
+		},
+		{
+			name: "method constant",
+			methods: []Method{
+				{Name: "areas.foo.bar", ClientName: "fooBar", Result: result("FooBar")},
+				{Name: "areas.fooBar", ClientName: "fooBarAgain", Result: result("FooBarAgain")},
+			},
+			want: `generate the same constant "MethodAreasFooBar"`,
+		},
+		{
+			name: "route group constant",
+			methods: []Method{
+				{Name: "areas.foo.bar", ClientName: "fooBar", Result: result("FooBar")},
+				{Name: "areasFoo.baz", ClientName: "fooBaz", Result: result("FooBaz")},
+			},
+			want: `generate the same Go constant "RouteGroupAreasFoo"`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			schema := Schema{SchemaVersion: SupportedSchemaVersion, ProtocolVersion: 1, Methods: test.methods}
+			if err := schema.Validate(); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("validation error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestSchemaRejectsMalformedSnakeCaseFields(t *testing.T) {
+	for _, name := range []string{"_radius", "radius_", "radius__meters"} {
+		t.Run(name, func(t *testing.T) {
+			schema := Schema{
+				SchemaVersion: SupportedSchemaVersion, ProtocolVersion: 1,
+				Methods: []Method{{
+					Name: "areas.nearby", ClientName: "nearbyAreas",
+					Result: Object{
+						GoType: "NearbyResponse", DartType: "NearbyResult",
+						Fields: []Field{{Name: name, Type: "number"}},
+					},
+				}},
+			}
+			if err := schema.Validate(); err == nil || !strings.Contains(err.Error(), ".name \""+name+"\" is invalid") {
+				t.Fatalf("validation error = %v, want invalid field name", err)
+			}
+		})
 	}
 }
 

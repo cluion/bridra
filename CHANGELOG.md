@@ -3,6 +3,16 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
+## [Unreleased]
+
+### Added
+
+- Schema codegen accepts camelCase RPC method actions and snake_case JSON field
+  names while preserving their wire names. Snake_case fields generate
+  PascalCase Go and camelCase Dart identifiers; collisions with other fields or
+  generated methods are rejected in the affected Go／Dart scope before code
+  generation.
+
 ## [0.18.0] - 2026-09-13
 
 ### Added

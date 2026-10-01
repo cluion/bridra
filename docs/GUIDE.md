@@ -644,10 +644,20 @@ wire-compatible. Ordering and generated Go/Dart identifiers do not affect JSON
 wire compatibility; identifier renames remain application source migrations
 that must be reviewed separately.
 
-RPC method names use at least two lowercase dot-separated segments. Every
-segment starts with a letter and then contains only lowercase letters or digits,
-for example `users.create` or `reports.v2status`. Invalid names report this rule
-and example directly.
+RPC method names use at least two dot-separated segments. Every segment starts
+with a lowercase letter and then contains only ASCII letters or digits; camelCase
+actions such as `areas.listByBounds` are accepted. Schema field names may use
+camelCase or snake_case, for example `radiusMeters` or `radius_meters`. Each field
+name starts with an ASCII letter, followed by ASCII letters or digits and
+optional single underscores between nonempty segments. Generated Go and Dart
+identifiers for snake_case fields use PascalCase／camelCase, respectively, while
+JSON keys preserve the schema name. Existing non-snake-case identifiers are
+unchanged.
+Names that would collide after identifier generation are rejected, including
+fields that would shadow an emitted method such as request `toJson` or Go
+`ValidatePayload`. Result and meta fields share a Dart class, while only result
+fields share a Go response struct. Changing an existing method or JSON field
+name remains a wire-contract change.
 
 Codegen supports string, integer, number, and boolean fields, scalar arrays
 (including RFC 3339 date-time arrays), nullable fields, string enums, inline or

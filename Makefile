@@ -129,7 +129,7 @@ codegen-check:
 
 dart-codegen-format-test: doctor
 	cd backend && BRIDRA_DART_FORMATTER_INTEGRATION=1 $(GO) test ./cmd/bridra \
-		-run '^TestDartFormatterCanonicalizesClurivaShapes$$' -count=1
+		-run '^TestDartFormatter(CanonicalizesClurivaShapes|PreservesAshPinWireNames)$$' -count=1
 
 license-check:
 	@cmp -s LICENSE backend/LICENSE || \

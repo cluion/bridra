@@ -11,13 +11,14 @@ import (
 const SupportedSchemaVersion = 1
 
 var (
-	methodPattern     = regexp.MustCompile(`^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)+$`)
+	methodPattern     = regexp.MustCompile(`^[a-z][A-Za-z0-9]*(\.[a-z][A-Za-z0-9]*)+$`)
 	identifierPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*$`)
+	fieldNamePattern  = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*(_[A-Za-z0-9]+)*$`)
 )
 
-const methodNameGuidance = "use at least two lowercase dot-separated segments; " +
-	"each segment must start with a letter and contain only lowercase letters or digits " +
-	`(for example, "users.create")`
+const methodNameGuidance = "use at least two dot-separated segments; " +
+	"each segment must start with a lowercase letter and contain only ASCII letters or digits " +
+	`(for example, "areas.listByBounds")`
 
 type Schema struct {
 	SchemaVersion   int           `json:"schemaVersion"`
@@ -113,6 +114,8 @@ func (schema Schema) Validate() error {
 	definitions := make(map[string]Object, len(schema.Types))
 	methods := make(map[string]struct{}, len(schema.Methods))
 	clients := make(map[string]struct{}, len(schema.Methods))
+	routeGroups := make(map[string]string, len(schema.Methods))
+	methodConstants := make(map[string]string, len(schema.Methods))
 	goTypes := make(map[string]string, len(schema.Types)+len(schema.Methods)*2)
 	dartTypes := make(map[string]string, len(schema.Types)+len(schema.Methods)*2)
 	for index, definition := range schema.Types {
@@ -154,6 +157,17 @@ func (schema Schema) Validate() error {
 			return fmt.Errorf("codegen: duplicate method %q", method.Name)
 		}
 		methods[method.Name] = struct{}{}
+		group, _ := splitRouteMethod(method.Name)
+		groupConstant := goRouteGroupConstant(group)
+		if previous, exists := routeGroups[groupConstant]; exists && previous != group {
+			return fmt.Errorf("codegen: RPC route groups %q and %q generate the same Go constant %q", previous, group, groupConstant)
+		}
+		routeGroups[groupConstant] = group
+		methodConstant := goMethodConstant(method.Name)
+		if previous, exists := methodConstants[methodConstant]; exists {
+			return fmt.Errorf("codegen: RPC methods %q and %q generate the same constant %q", previous, method.Name, methodConstant)
+		}
+		methodConstants[methodConstant] = method.Name
 		if !identifierPattern.MatchString(method.ClientName) {
 			return fmt.Errorf("codegen: %s.clientName %q is invalid", path, method.ClientName)
 		}
@@ -173,8 +187,11 @@ func (schema Schema) Validate() error {
 		if err := validateFields(path+".meta", method.Meta, goTypes, dartTypes, definitions, true); err != nil {
 			return err
 		}
+		if err := validateGeneratedFieldNames(path+".result/meta", appendFields(method.Result.Fields, method.Meta), false); err != nil {
+			return err
+		}
 	}
-	return nil
+	return validateGeneratedMembers(schema.resolveReferences())
 }
 
 func validateObject(
@@ -212,7 +229,30 @@ func validateObject(
 	if len(object.Fields) == 0 {
 		return fmt.Errorf("codegen: %s.fields must not be empty", path)
 	}
-	return validateFields(path+".fields", object.Fields, goTypes, dartTypes, definitions, allowFile)
+	if err := validateFields(path+".fields", object.Fields, goTypes, dartTypes, definitions, allowFile); err != nil {
+		return err
+	}
+	return validateGeneratedFieldNames(path+".fields", object.Fields, true)
+}
+
+func validateGeneratedFieldNames(path string, fields []Field, hasGoStruct bool) error {
+	goNames := make(map[string]string, len(fields))
+	dartNames := make(map[string]string, len(fields))
+	for _, field := range fields {
+		if hasGoStruct {
+			goName := goIdentifier(field.Name)
+			if previous, exists := goNames[goName]; exists {
+				return fmt.Errorf("codegen: fields %q and %q in %s generate the same Go field %q", previous, field.Name, path, goName)
+			}
+			goNames[goName] = field.Name
+		}
+		dartName := dartFieldIdentifier(field.Name)
+		if previous, exists := dartNames[dartName]; exists {
+			return fmt.Errorf("codegen: fields %q and %q in %s generate the same Dart field %q", previous, field.Name, path, dartName)
+		}
+		dartNames[dartName] = field.Name
+	}
+	return nil
 }
 
 func validateFields(
@@ -226,7 +266,7 @@ func validateFields(
 	names := make(map[string]struct{}, len(fields))
 	for index, field := range fields {
 		fieldPath := fmt.Sprintf("%s[%d]", path, index)
-		if !identifierPattern.MatchString(field.Name) {
+		if !fieldNamePattern.MatchString(field.Name) {
 			return fmt.Errorf("codegen: %s.name %q is invalid", fieldPath, field.Name)
 		}
 		if _, exists := names[field.Name]; exists {
