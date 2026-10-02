@@ -8,20 +8,21 @@
 [Upgrading](docs/UPGRADING.md) ·
 [Contributing](CONTRIBUTING.md)
 
-Bridra 0.16 combines Flutter UI with a Laravel-inspired Go
+Bridra combines Flutter UI with a Laravel-inspired Go
 application pipeline. It provides one project model for Windows, macOS, Linux,
 Android, iOS, and Web while keeping application code explicit and testable.
 
 ```text
 Flutter UI -> typed gateway -> RPC transport
                               |-- Desktop: managed Go sidecar over stdin/stdout
-                              `-- Mobile/Web: Go HTTP server
+                              |-- Android/iOS/Web (default): Go HTTP server
+                              `-- iOS (opt-in): in-process Go Core
                                                    |
                                                    v
                               Middleware -> Controller -> Service
 ```
 
-Framework version `0.18.0` and the Project Template protocol baseline `1`
+Framework version `0.19.0` and the Project Template protocol baseline `1`
 evolve independently. Applications own their RPC protocol and may increment it
 when regenerating a coordinated Go/Dart contract.
 Bridra is licensed under the [MIT License](LICENSE), Copyright (c) 2026 Cluion.
@@ -43,7 +44,8 @@ distribution channels.
 ## What Bridra provides
 
 - Typed Go and Dart contracts generated from one versioned RPC schema,
-  including reusable named object types and structured object arrays
+  including reusable named object types, structured object arrays, camelCase
+  RPC method actions, and snake_case JSON fields with preserved wire names
 - Laravel-style Middleware, Controller, Service, Provider, Model, Request, and
   Response application layers
 - Typed Config and dependency injection with singleton, transient, scoped, and
@@ -68,6 +70,8 @@ distribution channels.
 - Parent-bound desktop Sidecars that shut down when their Flutter owner exits
 - Opt-in native macOS bookmark handoff with bounded, session-local resource
   capabilities and shutdown-safe leases
+- Opt-in application-owned iOS Embedded Core with bounded streaming, managed
+  transfers, and security-scoped resource lifecycle without an HTTP socket
 - Generated Go `Application` ownership with exactly-once, bounded Sidecar
   shutdown across EOF, Serve failure, signal cancellation, and blocked stdin
 - Typed server streams with progress events, cancellation, and bounded
@@ -88,7 +92,7 @@ distribution channels.
 | macOS | Yes | Bundled sidecar | macOS app |
 | Linux | Yes | Bundled sidecar | Linux bundle |
 | Android | Yes | HTTP RPC | APK |
-| iOS | Yes | HTTP RPC | Unsigned iOS app |
+| iOS | Yes | HTTP RPC by default; opt-in Embedded Core | Unsigned iOS app |
 | Web | Yes | HTTP RPC with CORS | Static Web bundle |
 
 Desktop applications launch and own an ephemeral-token Go child process. The
@@ -110,7 +114,7 @@ Install Go 1.25+, FVM 4.x, and the native toolchain required by your target
 platform. Then install the exact Bridra CLI version:
 
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.18.0
+go install github.com/cluion/bridra/backend/cmd/bridra@v0.19.0
 bridra version
 ```
 

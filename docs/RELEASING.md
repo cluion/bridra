@@ -76,20 +76,21 @@ commits or Pull Requests.
    changelogs, and live documentation from one version:
 
    ```bash
-   make release-prepare VERSION=0.18.0
-   make release-check VERSION=0.18.0
+   make release-prepare VERSION=0.19.0
+   make release-check VERSION=0.19.0
    ```
 
    The prepare command never creates a tag, publishes a package, or creates a
    release. It refuses a downgrade, inconsistent starting state, or a new
    version while the previous changelog entry is still marked `Unreleased`.
 3. Review the changelog, upgrade/rollback guidance, and independently versioned
-   protocol, Project Template, and project metadata contracts. Register the new
+   protocol, Project Template, and project metadata contracts. Preserve historical
+   release references when reviewing the prepared documentation. Register the new
    release and every required transition in the upgrade migration catalog;
    verification rejects a new current version without a complete path from each
    older registered release.
 4. Replace `Unreleased` in both changelogs with the intended release date, then
-   run `make release-check VERSION=0.18.0 FINAL=1`. The protected release workflow
+   run `make release-check VERSION=0.19.0 FINAL=1`. The protected release workflow
    repeats this final check and refuses an unfinished changelog.
 5. Run the full local verification and workflow lint. From the clean release
    commit, require a zero-warning Dart publish dry run, build the CLI artifacts
@@ -106,9 +107,9 @@ tagging it.
 Windows maintainers use:
 
 ```powershell
-.\tool\windows.ps1 -Task release-prepare -Version 0.18.0
-.\tool\windows.ps1 -Task release-check -Version 0.18.0
-.\tool\windows.ps1 -Task release-check -Version 0.18.0 -Final
+.\tool\windows.ps1 -Task release-prepare -Version 0.19.0
+.\tool\windows.ps1 -Task release-check -Version 0.19.0
+.\tool\windows.ps1 -Task release-check -Version 0.19.0 -Final
 ```
 
 Security fixes under embargo use a private advisory and private fork until the
@@ -121,7 +122,7 @@ Request before the agreed disclosure time.
 make cli-release
 ```
 
-This produces the following under `build/bridra/cli/0.18.0/`:
+This produces the following under `build/bridra/cli/0.19.0/`:
 
 - macOS amd64 and arm64 `tar.gz` archives
 - Linux amd64 and arm64 `tar.gz` archives
@@ -134,7 +135,7 @@ The source commit and commit timestamp are embedded into each binary. Confirm
 the native archive before publishing:
 
 ```bash
-(cd build/bridra/cli/0.18.0 && shasum -a 256 -c SHA256SUMS)
+(cd build/bridra/cli/0.19.0 && shasum -a 256 -c SHA256SUMS)
 bridra version --json
 ```
 
@@ -152,13 +153,13 @@ by these attestations.
 
 ## Tag and publish
 
-For Bridra 0.18.0, create the annotated Go submodule tag only after the release
+For Bridra 0.19.0, create the annotated Go submodule tag only after the release
 Pull Request is merged and the repository owner gives final authorization:
 
 ```bash
 git fetch origin main
-git tag -a backend/v0.18.0 <verified-main-sha> -m "Bridra 0.18.0"
-git push origin backend/v0.18.0
+git tag -a backend/v0.19.0 <verified-main-sha> -m "Bridra 0.19.0"
+git push origin backend/v0.19.0
 ```
 
 The protected GitHub workflow requires the tag to point at the current `main`
@@ -204,7 +205,7 @@ approval is not an administrative bypass.
 Verify installation without a repository checkout:
 
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.18.0
+go install github.com/cluion/bridra/backend/cmd/bridra@v0.19.0
 bridra version --json
 bridra create release_smoke --module example.com/acme/release-smoke
 ```
@@ -256,8 +257,8 @@ version instead.
 Users choose upgrades explicitly:
 
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.18.0
-bridra upgrade --plan --to 0.18.0
+go install github.com/cluion/bridra/backend/cmd/bridra@v0.19.0
+bridra upgrade --plan --to 0.19.0
 ```
 
 Bridra has no silent CLI auto-update. Breaking changes require release notes,
@@ -272,11 +273,12 @@ never overwrite. The `0.6.1` to `0.13.0` path is automatic through the additive,
 opt-in file-, SQL-, and Redis-backed persistence releases, the `0.10.0`
 HTTP-security step, the `0.10.1` diagnostics and upgrade-planner patch, and the
 runtime-neutral `0.11.0` supply-chain release, the `0.12.0` secure Sidecar launch
-update, and the `0.13.0` RPC schema compatibility tooling release. Every path to
-`0.18.0` from older lines still includes the manual application baseline-gate,
-generated Application and macOS secondary lifecycle, and native resource-handoff
-steps. The direct `0.17.0` to `0.18.0` dependency-only transition is automatic;
-adopting authentication, rate limiting, observability, and server limits in an
+update, and the `0.13.0` RPC schema compatibility tooling release. Paths from
+earlier releases to `0.19.0` still include any required manual application
+baseline-gate, generated Application and macOS secondary lifecycle, and native
+resource-handoff steps. The direct `0.17.0` to `0.18.0` and `0.18.0` to `0.19.0`
+dependency-only transitions are automatic. Adopting authentication, rate
+limiting, observability, and server limits in an
 existing application-owned HTTP entrypoint remains an explicit deployment
 decision. The public Dart API adds
 `RpcRateLimitedException` in `0.10.0` and `SidecarDiagnostics` in `0.10.1`;
@@ -301,7 +303,13 @@ application-owned iOS Embedded Core wrapper, Swift adapter, XCFramework build,
 managed transfers, and security-scoped resource lifecycle. Project metadata
 schema `3` and Template protocol baseline `1` remain unchanged. `0.18.0` adds
 opt-in RPC `number` scalar codegen without advancing those independent versions;
-every migration preserves each application's internally consistent RPC protocol.
+`0.19.0` adds opt-in camelCase RPC method actions and snake_case JSON fields,
+preserving wire names while validating generated-member collisions in their
+actual Go／Dart scopes. Previously accepted schemas that generated conflicting
+members now fail before code generation. Template `7`, metadata schema `3`, and
+Template protocol baseline `1` remain unchanged. Every migration preserves each
+application's internally consistent RPC protocol; adopting new schema names is
+an explicit application change, not part of the dependency-only migration.
 
 The project-facing compatibility matrix, deprecation window, manual migration
 workflow, and rollback contract are defined in [UPGRADING.md](UPGRADING.md).

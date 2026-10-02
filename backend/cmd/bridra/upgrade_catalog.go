@@ -161,6 +161,12 @@ var registeredUpgradeReleases = []upgradeRelease{
 		TemplateVersion:         7,
 		TemplateProtocolVersion: 1,
 	},
+	{
+		FrameworkVersion:        "0.19.0",
+		ProjectMetadataVersion:  3,
+		TemplateVersion:         7,
+		TemplateProtocolVersion: 1,
+	},
 }
 
 var registeredFrameworkMigrations = []frameworkMigration{
@@ -302,6 +308,13 @@ var registeredFrameworkMigrations = []frameworkMigration{
 		From:        "0.17.0",
 		To:          "0.18.0",
 		Description: "Update the Go and Flutter framework dependencies for opt-in RPC number scalar codegen without changing existing application contracts.",
+		Automatic:   true,
+	},
+	{
+		ID:          "framework-0.18.0-to-0.19.0",
+		From:        "0.18.0",
+		To:          "0.19.0",
+		Description: "Update the Go and Flutter framework dependencies for opt-in camelCase RPC methods and snake_case wire fields without rewriting application contracts.",
 		Automatic:   true,
 	},
 }

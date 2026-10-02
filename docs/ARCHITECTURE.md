@@ -1,6 +1,6 @@
 # Bridra architecture decisions
 
-Bridra 0.16 supports Windows, macOS, Linux, Android, iOS, and Web while keeping
+Bridra supports Windows, macOS, Linux, Android, iOS, and Web while keeping
 one Go application pipeline and one typed Flutter API.
 
 ## Layers
@@ -14,7 +14,8 @@ BridraRpcApi                generated methods, models, and response decoding
     |
 RpcClient                   transport-neutral request/reply contract
     |-- SidecarClient       desktop process and newline-delimited JSON
-    `-- HttpRpcClient       Android, iOS, Web, or remote desktop JSON POST
+    |-- HttpRpcClient       default mobile/Web or remote desktop JSON POST
+    `-- EmbeddedRpcClient   opt-in application-owned iOS in-process Go Core
               |
 Go Router -> Middleware -> Request validation -> Controller -> Service
                                                    -> Model -> Response DTO
@@ -23,16 +24,16 @@ Go Router -> Middleware -> Request validation -> Controller -> Service
 Controllers and services never know which transport delivered a request. Named
 Request DTOs validate input before Controller orchestration; Services return
 transport-independent Models that Controllers map to Response DTOs. The stdio
-server and HTTP handler are thin adapters around the same `Router`.
+server, HTTP handler, and Embedded runtime are adapters around the same `Router`.
 
 ## Package boundaries
 
 `backend/framework` is the reusable public Go package. Application Requests,
 Models, Services, Responses, Controllers, and route registration remain under
-`backend/app`. `packages/bridra_flutter` owns transport-neutral RPC, HTTP, and
-desktop Sidecar clients. The generated `BridraRpcApi` owns the application RPC
-contract; `lib/api/backend_gateway.dart` adds connection lifecycle and health
-caching. Both packages remain in one Git repository and use Bridra 0.18.0.
+`backend/app`. `packages/bridra_flutter` owns transport-neutral RPC, HTTP,
+desktop Sidecar, and opt-in Embedded clients. The generated `BridraRpcApi` owns
+the application RPC contract; `lib/api/backend_gateway.dart` adds connection lifecycle and health
+caching. Both packages remain in one Git repository and use Bridra 0.19.0.
 
 Native macOS Sidecars may register a `ResourceBroker` backed by
 `NewMacOSResourceBookmarkResolver`. The resolver alone handles Foundation's
@@ -200,8 +201,10 @@ the next source change.
 `build` is the release-artifact orchestration boundary. It accepts the six Flutter
 targets and the Flutter-supported debug, profile, and release modes. Native desktop
 targets are host-bound; Android and Web remain cross-host Flutter builds. Desktop uses
-a Sidecar unless an explicit backend URL selects HTTP, while mobile and Web always use
-HTTP. Profile and release HTTP artifacts require an HTTPS `/rpc` endpoint and an
+a Sidecar unless an explicit backend URL selects HTTP. The CLI's mobile and Web
+build path uses HTTP; the opt-in iOS Embedded Core packaging and native wiring
+are a separate application-owned workflow. Profile and release HTTP artifacts
+require an HTTPS `/rpc` endpoint and an
 explicit compile-time token.
 
 Sidecars are built with `CGO_ENABLED=0` for the target OS and host architecture
@@ -784,11 +787,14 @@ audit fields, alerting targets, and production checklist.
 ## Lifecycle differences
 
 Desktop Flutter owns the Go process, so closing the gateway also closes its
-backend. Mobile and Web own only an HTTP client; reconnecting the Flutter UI
-does not restart the deployed Go server.
+backend. With the default mobile and Web HTTP transport, reconnecting the
+Flutter UI does not restart the deployed Go server. Opt-in iOS Embedded Core
+instead owns an in-process runtime with the explicit shutdown and resource
+lifecycle described in the [Embedded iOS model](#embedded-ios-model).
 
 The UI therefore exposes a transport-neutral reconnect action. Process-specific
-shutdown behavior stays inside `SidecarClient`.
+shutdown behavior stays inside `SidecarClient`; Embedded runtime shutdown stays
+inside the application's Embedded bridge lifecycle.
 
 ## Distribution
 
@@ -798,8 +804,9 @@ shutdown behavior stays inside `SidecarClient`.
   x86_64 sidecar before signing the application.
 - Windows CMake maps the Flutter host architecture to Go `amd64` or `arm64` and
   installs the matching `.exe` under `libexec`.
-- Android and iOS package only Flutter; they point at a separately deployed Go
-  HTTP service.
+- Android and default iOS HTTP builds package only Flutter; they point at a
+  separately deployed Go HTTP service. Opt-in iOS Embedded builds also link an
+  application-owned Go Core XCFramework and native adapter.
 - Web produces static assets and also points at the Go HTTP service.
 
 Installer formats, store credentials, product identifiers, notarization, and
