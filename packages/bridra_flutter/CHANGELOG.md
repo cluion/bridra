@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.19.0 - 2026-10-02
+## 0.19.0 - 2026-10-03
 
 - Aligned package metadata with Bridra 0.19.0's generated camelCase RPC method
   actions and snake_case JSON field support. Generated Dart properties use
