@@ -3,7 +3,7 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
-## [Unreleased]
+## [0.19.0] - 2026-10-02
 
 ### Added
 
@@ -12,6 +12,24 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
   PascalCase Go and camelCase Dart identifiers; collisions with other fields or
   generated methods are rejected in the affected Go／Dart scope before code
   generation.
+
+### Changed
+
+- Schema validation now rejects generated-member collisions in the affected
+  Go／Dart scope before emitting code. This also rejects previously accepted
+  fields such as request `toJson` or `validatePayload` that produced
+  uncompilable generated code; names remain valid in scopes without a collision.
+- Project Template `7`, project metadata schema `3`, and Template RPC protocol
+  baseline `1` remain unchanged. The `0.18.0` to `0.19.0` dependency-only
+  migration is automatic and preserves each application's RPC protocol.
+  Adopting new schema names requires explicit contract generation; renaming an
+  existing wire method or JSON field still requires compatibility review.
+
+### Support
+
+- The latest `0.19.x` release receives best-effort security fixes until the next
+  minor line is published. The `0.18.x` line is no longer supported after this
+  release.
 
 ## [0.18.0] - 2026-09-13
 

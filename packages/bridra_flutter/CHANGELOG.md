@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.19.0 - 2026-10-02
+
+- Aligned package metadata with Bridra 0.19.0's generated camelCase RPC method
+  actions and snake_case JSON field support. Generated Dart properties use
+  camelCase while preserving wire names; the public Flutter runtime API is
+  unchanged.
+
 ## 0.18.0 - 2026-09-13
 
 - Aligned package metadata with Bridra 0.18.0's generated `number` scalar
