@@ -3,7 +3,7 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
-## [0.19.0] - 2026-10-02
+## [0.19.0] - 2026-10-03
 
 ### Added
 
