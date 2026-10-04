@@ -3,6 +3,29 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
+## [Unreleased]
+
+### Fixed
+
+- Exit acknowledged secondary desktop instances on Windows and Linux after
+  releasing their single-instance session.
+- Share the Application shutdown deadline across remaining providers and continue
+  cleanup in reverse order after caller cancellation, with bounded grace periods
+  and accurate provider failure attribution. Shutdown callers remain bounded by
+  their context.
+- Apply `create --display-name` to desktop runner titles and native product
+  metadata while preserving binary names, bundle paths, and application IDs.
+- Discover Windows Visual Studio C++ toolchains through `vswhere` rather than
+  requiring MSVC, CMake, and Ninja in the shell PATH.
+- Make generated HTTP entrypoints own the Application lifecycle and file-transfer
+  provider, including startup failure cleanup and graceful HTTP shutdown.
+
+### Added
+
+- Generated unary Dart methods accept an optional `timeout`, retaining the
+  five-second default. Handwritten API implementations need the new named parameter
+  when regenerating their contract; the RPC wire protocol remains unchanged.
+
 ## [0.19.0] - 2026-10-03
 
 ### Added

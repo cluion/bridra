@@ -73,6 +73,8 @@ func TestGenerateSupportsCustomRuntimeImports(t *testing.T) {
 		t.Fatalf("Dart client uses the wrong runtime import:\n%s", dart)
 	}
 	for _, fragment := range []string{
+		"Duration timeout = const Duration(seconds: 5)",
+		"timeout: timeout",
 		"RpcCancellationToken? cancellationToken",
 		"cancellationToken: cancellationToken",
 	} {

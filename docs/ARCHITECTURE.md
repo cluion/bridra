@@ -290,7 +290,13 @@ Providers that acquire resources implement `TerminableServiceProvider`. Shutdown
 executes them once in reverse registration order, including the provider whose
 Register failed and providers registered but not yet booted. Concurrent callers
 coalesce onto one shutdown run; provider failures are collected rather than stopping
-later cleanup and remain inspectable through `ApplicationShutdownErrors`. A completed
+later cleanup and remain inspectable through `ApplicationShutdownErrors`. The caller's
+context bounds its wait without abandoning the cleanup run. Each hook gets an equal
+share of the remaining deadline budget so later resources can still be cleaned up.
+Once that context expires,
+each remaining provider receives a fresh one-second cleanup context that preserves
+context values. Providers must honor their context; a blocked hook keeps cleanup
+pending, and later callers can wait again. A completed
 shutdown is terminal for the Application. Project Template v4 makes the generated
 Sidecar own this Application, stops accepting stdio before invoking shutdown, and
 bounds the transport-stop and provider-shutdown waits independently. A reader or

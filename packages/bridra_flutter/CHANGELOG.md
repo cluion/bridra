@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Exit secondary Windows and Linux desktop processes after acknowledged activation
+  handoff and session cleanup. The macOS native lifecycle handler is unchanged.
+
 ## 0.19.0 - 2026-10-03
 
 - Aligned package metadata with Bridra 0.19.0's generated camelCase RPC method

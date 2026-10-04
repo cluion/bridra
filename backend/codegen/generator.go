@@ -702,9 +702,7 @@ func writeDartClientMethod(output *strings.Builder, method Method) {
 	if method.Params != nil {
 		output.WriteString("      params: request.toJson(),\n")
 	}
-	if method.Stream {
-		output.WriteString("      timeout: timeout,\n")
-	}
+	output.WriteString("      timeout: timeout,\n")
 	output.WriteString("      cancellationToken: cancellationToken,\n")
 	output.WriteString("    );\n")
 	if method.Stream {
@@ -1287,7 +1285,7 @@ func dartMethodSignature(method Method) string {
 			)
 		}
 		inline = fmt.Sprintf(
-			"%s %s({RpcCancellationToken? cancellationToken})",
+			"%s %s({Duration timeout = const Duration(seconds: 5), RpcCancellationToken? cancellationToken})",
 			returnType,
 			method.ClientName,
 		)
@@ -1295,7 +1293,7 @@ func dartMethodSignature(method Method) string {
 			return inline
 		}
 		return fmt.Sprintf(
-			"%s %s({\n    RpcCancellationToken? cancellationToken,\n  })",
+			"%s %s({\n    Duration timeout = const Duration(seconds: 5),\n    RpcCancellationToken? cancellationToken,\n  })",
 			returnType,
 			method.ClientName,
 		)
@@ -1309,7 +1307,7 @@ func dartMethodSignature(method Method) string {
 		)
 	}
 	inline = fmt.Sprintf(
-		"%s %s(%s request, {RpcCancellationToken? cancellationToken})",
+		"%s %s(%s request, {Duration timeout = const Duration(seconds: 5), RpcCancellationToken? cancellationToken})",
 		returnType,
 		method.ClientName,
 		method.Params.DartType,
@@ -1318,7 +1316,7 @@ func dartMethodSignature(method Method) string {
 		return inline
 	}
 	return fmt.Sprintf(
-		"%s %s(\n    %s request, {\n    RpcCancellationToken? cancellationToken,\n  })",
+		"%s %s(\n    %s request, {\n    Duration timeout = const Duration(seconds: 5),\n    RpcCancellationToken? cancellationToken,\n  })",
 		returnType,
 		method.ClientName,
 		method.Params.DartType,

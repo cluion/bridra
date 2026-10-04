@@ -16,6 +16,9 @@ type Config struct {
 	Token   string
 	Logs    io.Writer
 	Runtime string
+	// FileTransfers is an optional caller-owned store. Use the service provider
+	// instead when the Application should create and close the store.
+	FileTransfers *framework.FileTransferStore
 }
 
 func Build(
@@ -23,6 +26,11 @@ func Build(
 	additionalProviders ...framework.ServiceProvider,
 ) (*framework.Application, error) {
 	application := framework.NewApplication(nil)
+	if config.FileTransfers != nil {
+		if err := framework.Instance(application.Container(), framework.FileTransferStoreKey, config.FileTransfers); err != nil {
+			return nil, abortBuild(application, fmt.Errorf("app: bind file transfers: %w", err))
+		}
+	}
 	if err := application.Register(additionalProviders...); err != nil {
 		return nil, abortBuild(application, fmt.Errorf("app: register providers: %w", err))
 	}

@@ -10,6 +10,7 @@ class FakeBackend implements BackendGateway {
 
   @override
   Future<HealthInfo> health({
+    Duration timeout = const Duration(seconds: 5),
     RpcCancellationToken? cancellationToken,
   }) async {
     return HealthInfo(
@@ -24,6 +25,7 @@ class FakeBackend implements BackendGateway {
   @override
   Future<GreetingResult> greet(
     GreetingRequest request, {
+    Duration timeout = const Duration(seconds: 5),
     RpcCancellationToken? cancellationToken,
   }) async {
     return GreetingResult(

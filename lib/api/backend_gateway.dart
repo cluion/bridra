@@ -50,7 +50,10 @@ class RpcBackend implements BackendGateway {
   }
 
   @override
-  Future<HealthInfo> health({RpcCancellationToken? cancellationToken}) async {
+  Future<HealthInfo> health({
+    Duration timeout = const Duration(seconds: 5),
+    RpcCancellationToken? cancellationToken,
+  }) async {
     if (cancellationToken?.isCancelled ?? false) {
       throw const RpcCancelledException(BridraMethods.systemHealth);
     }
@@ -60,9 +63,14 @@ class RpcBackend implements BackendGateway {
   @override
   Future<GreetingResult> greet(
     GreetingRequest request, {
+    Duration timeout = const Duration(seconds: 5),
     RpcCancellationToken? cancellationToken,
   }) {
-    return _api.greet(request, cancellationToken: cancellationToken);
+    return _api.greet(
+      request,
+      timeout: timeout,
+      cancellationToken: cancellationToken,
+    );
   }
 
   @override

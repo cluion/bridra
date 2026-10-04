@@ -40,6 +40,29 @@ dependency and metadata updates. A transition requiring a codemod, Project
 Template edit, protocol regeneration, application decision, or database
 migration must remain manual.
 
+## Unreleased lifecycle and generated API fixes
+
+These changes are in the working source and are not part of the published 0.19.0
+release or migration catalog:
+
+- Windows and Linux secondary instances now exit after session cleanup. Existing
+  entrypoints using `DesktopSingleInstance.terminateSecondary` need the updated
+  Flutter runtime; macOS retains its native lifecycle handler.
+- Application shutdown caller deadlines bound waiting rather than abandoning
+  later provider cleanup. Hooks share the remaining deadline budget; after caller
+  cancellation, remaining hooks receive individual one-second grace
+  periods. Hooks must honor their context; processes still have an outer exit bound.
+- Regenerated unary Dart methods include `Duration timeout`, defaulting to five
+  seconds. Add this named parameter to handwritten API implementations and mocks,
+  and forward it through wrappers. Existing call sites and wire schemas need no
+  changes; the generated Go contract and application protocol remain unchanged.
+- Existing HTTP entrypoints must adopt the updated Application-owned server
+  template explicitly. Retain the Application from `app.Build`, stop HTTP work,
+  and call `Shutdown` on normal exit and startup errors.
+- Native display names are applied when creating new desktop projects. Existing
+  application-owned runners are not rewritten by framework upgrades. Publisher
+  metadata and organization IDs retain their existing behavior.
+
 ## Apply transaction
 
 Before writing, `--apply` validates that `backend/go.mod` and `pubspec.yaml`

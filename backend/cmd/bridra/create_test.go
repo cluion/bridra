@@ -474,7 +474,24 @@ func testCreateSystem(
 		mkdirTemp: os.MkdirTemp,
 		removeAll: os.RemoveAll,
 		rename:    os.Rename,
-		run:       runner,
+		run: func(ctx context.Context, directory, name string, arguments ...string) ([]byte, error) {
+			if name == "fvm" && containsArguments(arguments, "flutter", "create") {
+				var projectName string
+				var platforms []string
+				for index, argument := range arguments {
+					if argument == "--project-name" {
+						projectName = arguments[index+1]
+					}
+					if argument == "--platforms" {
+						platforms = strings.Split(arguments[index+1], ",")
+					}
+				}
+				if err := writeNativeRunnerFixtures(directory, projectName, platforms); err != nil {
+					return nil, err
+				}
+			}
+			return runner(ctx, directory, name, arguments...)
+		},
 	}
 }
 

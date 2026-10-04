@@ -172,21 +172,11 @@ func shutdownSidecarApplication(
 ) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	shutdownErrors := make(chan error, 1)
-	go func() {
-		shutdownErrors <- application.Shutdown(ctx)
-	}()
-	select {
-	case err := <-shutdownErrors:
-		return err
-	case <-ctx.Done():
-		select {
-		case err := <-shutdownErrors:
-			return err
-		default:
-			return fmt.Errorf("application shutdown did not stop: %w", ctx.Err())
-		}
+	err := application.Shutdown(ctx)
+	if errors.Is(err, context.DeadlineExceeded) && !application.ShutdownComplete() {
+		return fmt.Errorf("application shutdown did not stop: %w", err)
 	}
+	return err
 }
 
 func stopSidecarTimer(timer *time.Timer) {

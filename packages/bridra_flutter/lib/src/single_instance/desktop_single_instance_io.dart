@@ -50,13 +50,18 @@ Future<bool> forwardDesktopActivationForTesting({
 Future<void> terminateSecondary(
   DesktopSingleInstanceSession session, {
   bool? requiresNativeTermination,
+  void Function(int) exitProcess = exit,
 }) async {
   if (session.isPrimary) {
     throw StateError('The primary desktop instance must remain running.');
   }
 
   await session.close();
-  if (!(requiresNativeTermination ?? Platform.isMacOS)) return;
+  if (!(requiresNativeTermination ?? Platform.isMacOS)) {
+    // Returning from Dart main does not stop a desktop runner's native event loop.
+    exitProcess(0);
+    return;
+  }
 
   try {
     await application_lifecycle.terminateSecondary();

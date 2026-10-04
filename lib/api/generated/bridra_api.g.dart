@@ -62,9 +62,13 @@ class GreetingResult {
 }
 
 abstract interface class BridraApi {
-  Future<HealthInfo> health({RpcCancellationToken? cancellationToken});
+  Future<HealthInfo> health({
+    Duration timeout = const Duration(seconds: 5),
+    RpcCancellationToken? cancellationToken,
+  });
   Future<GreetingResult> greet(
     GreetingRequest request, {
+    Duration timeout = const Duration(seconds: 5),
     RpcCancellationToken? cancellationToken,
   });
 }
@@ -75,9 +79,13 @@ class BridraRpcApi implements BridraApi {
   final RpcClient _client;
 
   @override
-  Future<HealthInfo> health({RpcCancellationToken? cancellationToken}) async {
+  Future<HealthInfo> health({
+    Duration timeout = const Duration(seconds: 5),
+    RpcCancellationToken? cancellationToken,
+  }) async {
     final reply = await _client.call(
       BridraMethods.systemHealth,
+      timeout: timeout,
       cancellationToken: cancellationToken,
     );
     try {
@@ -102,11 +110,13 @@ class BridraRpcApi implements BridraApi {
   @override
   Future<GreetingResult> greet(
     GreetingRequest request, {
+    Duration timeout = const Duration(seconds: 5),
     RpcCancellationToken? cancellationToken,
   }) async {
     final reply = await _client.call(
       BridraMethods.greetingHello,
       params: request.toJson(),
+      timeout: timeout,
       cancellationToken: cancellationToken,
     );
     try {

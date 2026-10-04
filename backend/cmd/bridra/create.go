@@ -192,6 +192,9 @@ func (item createCommand) resolveOptions(options createOptions) (createOptions, 
 	if strings.TrimSpace(options.displayName) == "" {
 		return createOptions{}, fmt.Errorf("%w: display name cannot be empty", errCreateInvalid)
 	}
+	if strings.ContainsAny(options.displayName, "\r\n\x00") {
+		return createOptions{}, fmt.Errorf("%w: display name must be a single line", errCreateInvalid)
+	}
 	selectedPlatforms, err := projectplatform.Resolve(options.platforms)
 	if err != nil {
 		return createOptions{}, fmt.Errorf("%w: --platforms: %v", errCreateInvalid, err)
@@ -279,6 +282,9 @@ func (item createCommand) create(options createOptions, stdout io.Writer) (resul
 		".",
 	); err != nil {
 		return fmt.Errorf("create: Flutter runners: %w", err)
+	}
+	if err := applyNativeDisplayName(staging, options); err != nil {
+		return fmt.Errorf("create: native display name: %w", err)
 	}
 	if err := projecttemplate.Render(staging, projecttemplate.Config{
 		ProjectName:          options.projectName,

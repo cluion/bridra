@@ -151,6 +151,7 @@ func TestRunSidecarCancellationDoesNotWaitForBlockingInput(t *testing.T) {
 func TestRunSidecarBoundsApplicationShutdown(t *testing.T) {
 	release := make(chan struct{})
 	terminated := make(chan struct{})
+	earlier := &sidecarShutdownProvider{}
 	provider, application := buildSidecarTestApplicationWithProvider(
 		t,
 		&sidecarShutdownProvider{terminate: func(context.Context) error {
@@ -158,6 +159,7 @@ func TestRunSidecarBoundsApplicationShutdown(t *testing.T) {
 			close(terminated)
 			return nil
 		}},
+		earlier,
 	)
 	err := runSidecarWithTimeouts(
 		context.Background(),
@@ -184,6 +186,9 @@ func TestRunSidecarBoundsApplicationShutdown(t *testing.T) {
 	if provider.terminationCount() != 1 {
 		t.Fatalf("final termination count = %d, want 1", provider.terminationCount())
 	}
+	if earlier.terminationCount() != 1 {
+		t.Fatal("earlier provider was skipped after the timeout")
+	}
 }
 
 func buildSidecarTestApplication(
@@ -196,9 +201,10 @@ func buildSidecarTestApplication(
 func buildSidecarTestApplicationWithProvider(
 	t *testing.T,
 	provider *sidecarShutdownProvider,
+	earlier ...framework.ServiceProvider,
 ) (*sidecarShutdownProvider, *framework.Application) {
 	t.Helper()
-	application, err := app.Build(app.Config{Token: "secret"}, provider)
+	application, err := app.Build(app.Config{Token: "secret"}, append(earlier, provider)...)
 	if err != nil {
 		t.Fatalf("build application: %v", err)
 	}

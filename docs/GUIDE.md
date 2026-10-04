@@ -797,8 +797,8 @@ On macOS, returning from Dart does not terminate an already-started
 the generated `dev.cluion.bridra/application` native lifecycle handler. Generated
 projects cover that handler through `make macos-native-test`; existing projects
 must adopt the Template v4 `MainFlutterWindow.swift` handler before calling the
-new API. Windows and Linux close the session and return normally without a
-native channel call.
+new API. Windows and Linux close the session and exit the secondary process
+with status zero; returning from Dart alone does not stop the native runner.
 
 Each desktop launch creates a random 256-bit token and starts one Go child
 process. Flutter sends that token as a bounded, versioned first line on stdin,
@@ -1294,6 +1294,29 @@ Providers attempted before a Register failure and every provider registered befo
 a Boot failure are still terminated, so `Terminate` must tolerate partial
 initialization. `app.Build` performs this cleanup automatically when startup fails;
 the stdio sidecar and HTTP server also shut down the Application on exit.
+
+The shutdown caller's context bounds its wait. When it has a deadline, each hook
+receives an equal share of the remaining time across remaining terminable providers,
+so a cooperative slow hook cannot spend the entire cleanup budget. Cleanup continues
+in reverse order after that wait expires; each remaining provider receives a fresh one-second
+grace period with the original context values. Only errors returned by an invoked
+provider are attributed to that provider. `ShutdownComplete` remains false until
+every termination hook returns, and another call can wait for the same run.
+Providers must honor their context: Go cannot forcibly stop a blocked hook, and
+cleanup remains sequential to preserve resource dependencies. A process that
+exits at its outer shutdown deadline cannot guarantee unfinished cleanup.
+
+Generated HTTP entrypoints call `app.Build` with the file-transfer service
+provider, stop HTTP work before shutting down the Application, and clean up
+startup failures. `Config.FileTransfers` alternatively binds a caller-owned store
+before provider registration. Router-only convenience helpers do not own shutdown;
+entrypoints with providers should retain the Application returned by `Build`.
+
+Generated unary Dart methods accept `timeout: const Duration(seconds: 90)` to
+override the default five-second call limit. Wrappers and handwritten
+implementations must accept and forward the named `timeout` parameter after
+regenerating the contract. A call timeout does not itself mean the backend process
+has disconnected.
 
 ## Database and transactions
 
