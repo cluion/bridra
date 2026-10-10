@@ -7,9 +7,9 @@ changes that preserve its explicit Go/Flutter boundaries and generated contract.
 
 Bridra is licensed under the [MIT License](LICENSE), Copyright (c) 2026 Cluion.
 The license permits use, modification, distribution, sublicensing, and commercial
-use subject to preserving its copyright and permission notice. Bridra 0.12 is a
-pre-1.0 line: public APIs may evolve through documented SemVer releases and there
-is no LTS or production SLA.
+use subject to preserving its copyright and permission notice. Bridra is a
+pre-1.0 framework: public APIs may evolve through documented SemVer releases,
+and there is no LTS or production SLA.
 
 Unless a separate written agreement applies, an intentionally submitted
 contribution is offered under the same MIT License. Contributors retain copyright
