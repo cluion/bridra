@@ -286,6 +286,9 @@ func (item createCommand) create(options createOptions, stdout io.Writer) (resul
 	if err := applyNativeDisplayName(staging, options); err != nil {
 		return fmt.Errorf("create: native display name: %w", err)
 	}
+	if err := applyMacOSLoopbackEntitlements(staging, options); err != nil {
+		return fmt.Errorf("create: macOS single-instance entitlements: %w", err)
+	}
 	if err := projecttemplate.Render(staging, projecttemplate.Config{
 		ProjectName:          options.projectName,
 		DisplayName:          options.displayName,

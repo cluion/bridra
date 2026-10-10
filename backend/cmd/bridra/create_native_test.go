@@ -15,6 +15,9 @@ func writeNativeRunnerFixtures(root, projectName string, platforms []string) err
 		{"windows", "windows/runner/Runner.rc", `VALUE "FileDescription", "` + projectName + `" "\0"` + "\n" + `VALUE "ProductName", "` + projectName + `" "\0"` + "\n" + `VALUE "OriginalFilename", "` + projectName + `.exe" "\0"`},
 		{"linux", "linux/runner/my_application.cc", `gtk_header_bar_set_title(header_bar, "` + projectName + `");` + "\n" + `gtk_window_set_title(window, "` + projectName + `");`},
 		{"macos", "macos/Runner/Configs/AppInfo.xcconfig", "PRODUCT_NAME = " + projectName + "\nPRODUCT_BUNDLE_IDENTIFIER = com.example." + projectName + "\n"},
+		{"macos", "macos/Runner/Info.plist", "\t<key>CFBundleName</key>\n\t<string>$(PRODUCT_NAME)</string>\n"},
+		{"macos", "macos/Runner/DebugProfile.entitlements", "<dict>\n\t<key>com.apple.security.app-sandbox</key>\n\t<true/>\n\t<key>com.apple.security.network.server</key>\n\t<true/>\n</dict>\n"},
+		{"macos", "macos/Runner/Release.entitlements", "<dict>\n\t<key>com.apple.security.app-sandbox</key>\n\t<true/>\n</dict>\n"},
 	} {
 		if !projectplatform.Contains(platforms, file.platform) {
 			continue
@@ -43,7 +46,8 @@ func TestCreateNativeDisplayNamePreservesBinaryNamesAndIdentifiers(t *testing.T)
 		"windows/runner/main.cpp":               {`window.Create(L"Live Sentry"`},
 		"windows/runner/Runner.rc":              {`VALUE "FileDescription", "Live Sentry"`, `VALUE "ProductName", "Live Sentry"`, `"live_sentry.exe"`},
 		"linux/runner/my_application.cc":        {`gtk_header_bar_set_title(header_bar, "Live Sentry")`, `gtk_window_set_title(window, "Live Sentry")`},
-		"macos/Runner/Configs/AppInfo.xcconfig": {"PRODUCT_NAME = Live Sentry", "PRODUCT_BUNDLE_IDENTIFIER = com.example.live_sentry", "EXECUTABLE_NAME = live_sentry", "WRAPPER_NAME = live_sentry.app"},
+		"macos/Runner/Configs/AppInfo.xcconfig": {"PRODUCT_NAME = live_sentry\n", "BRIDRA_DISPLAY_NAME = Live Sentry", "PRODUCT_BUNDLE_IDENTIFIER = com.example.live_sentry"},
+		"macos/Runner/Info.plist":               {"<key>CFBundleName</key>\n\t<string>$(BRIDRA_DISPLAY_NAME)</string>", "<key>CFBundleDisplayName</key>\n\t<string>$(BRIDRA_DISPLAY_NAME)</string>"},
 	} {
 		contents, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
 		if err != nil {
@@ -69,7 +73,7 @@ func TestCreateNativeDisplayNameEscapesNativeFields(t *testing.T) {
 	for path, fragment := range map[string]string{
 		"windows/runner/main.cpp":               `L"Sentry \"Pro\" $HOME //"`,
 		"windows/runner/Runner.rc":              `"Sentry ""Pro"" $HOME //"`,
-		"macos/Runner/Configs/AppInfo.xcconfig": `PRODUCT_NAME = Sentry "Pro" $(BRIDRA_NAME_DOLLAR)HOME $(BRIDRA_NAME_SLASH)$(BRIDRA_NAME_SLASH)`,
+		"macos/Runner/Configs/AppInfo.xcconfig": `BRIDRA_DISPLAY_NAME = Sentry "Pro" $(BRIDRA_NAME_DOLLAR)HOME $(BRIDRA_NAME_SLASH)$(BRIDRA_NAME_SLASH)`,
 	} {
 		contents, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
 		if err != nil || !strings.Contains(string(contents), fragment) {
@@ -86,5 +90,55 @@ func TestCreateNativeDisplayNameRejectsUnexpectedRunner(t *testing.T) {
 	}
 	if err := applyNativeDisplayName(root, options); err == nil {
 		t.Fatal("unexpected Flutter runner must fail creation")
+	}
+}
+
+func TestCreateMacOSLoopbackEntitlementsPreserveSandboxAndExistingKeys(t *testing.T) {
+	root := t.TempDir()
+	options := createOptions{selectedPlatforms: []string{"macos"}}
+	if err := writeNativeRunnerFixtures(root, "app", options.selectedPlatforms); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := applyMacOSLoopbackEntitlements(root, options); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"DebugProfile", "Release"} {
+		contents, err := os.ReadFile(filepath.Join(root, "macos", "Runner", name+".entitlements"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, key := range []string{"app-sandbox", "network.client", "network.server"} {
+			if strings.Count(string(contents), "<key>com.apple.security."+key+"</key>\n\t<true/>") != 1 {
+				t.Errorf("%s must enable %s exactly once:\n%s", name, key, contents)
+			}
+		}
+	}
+}
+
+func TestCreateMacOSLoopbackEntitlementsSkipUnselectedPlatform(t *testing.T) {
+	if err := applyMacOSLoopbackEntitlements(t.TempDir(), createOptions{selectedPlatforms: []string{"linux"}}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCreateMacOSLoopbackEntitlementsRejectDisabledCapability(t *testing.T) {
+	root := t.TempDir()
+	options := createOptions{selectedPlatforms: []string{"macos"}}
+	if err := writeNativeRunnerFixtures(root, "app", options.selectedPlatforms); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "macos", "Runner", "DebugProfile.entitlements")
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := strings.Replace(string(contents), "</dict>", "\t<key>com.apple.security.network.client</key>\n\t<false/>\n</dict>", 1)
+	if err := os.WriteFile(path, []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := applyMacOSLoopbackEntitlements(root, options); err == nil {
+		t.Fatal("explicitly disabled socket capability must not be overwritten")
 	}
 }

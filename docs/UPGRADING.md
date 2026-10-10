@@ -62,6 +62,15 @@ release or migration catalog:
 - Native display names are applied when creating new desktop projects. Existing
   application-owned runners are not rewritten by framework upgrades. Publisher
   metadata and organization IDs retain their existing behavior.
+  On macOS, keep `PRODUCT_NAME` equal to the project name because Flutter derives
+  the `.app` path from it; use `CFBundleName` and `CFBundleDisplayName` for the
+  product's display name.
+- Existing macOS runners using desktop single-instance coordination need
+  `com.apple.security.network.client` and `com.apple.security.network.server`
+  enabled in both `DebugProfile.entitlements` and `Release.entitlements`.
+  Keep `com.apple.security.app-sandbox` enabled. These entitlements permit client
+  and server sockets generally; Bridra's single-instance listener itself binds
+  only to `127.0.0.1`.
 
 ## Apply transaction
 

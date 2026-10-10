@@ -15,6 +15,9 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
   their context.
 - Apply `create --display-name` to desktop runner titles and native product
   metadata while preserving binary names, bundle paths, and application IDs.
+- Enable the macOS runner's sandbox client and server socket entitlements in
+  Debug, Profile, and Release so single-instance loopback IPC can listen and
+  forward secondary activations.
 - Discover Windows Visual Studio C++ toolchains through `vswhere` rather than
   requiring MSVC, CMake, and Ninja in the shell PATH.
 - Make generated HTTP entrypoints own the Application lifecycle and file-transfer
