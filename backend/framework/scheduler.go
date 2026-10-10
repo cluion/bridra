@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +19,9 @@ var (
 	ErrScheduledTaskAlreadyDefined     = errors.New("framework: scheduled task is already defined")
 	ErrScheduledTaskRegistrationClosed = errors.New("framework: scheduled task registration is closed")
 	ErrSchedulerStopped                = errors.New("framework: scheduler has stopped")
+	ErrSchedulerNotRunning             = errors.New("framework: scheduler is not running")
+	ErrScheduledTaskStopped            = errors.New("framework: scheduled task has stopped")
+	ErrDynamicSchedulingUnsupported    = errors.New("framework: dynamic tasks require a scheduler without a store")
 	ErrScheduledTaskExecutionFailed    = errors.New("framework: scheduled task execution failed")
 )
 
@@ -68,6 +72,7 @@ type Scheduler struct {
 	clock        schedulerClock
 	tasks        []scheduledTaskEntry
 	taskNames    map[string]struct{}
+	dynamicTasks map[string]*ScheduledTaskHandle
 	stopping     chan struct{}
 	shutdownDone chan struct{}
 	workerCtx    context.Context
@@ -161,6 +166,7 @@ func newScheduler(options SchedulerOptions, clock schedulerClock) (*Scheduler, e
 		options:      options,
 		clock:        clock,
 		taskNames:    make(map[string]struct{}),
+		dynamicTasks: make(map[string]*ScheduledTaskHandle),
 		stopping:     make(chan struct{}),
 		shutdownDone: make(chan struct{}),
 	}, nil
@@ -217,6 +223,12 @@ func ScheduledTasks(scheduler *Scheduler) []string {
 	for _, task := range scheduler.tasks {
 		names = append(names, task.name)
 	}
+	dynamicNames := make([]string, 0, len(scheduler.dynamicTasks))
+	for name := range scheduler.dynamicTasks {
+		dynamicNames = append(dynamicNames, name)
+	}
+	sort.Strings(dynamicNames)
+	names = append(names, dynamicNames...)
 	scheduler.mu.Unlock()
 	return names
 }
@@ -295,7 +307,15 @@ func (scheduler *Scheduler) execute(
 	task scheduledTaskEntry,
 	scheduledAt time.Time,
 ) error {
-	ctx := context.Background()
+	return scheduler.executeContext(context.Background(), task, scheduledAt)
+}
+
+func (scheduler *Scheduler) executeContext(
+	parent context.Context,
+	task scheduledTaskEntry,
+	scheduledAt time.Time,
+) error {
+	ctx := parent
 	cancel := func() {}
 	if scheduler.options.TaskTimeout > 0 {
 		ctx, cancel = context.WithTimeout(ctx, scheduler.options.TaskTimeout)
@@ -313,6 +333,10 @@ func (scheduler *Scheduler) execute(
 	}()
 	if taskError == nil {
 		return nil
+	}
+	// Explicit task/scheduler stop is expected; invocation timeouts still report.
+	if parent.Err() != nil && errors.Is(taskError, parent.Err()) {
+		return taskError
 	}
 	scheduler.report(ScheduledTaskFailure{
 		Task:        task.name,
@@ -374,6 +398,9 @@ func (scheduler *Scheduler) Shutdown(ctx context.Context) error {
 	close(scheduler.stopping)
 	if scheduler.cancelWorker != nil {
 		scheduler.cancelWorker()
+	}
+	for _, handle := range scheduler.dynamicTasks {
+		handle.Stop()
 	}
 	done := scheduler.shutdownDone
 	scheduler.mu.Unlock()

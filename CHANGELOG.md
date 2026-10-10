@@ -25,6 +25,13 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 
 ### Added
 
+- Added process-local runtime task controls with `StartTask` and
+  `ScheduledTaskHandle.SetInterval`, `TriggerNow`, `Stop`, and `Done`. Dynamic
+  tasks serialize their invocations, cancel on Scheduler shutdown, and reject
+  configured Stores rather than bypassing persistent coordination.
+- Added `bridra schema baseline --update` to validate and explicitly replace an
+  application-owned contract baseline, including before its first release.
+  Generation and compatibility checks never update the baseline automatically.
 - Generated unary Dart methods accept an optional `timeout`, retaining the
   five-second default. Handwritten API implementations need the new named parameter
   when regenerating their contract; the RPC wire protocol remains unchanged.

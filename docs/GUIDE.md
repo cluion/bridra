@@ -643,8 +643,20 @@ current `protocolVersion` regresses or when a breaking wire change keeps the
 baseline protocol. A greater protocol produces `versioned_break`: generated
 clients and servers will reject the old contract instead of exchanging
 incompatible payloads. The command does not modify either schema or generated
-code. Replace the application baseline only after the new contract has passed
-review and deployment; never derive it from the Template protocol baseline.
+code. Before the first release, explicitly accept a reviewed initial contract
+with:
+
+```bash
+bridra schema baseline --update
+```
+
+This validates and copies `schema/bridra.json` to
+`schema/bridra.baseline.json`, preserving the source bytes. Use `--schema path`
+and `--baseline path` for custom paths. An invalid schema leaves the baseline
+unchanged. Review the baseline diff before committing it. Once peers are deployed,
+replace the baseline only after review and deployment of the new contract; never
+derive it from the Template protocol baseline. Generation, upgrades, and
+compatibility checks never update it or skip the compatibility gate.
 
 Method removal, unary/streaming changes, request parameter and rule changes,
 field shape/nullability changes, and required response/meta field changes are
@@ -1852,6 +1864,49 @@ One named Task never overlaps with itself; different Tasks have independent loop
 may run concurrently. `TaskTimeout` supplies each invocation context. Errors and
 recovered panics are wrapped by `ErrScheduledTaskExecutionFailed` and sent to
 `ReportFailure`.
+
+### Runtime task controls
+
+`ScheduleTask` and `ScheduleCronTask` retain their pre-Boot registration contract.
+After the Scheduler starts, use `StartTask` for a user-controlled process-local
+polling task:
+
+```go
+handle, err := framework.StartTask(scheduler, "monitor.poll", 5*time.Second, poll)
+if err != nil {
+    return err
+}
+if err := handle.SetInterval(10 * time.Second); err != nil {
+    return err
+}
+if err := handle.TriggerNow(); err != nil {
+    return err
+}
+// When monitoring is disabled:
+handle.Stop()
+<-handle.Done() // wait outside the task before releasing its resources
+```
+
+The initial run waits one interval. `SetInterval` requires a positive duration;
+it resets a pending wait, or applies after the active invocation finishes.
+`TriggerNow` bypasses the wait and coalesces multiple pending requests into one
+invocation. A task never overlaps with itself, including manual triggers.
+
+`Stop` is idempotent and requests cancellation without blocking. The active task
+must honor its context; `Done` closes only after it returns and the runner exits.
+Wait for `Done` before starting a replacement with the same name. Controls after
+stop return `ErrScheduledTaskStopped`. Do not wait for `Done` from inside the task
+itself. Scheduler/Application shutdown cancels these tasks and waits for them,
+subject to the shutdown caller's deadline. Expected cancellation caused by stop
+is not reported as a failure; invocation timeouts and other errors still are.
+
+Runtime controls currently support fixed-delay tasks on a Scheduler **without a
+Store**. A configured Store returns `ErrDynamicSchedulingUnsupported`, so these
+controls cannot silently bypass persistent leases or distributed coordination.
+Dynamic cron and persisted runtime schedule changes are outside this API.
+`ScheduledTasks` includes active dynamic names, removed when their runners exit.
+
+### Persistent scheduling
 
 Without a `SchedulerStore`, next-run and completion state remain process-local. To
 preserve them across Sidecar or server restarts, configure `FileSchedulerStore`:

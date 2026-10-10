@@ -22,6 +22,51 @@ var (
 	_ framework.SchedulerStore            = (*framework.RedisSchedulerStore)(nil)
 )
 
+func TestPublicSchedulerDynamicTaskFollowsApplicationShutdown(t *testing.T) {
+	application := framework.NewApplication(nil)
+	if err := application.Register(framework.NewSchedulerServiceProvider(framework.DefaultSchedulerOptions())); err != nil {
+		t.Fatal(err)
+	}
+	if err := application.Boot(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = application.Shutdown(context.Background()) })
+	scheduler, err := framework.Resolve(application.Container(), framework.SchedulerKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{})
+	handle, err := framework.StartTask(scheduler, "public.dynamic", time.Hour, func(ctx context.Context) error {
+		close(started)
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := handle.SetInterval(2 * time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if err := handle.TriggerNow(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("dynamic task did not start")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := application.Shutdown(ctx); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-handle.Done():
+	default:
+		t.Fatal("Application shutdown did not finish the dynamic task")
+	}
+}
+
 func TestPublicSchedulerRunsNamedTaskAndShutsDown(t *testing.T) {
 	scheduler, err := framework.NewScheduler(framework.SchedulerOptions{})
 	if err != nil {
