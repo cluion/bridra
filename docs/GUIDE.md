@@ -29,7 +29,7 @@ Flutter UI -> typed gateway -> RPC client
 
 The application entrypoint is `lib/main.dart`. These transports use the same
 versioned request, response, error, and health-handshake contract. Framework
-SemVer (`0.19.0`), the Project Template protocol baseline (`1`), and each
+SemVer (`0.20.0`), the Project Template protocol baseline (`1`), and each
 application's internally consistent RPC protocol evolve independently.
 
 ## Platform support
@@ -144,7 +144,7 @@ this starter currently uses Flutter's Swift Package Manager integration.
 Install the exact CLI version through Go:
 
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.19.0
+go install github.com/cluion/bridra/backend/cmd/bridra@v0.20.0
 bridra version
 bridra version --json
 ```
@@ -178,15 +178,15 @@ Upgrade by installing an explicit newer version, then inspect it before updating
 projects:
 
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.19.0
+go install github.com/cluion/bridra/backend/cmd/bridra@v0.20.0
 bridra version --json
-bridra upgrade --plan --to 0.19.0 --root /path/to/project
+bridra upgrade --plan --to 0.20.0 --root /path/to/project
 ```
 
 Bridra does not silently auto-update the CLI. Project compatibility,
 migration, deprecation, and rollback rules are documented in
 [UPGRADING.md](UPGRADING.md). Maintainer release steps are documented in
-[RELEASING.md](RELEASING.md). The `0.9.0` to `0.19.0` path contains the
+[RELEASING.md](RELEASING.md). The `0.9.0` to `0.20.0` path contains the
 automatic `0.10.0` HTTP-security step, the `0.10.1` diagnostics and
 upgrade-planner patch, the runtime-neutral `0.11.0` supply-chain release, and
 the `0.12.0` bounded-stdin Sidecar launch update. The `0.14.0` baseline-gate,
@@ -201,6 +201,12 @@ changing an existing wire name remains a breaking change. Version `0.19.0` also
 rejects generated-member collisions before code generation, including previously
 accepted schemas that would emit uncompilable Go or Dart code. See the upgrade
 guide before adopting new names or rolling back the generator.
+
+The `0.19.0` to `0.20.0` transition is manual and advances Project Template to
+`8`. Existing applications must review HTTP Application shutdown, macOS
+single-instance socket entitlements, native display metadata, and regenerated
+unary Dart APIs with timeout-aware implementations. Metadata schema `3` and
+Template RPC protocol baseline `1` remain unchanged.
 Existing application-owned server entrypoints are not overwritten; adopt the
 production controls deliberately using
 [HTTP_SECURITY.md](HTTP_SECURITY.md). The planner validates each application's
@@ -215,9 +221,9 @@ path.
 Framework maintainers enter the public SemVer once:
 
 ```bash
-make release-prepare VERSION=0.19.0
-make release-check VERSION=0.19.0
-make release-check VERSION=0.19.0 FINAL=1
+make release-prepare VERSION=0.20.0
+make release-check VERSION=0.20.0
+make release-check VERSION=0.20.0 FINAL=1
 ```
 
 `release-prepare` synchronizes the root `VERSION`, Go Framework and CLI metadata,
@@ -228,7 +234,7 @@ independent and change only when their compatibility contracts change.
 
 The command prepares a reviewable change only. It never creates or pushes a Git
 tag, publishes to pub.dev, or creates a GitHub Release. Windows maintainers use
-`.\tool\windows.ps1 -Task release-prepare -Version 0.19.0` and the corresponding
+`.\tool\windows.ps1 -Task release-prepare -Version 0.20.0` and the corresponding
 `release-check` task. The final check rejects a release while either changelog is
 still marked `Unreleased`; on Windows, add `-Final`.
 
@@ -250,7 +256,7 @@ The release packager builds with `CGO_ENABLED=0`, `-trimpath`, disabled VCS
 stamping, an empty Go build ID, and ldflag-injected version/commit/date metadata.
 Archive timestamps come from the source commit date, so identical inputs produce
 identical archives and checksums. Outputs are written under `build/bridra/cli/`.
-Each version has its own directory, such as `build/bridra/cli/0.19.0/`, so stale
+Each version has its own directory, such as `build/bridra/cli/0.20.0/`, so stale
 assets from an earlier release cannot be uploaded accidentally.
 
 ## Verify
@@ -643,8 +649,20 @@ current `protocolVersion` regresses or when a breaking wire change keeps the
 baseline protocol. A greater protocol produces `versioned_break`: generated
 clients and servers will reject the old contract instead of exchanging
 incompatible payloads. The command does not modify either schema or generated
-code. Replace the application baseline only after the new contract has passed
-review and deployment; never derive it from the Template protocol baseline.
+code. Before the first release, explicitly accept a reviewed initial contract
+with:
+
+```bash
+bridra schema baseline --update
+```
+
+This validates and copies `schema/bridra.json` to
+`schema/bridra.baseline.json`, preserving the source bytes. Use `--schema path`
+and `--baseline path` for custom paths. An invalid schema leaves the baseline
+unchanged. Review the baseline diff before committing it. Once peers are deployed,
+replace the baseline only after review and deployment of the new contract; never
+derive it from the Template protocol baseline. Generation, upgrades, and
+compatibility checks never update it or skip the compatibility gate.
 
 Method removal, unary/streaming changes, request parameter and rule changes,
 field shape/nullability changes, and required response/meta field changes are
@@ -797,8 +815,8 @@ On macOS, returning from Dart does not terminate an already-started
 the generated `dev.cluion.bridra/application` native lifecycle handler. Generated
 projects cover that handler through `make macos-native-test`; existing projects
 must adopt the Template v4 `MainFlutterWindow.swift` handler before calling the
-new API. Windows and Linux close the session and return normally without a
-native channel call.
+new API. Windows and Linux close the session and exit the secondary process
+with status zero; returning from Dart alone does not stop the native runner.
 
 Each desktop launch creates a random 256-bit token and starts one Go child
 process. Flutter sends that token as a bounded, versioned first line on stdin,
@@ -1294,6 +1312,29 @@ Providers attempted before a Register failure and every provider registered befo
 a Boot failure are still terminated, so `Terminate` must tolerate partial
 initialization. `app.Build` performs this cleanup automatically when startup fails;
 the stdio sidecar and HTTP server also shut down the Application on exit.
+
+The shutdown caller's context bounds its wait. When it has a deadline, each hook
+receives an equal share of the remaining time across remaining terminable providers,
+so a cooperative slow hook cannot spend the entire cleanup budget. Cleanup continues
+in reverse order after that wait expires; each remaining provider receives a fresh one-second
+grace period with the original context values. Only errors returned by an invoked
+provider are attributed to that provider. `ShutdownComplete` remains false until
+every termination hook returns, and another call can wait for the same run.
+Providers must honor their context: Go cannot forcibly stop a blocked hook, and
+cleanup remains sequential to preserve resource dependencies. A process that
+exits at its outer shutdown deadline cannot guarantee unfinished cleanup.
+
+Generated HTTP entrypoints call `app.Build` with the file-transfer service
+provider, stop HTTP work before shutting down the Application, and clean up
+startup failures. `Config.FileTransfers` alternatively binds a caller-owned store
+before provider registration. Router-only convenience helpers do not own shutdown;
+entrypoints with providers should retain the Application returned by `Build`.
+
+Generated unary Dart methods accept `timeout: const Duration(seconds: 90)` to
+override the default five-second call limit. Wrappers and handwritten
+implementations must accept and forward the named `timeout` parameter after
+regenerating the contract. A call timeout does not itself mean the backend process
+has disconnected.
 
 ## Database and transactions
 
@@ -1829,6 +1870,49 @@ One named Task never overlaps with itself; different Tasks have independent loop
 may run concurrently. `TaskTimeout` supplies each invocation context. Errors and
 recovered panics are wrapped by `ErrScheduledTaskExecutionFailed` and sent to
 `ReportFailure`.
+
+### Runtime task controls
+
+`ScheduleTask` and `ScheduleCronTask` retain their pre-Boot registration contract.
+After the Scheduler starts, use `StartTask` for a user-controlled process-local
+polling task:
+
+```go
+handle, err := framework.StartTask(scheduler, "monitor.poll", 5*time.Second, poll)
+if err != nil {
+    return err
+}
+if err := handle.SetInterval(10 * time.Second); err != nil {
+    return err
+}
+if err := handle.TriggerNow(); err != nil {
+    return err
+}
+// When monitoring is disabled:
+handle.Stop()
+<-handle.Done() // wait outside the task before releasing its resources
+```
+
+The initial run waits one interval. `SetInterval` requires a positive duration;
+it resets a pending wait, or applies after the active invocation finishes.
+`TriggerNow` bypasses the wait and coalesces multiple pending requests into one
+invocation. A task never overlaps with itself, including manual triggers.
+
+`Stop` is idempotent and requests cancellation without blocking. The active task
+must honor its context; `Done` closes only after it returns and the runner exits.
+Wait for `Done` before starting a replacement with the same name. Controls after
+stop return `ErrScheduledTaskStopped`. Do not wait for `Done` from inside the task
+itself. Scheduler/Application shutdown cancels these tasks and waits for them,
+subject to the shutdown caller's deadline. Expected cancellation caused by stop
+is not reported as a failure; invocation timeouts and other errors still are.
+
+Runtime controls currently support fixed-delay tasks on a Scheduler **without a
+Store**. A configured Store returns `ErrDynamicSchedulingUnsupported`, so these
+controls cannot silently bypass persistent leases or distributed coordination.
+Dynamic cron and persisted runtime schedule changes are outside this API.
+`ScheduledTasks` includes active dynamic names, removed when their runners exit.
+
+### Persistent scheduling
 
 Without a `SchedulerStore`, next-run and completion state remain process-local. To
 preserve them across Sidecar or server restarts, configure `FileSchedulerStore`:

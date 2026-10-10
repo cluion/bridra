@@ -33,7 +33,7 @@ Models, Services, Responses, Controllers, and route registration remain under
 `backend/app`. `packages/bridra_flutter` owns transport-neutral RPC, HTTP,
 desktop Sidecar, and opt-in Embedded clients. The generated `BridraRpcApi` owns
 the application RPC contract; `lib/api/backend_gateway.dart` adds connection lifecycle and health
-caching. Both packages remain in one Git repository and use Bridra 0.19.0.
+caching. Both packages remain in one Git repository and use Bridra 0.20.0.
 
 Native macOS Sidecars may register a `ResourceBroker` backed by
 `NewMacOSResourceBookmarkResolver`. The resolver alone handles Foundation's
@@ -124,7 +124,7 @@ contracts; neither command tags or publishes a release.
 
 `create` resolves `all`, `desktop`, `mobile`, or an explicit platform list into
 one canonical selection. It asks Flutter to generate only those runners inside a
-same-parent staging directory, then renders Project Template manifest v7 and
+same-parent staging directory, then renders Project Template manifest v8 and
 generates the typed contract. Go consumer tests, Flutter dependency resolution,
 and Dart formatting must succeed before one atomic rename exposes the destination;
 every earlier failure removes the staging directory.
@@ -290,7 +290,13 @@ Providers that acquire resources implement `TerminableServiceProvider`. Shutdown
 executes them once in reverse registration order, including the provider whose
 Register failed and providers registered but not yet booted. Concurrent callers
 coalesce onto one shutdown run; provider failures are collected rather than stopping
-later cleanup and remain inspectable through `ApplicationShutdownErrors`. A completed
+later cleanup and remain inspectable through `ApplicationShutdownErrors`. The caller's
+context bounds its wait without abandoning the cleanup run. Each hook gets an equal
+share of the remaining deadline budget so later resources can still be cleaned up.
+Once that context expires,
+each remaining provider receives a fresh one-second cleanup context that preserves
+context values. Providers must honor their context; a blocked hook keeps cleanup
+pending, and later callers can wait again. A completed
 shutdown is terminal for the Application. Project Template v4 makes the generated
 Sidecar own this Application, stops accepting stdio before invoking shutdown, and
 bounds the transport-stop and provider-shutdown waits independently. A reader or

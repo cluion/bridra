@@ -74,34 +74,33 @@ void main() {
             : const ['close'],
       );
     },
+    skip: !Platform.isMacOS,
   );
 
-  test(
-    'closes non-macOS secondary without invoking native lifecycle',
-    () async {
-      final events = <String>[];
-      final session = _FakeSession(isPrimary: false, onClose: events.add);
-      final messenger =
-          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-      messenger.setMockMethodCallHandler(
+  test('exits non-macOS secondary after closing its session', () async {
+    final events = <String>[];
+    final session = _FakeSession(isPrimary: false, onClose: events.add);
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(
+      _applicationLifecycleChannel,
+      (_) async => fail('non-macOS secondary invoked native lifecycle'),
+    );
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(
         _applicationLifecycleChannel,
-        (_) async => fail('non-macOS secondary invoked native lifecycle'),
-      );
-      addTearDown(
-        () => messenger.setMockMethodCallHandler(
-          _applicationLifecycleChannel,
-          null,
-        ),
-      );
+        null,
+      ),
+    );
 
-      await single_instance_io.terminateSecondary(
-        session,
-        requiresNativeTermination: false,
-      );
+    await single_instance_io.terminateSecondary(
+      session,
+      requiresNativeTermination: false,
+      exitProcess: (code) => events.add('exit:$code'),
+    );
 
-      expect(events, const ['close']);
-    },
-  );
+    expect(events, const ['close', 'exit:0']);
+  });
 
   test('does not terminate or close the primary desktop instance', () async {
     final session = _FakeSession(isPrimary: true);
@@ -115,6 +114,39 @@ void main() {
     );
 
     expect(session.closeCount, 0);
+  });
+
+  test('secondary process exits after forwarding activation', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'bridra-secondary-exit-',
+    );
+    addTearDown(() => directory.delete(recursive: true));
+    final applicationId = _applicationId('secondary_exit');
+    final primary = await DesktopSingleInstance.acquire(
+      applicationId: applicationId,
+      runtimeDirectory: directory.path,
+    );
+    addTearDown(primary.close);
+    final activations = StreamIterator(primary.activations);
+    addTearDown(activations.cancel);
+    for (var index = 0; index < 3; index++) {
+      final activation = activations.moveNext();
+      final child = await _startHelper(
+        runtimeDirectory: directory.path,
+        applicationId: applicationId,
+        workingDirectory: directory.path,
+        arguments: ['launch-$index'],
+        environment: const {'BRIDRA_SINGLE_INSTANCE_HELPER_MODE': 'terminate'},
+      );
+      addTearDown(child.kill);
+      final result = await _collectHelper(
+        child,
+      ).timeout(const Duration(seconds: 15));
+      expect(result.exitCode, 0, reason: result.stderr);
+      expect(result.stdout, isNot(contains('termination returned')));
+      expect(await activation, isTrue);
+      expect(activations.current.arguments, ['launch-$index']);
+    }
   });
 
   test(

@@ -9,6 +9,7 @@ class RecordingRpcClient implements RpcClient {
   String? method;
   Map<String, Object?>? params;
   RpcCancellationToken? cancellationToken;
+  Duration? timeout;
 
   @override
   Future<RpcReply> call(
@@ -20,6 +21,7 @@ class RecordingRpcClient implements RpcClient {
     this.method = method;
     this.params = params;
     this.cancellationToken = cancellationToken;
+    this.timeout = timeout;
     return reply;
   }
 
@@ -76,6 +78,7 @@ void main() {
 
     expect(rpc.method, BridraMethods.systemHealth);
     expect(rpc.params, isEmpty);
+    expect(rpc.timeout, const Duration(seconds: 5));
     expect(health.status, 'ok');
     expect(health.protocolVersion, supportedBackendProtocolVersion);
   });
@@ -99,12 +102,14 @@ void main() {
 
       final greeting = await BridraRpcApi(rpc).greet(
         const GreetingRequest(name: 'Codex'),
+        timeout: const Duration(seconds: 90),
         cancellationToken: cancellationToken,
       );
 
       expect(rpc.method, BridraMethods.greetingHello);
       expect(rpc.params, {'name': 'Codex'});
       expect(rpc.cancellationToken, same(cancellationToken));
+      expect(rpc.timeout, const Duration(seconds: 90));
       expect(greeting.message, 'Hello, Codex!');
       expect(greeting.timestamp, DateTime.utc(2026, 7, 21, 12));
       expect(greeting.pipeline, ['auth:before', 'auth:after']);

@@ -32,6 +32,7 @@ type doctorSystem struct {
 	run      func(context.Context, string, ...string) ([]byte, error)
 	readFile func(string) ([]byte, error)
 	abs      func(string) (string, error)
+	getenv   func(string) string
 }
 
 type doctorCommand struct {
@@ -76,6 +77,7 @@ func defaultDoctorSystem() doctorSystem {
 		},
 		readFile: os.ReadFile,
 		abs:      filepath.Abs,
+		getenv:   os.Getenv,
 	}
 }
 
@@ -314,9 +316,7 @@ func (item doctorCommand) checkHost(platforms []string, report *doctorReport) {
 		item.checkOptionalTool("xcodebuild", report)
 		item.checkOptionalTool("xcrun", report)
 	case "windows":
-		item.checkOptionalTool("cmake", report)
-		item.checkOptionalTool("ninja", report)
-		item.checkOptionalTool("cl", report)
+		item.checkWindowsToolchain(report)
 	default:
 		report.add(
 			doctorWarning,
@@ -324,6 +324,59 @@ func (item doctorCommand) checkHost(platforms []string, report *doctorReport) {
 			item.system.goos+" is not in Bridra's release build matrix",
 		)
 	}
+}
+
+func (item doctorCommand) checkWindowsToolchain(report *doctorReport) {
+	vswhere, err := item.system.lookPath("vswhere")
+	if err != nil {
+		getenv := item.system.getenv
+		if getenv == nil {
+			getenv = os.Getenv
+		}
+		programFiles := getenv("ProgramFiles(x86)")
+		if programFiles == "" {
+			programFiles = getenv("ProgramFiles")
+		}
+		if programFiles == "" {
+			report.add(doctorWarning, "Visual Studio C++", "cannot locate vswhere; run 'fvm flutter doctor -v'")
+			return
+		}
+		vswhere = filepath.Join(programFiles, "Microsoft Visual Studio", "Installer", "vswhere.exe")
+	}
+	for _, workload := range []string{
+		"Microsoft.VisualStudio.Workload.NativeDesktop",
+		"Microsoft.VisualStudio.Workload.VCTools",
+	} {
+		output, err := item.execute(vswhere,
+			"-latest", "-products", "*", "-version", "[16.0,)",
+			"-requires", workload,
+			"Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+			"Microsoft.VisualStudio.Component.VC.CMake.Project",
+			"-format", "json", "-utf8",
+		)
+		if err != nil {
+			report.add(doctorWarning, "Visual Studio C++", "vswhere failed: "+commandFailureDetail(output, err))
+			return
+		}
+		var installations []struct {
+			InstallationPath string `json:"installationPath"`
+			IsComplete       bool   `json:"isComplete"`
+			IsLaunchable     bool   `json:"isLaunchable"`
+			IsRebootRequired bool   `json:"isRebootRequired"`
+		}
+		if err := json.Unmarshal(output, &installations); err != nil {
+			report.add(doctorWarning, "Visual Studio C++", "cannot parse vswhere output; run 'fvm flutter doctor -v'")
+			return
+		}
+		for _, installation := range installations {
+			if installation.InstallationPath != "" && installation.IsComplete &&
+				installation.IsLaunchable && !installation.IsRebootRequired {
+				report.add(doctorOK, "Visual Studio C++", installation.InstallationPath+" (MSVC and CMake)")
+				return
+			}
+		}
+	}
+	report.add(doctorWarning, "Visual Studio C++", "no complete C++ desktop toolchain found; run 'fvm flutter doctor -v'")
 }
 
 func (item doctorCommand) checkOptionalTool(name string, report *doctorReport) {

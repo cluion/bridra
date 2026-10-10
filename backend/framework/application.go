@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 )
 
 var (
@@ -77,6 +78,8 @@ const (
 )
 
 type applicationShutdownState uint8
+
+const applicationShutdownCleanupTimeout = time.Second
 
 const (
 	applicationShutdownIdle applicationShutdownState = iota
@@ -269,15 +272,7 @@ func (application *Application) Shutdown(ctx context.Context) error {
 	case applicationShuttingDown:
 		done := application.shutdownDone
 		application.mu.Unlock()
-		select {
-		case <-done:
-			application.mu.Lock()
-			err := application.shutdownErr
-			application.mu.Unlock()
-			return err
-		case <-ctx.Done():
-			return ctx.Err()
-		}
+		return application.waitForShutdown(ctx, done)
 	}
 	if err := ctx.Err(); err != nil {
 		application.mu.Unlock()
@@ -289,10 +284,33 @@ func (application *Application) Shutdown(ctx context.Context) error {
 	}
 	application.shutdownState = applicationShuttingDown
 	application.shutdownDone = make(chan struct{})
+	done := application.shutdownDone
 	providers := append([]ServiceProvider(nil), application.shutdownProviders...)
 	application.mu.Unlock()
+	go application.terminateProviders(ctx, providers)
+	return application.waitForShutdown(ctx, done)
+}
 
+func (application *Application) waitForShutdown(ctx context.Context, done <-chan struct{}) error {
+	select {
+	case <-done:
+		application.mu.Lock()
+		err := application.shutdownErr
+		application.mu.Unlock()
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (application *Application) terminateProviders(ctx context.Context, providers []ServiceProvider) {
 	failures := make([]ShutdownFailure, 0)
+	remaining := 0
+	for _, provider := range providers {
+		if _, ok := provider.(TerminableServiceProvider); ok {
+			remaining++
+		}
+	}
 	for index := len(providers) - 1; index >= 0; index-- {
 		provider := providers[index]
 		terminable, ok := provider.(TerminableServiceProvider)
@@ -300,13 +318,23 @@ func (application *Application) Shutdown(ctx context.Context) error {
 			continue
 		}
 		name := serviceProviderName(provider)
-		if err := ctx.Err(); err != nil {
-			failures = append(failures, ShutdownFailure{Provider: name, Err: err})
-			break
+		terminationContext := ctx
+		cancel := func() {}
+		if ctx.Err() != nil {
+			// Later resources still need cleanup after the caller's budget expires.
+			// Keep dependency order and give each remaining provider a bounded grace period.
+			terminationContext, cancel = context.WithTimeout(
+				context.WithoutCancel(ctx), applicationShutdownCleanupTimeout,
+			)
+		} else if deadline, ok := ctx.Deadline(); ok {
+			// Reserve part of the caller's remaining budget for later resource cleanup.
+			terminationContext, cancel = context.WithTimeout(ctx, time.Until(deadline)/time.Duration(remaining))
 		}
-		if err := terminable.Terminate(ctx, application); err != nil {
+		if err := terminable.Terminate(terminationContext, application); err != nil {
 			failures = append(failures, ShutdownFailure{Provider: name, Err: err})
 		}
+		cancel()
+		remaining--
 	}
 
 	var shutdownErr error
@@ -318,7 +346,6 @@ func (application *Application) Shutdown(ctx context.Context) error {
 	application.shutdownState = applicationShutdownComplete
 	close(application.shutdownDone)
 	application.mu.Unlock()
-	return shutdownErr
 }
 
 func serviceProviderName(provider ServiceProvider) string {

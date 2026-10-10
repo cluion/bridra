@@ -3,12 +3,54 @@ package app_test
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"testing"
 
+	"{{.BridraGoModule}}/framework"
 	"{{.GoModule}}/app"
 	"{{.GoModule}}/app/contracts"
-	"{{.BridraGoModule}}/framework"
 )
+
+type lifecycleProvider struct{ events *[]string }
+
+func (provider *lifecycleProvider) Register(application *framework.Application) error {
+	*provider.events = append(*provider.events, "register")
+	_, err := framework.Resolve(application.Container(), framework.FileTransferStoreKey)
+	return err
+}
+
+func (provider *lifecycleProvider) Boot(*framework.Application) error {
+	*provider.events = append(*provider.events, "boot")
+	return nil
+}
+
+func (provider *lifecycleProvider) Terminate(context.Context, *framework.Application) error {
+	*provider.events = append(*provider.events, "terminate")
+	return nil
+}
+
+func TestGeneratedApplicationSharesFileTransfersAndProviderLifecycle(t *testing.T) {
+	store, err := framework.NewFileTransferStore(framework.DefaultFileTransferOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	events := []string{}
+	application, err := app.Build(app.Config{Token: "test-token", FileTransfers: store}, &lifecycleProvider{events: &events})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := framework.Resolve(application.Container(), framework.FileTransferStoreKey)
+	if err != nil || resolved != store {
+		t.Fatalf("store = %p, error = %v", resolved, err)
+	}
+	if err := application.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(events, []string{"register", "boot", "terminate"}) {
+		t.Fatalf("events = %v", events)
+	}
+}
 
 func TestGeneratedApplicationPipeline(t *testing.T) {
 	router := app.NewRouter("test-token", nil, "test")

@@ -163,8 +163,11 @@ make codegen-check
 
 `make verify` runs the schema check automatically. A breaking wire change fails
 unless the current application `protocolVersion` is greater than the baseline.
-Neither `make generate` nor framework upgrades replace the baseline; update it
-only after the new contract has been reviewed and deployed.
+Neither `make generate` nor framework upgrades replace the baseline. Before the
+first release, explicitly accept a reviewed initial contract from the project
+root with `bridra schema baseline --update`. This validates and copies the current
+schema; review the baseline diff before committing. Once peers are deployed,
+update it only after the new contract has been reviewed and deployed.
 
 To compare against a different release or deployment explicitly:
 

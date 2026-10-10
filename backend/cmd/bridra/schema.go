@@ -37,20 +37,27 @@ func (schemaCommand) name() string {
 }
 
 func (schemaCommand) summary() string {
-	return "Check RPC schema compatibility and protocol versioning"
+	return "Check RPC compatibility or explicitly update its baseline"
 }
 
 func (schemaCommand) usage() string {
 	return `Usage:
   bridra schema check --against path [options]
+  bridra schema baseline --update [--schema path] [--baseline path]
 
 Commands:
   check  Compare the current RPC wire schema with a baseline schema
+  baseline --update  Validate and replace the application-owned baseline
 
 Options:
   --against path  Baseline Bridra schema to compare against (required)
   --schema path   Current Bridra schema (default schema/bridra.json)
   --json          Write a versioned machine-readable report
+  --baseline path Baseline to update (default schema/bridra.baseline.json)
+
+Baseline updates require --update and never run during generation or checking.
+Before first release, update after reviewing the proposed contract. Once peers
+are deployed, update only after reviewing and deploying the new contract.
 
 Breaking wire changes require a protocolVersion greater than the baseline.
 Generated Go and Dart identifier renames are source migrations and are not
@@ -61,6 +68,9 @@ func (item schemaCommand) run(arguments []string, stdout, stderr io.Writer) erro
 	if helpRequested(arguments) {
 		fmt.Fprintln(stdout, item.usage())
 		return nil
+	}
+	if len(arguments) > 0 && arguments[0] == "baseline" {
+		return item.updateBaseline(arguments[1:], stdout, stderr)
 	}
 	if len(arguments) == 0 || arguments[0] != "check" {
 		return fmt.Errorf("%w: usage: bridra schema check --against path [options]", errUsage)

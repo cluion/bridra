@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -10,8 +11,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"{{.BridraGoModule}}/framework"
@@ -19,6 +22,13 @@ import (
 )
 
 func main() {
+	if err := runServer(); err != nil {
+		fmt.Fprintf(os.Stderr, "server: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runServer() (resultErr error) {
 	listen := flag.String("listen", "127.0.0.1:8080", "HTTP listen address")
 	token := flag.String("token", "", "RPC token; defaults to BRIDRA_BACKEND_TOKEN")
 	origin := flag.String("cors-origin", "", "allowed browser origin; use * for local development")
@@ -47,48 +57,44 @@ func main() {
 		*token = os.Getenv("BRIDRA_BACKEND_TOKEN")
 	}
 	if *token == "" {
-		fmt.Fprintln(os.Stderr, "server: token or BRIDRA_BACKEND_TOKEN is required")
-		os.Exit(2)
+		return errors.New("token or BRIDRA_BACKEND_TOKEN is required")
 	}
-	fileTransfers, err := framework.NewFileTransferStore(
-		framework.DefaultFileTransferOptions(),
-	)
+	application, err := app.Build(app.Config{Token: *token, Logs: os.Stderr, Runtime: "Go HTTP server"},
+		framework.NewFileTransferServiceProvider(framework.DefaultFileTransferOptions()))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "server: file transfers: %v\n", err)
-		os.Exit(2)
+		return fmt.Errorf("configure: %w", err)
 	}
-	defer fileTransfers.Close()
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		resultErr = errors.Join(resultErr, application.Shutdown(ctx))
+	}()
+	fileTransfers, err := framework.Resolve(application.Container(), framework.FileTransferStoreKey)
+	if err != nil {
+		return fmt.Errorf("file transfers: %w", err)
+	}
 	httpPrincipal, err := framework.NewPrincipal("bridra-http-client")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "server: HTTP principal: %v\n", err)
-		os.Exit(2)
+		return fmt.Errorf("HTTP principal: %w", err)
 	}
 	httpAuthenticator, err := framework.NewStaticTokenAuthenticator(
 		*token,
 		httpPrincipal,
 	)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "server: HTTP authenticator: %v\n", err)
-		os.Exit(2)
+		return fmt.Errorf("HTTP authenticator: %w", err)
 	}
 	httpRateLimiter, err := framework.NewMemoryRateLimiter(
 		framework.DefaultMemoryRateLimiterOptions(),
 	)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "server: HTTP rate limiter: %v\n", err)
-		os.Exit(2)
+		return fmt.Errorf("HTTP rate limiter: %w", err)
 	}
 	httpObserver, err := framework.NewJSONHTTPObserver(os.Stderr)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "server: HTTP observer: %v\n", err)
-		os.Exit(2)
+		return fmt.Errorf("HTTP observer: %w", err)
 	}
-	router := app.NewRouterWithFileTransfers(
-		*token,
-		os.Stderr,
-		"Go HTTP server",
-		fileTransfers,
-	)
+	router := application.Router()
 	if *smokeStream {
 		registerSmokeStream(router)
 	}
@@ -140,20 +146,34 @@ func main() {
 		MaxHeaderBytes:    64 << 10,
 		ErrorLog:          log.New(os.Stderr, "server: ", 0),
 	}
-	if err := server.ListenAndServe(); err != nil {
-		fmt.Fprintf(os.Stderr, "server: %v\n", err)
-		os.Exit(1)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	serveErrors := make(chan error, 1)
+	go func() { serveErrors <- server.ListenAndServe() }()
+	select {
+	case err := <-serveErrors:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			return errors.Join(fmt.Errorf("HTTP shutdown: %w", err), server.Close())
+		}
+		return nil
 	}
 }
 
 const smokeStreamMethod = "bridra.smoke.stream"
 
 const (
-	smokeDownloadMethod     = "bridra.smoke.download"
-	smokeDownloadName       = "bridra-smoke.bin"
-	smokeDownloadMediaType  = "application/octet-stream"
-	smokeDownloadBlock      = "bridra-managed-download-smoke|"
-	smokeDownloadBlockCount = 2048
+	smokeDownloadMethod      = "bridra.smoke.download"
+	smokeDownloadName        = "bridra-smoke.bin"
+	smokeDownloadMediaType   = "application/octet-stream"
+	smokeDownloadBlock       = "bridra-managed-download-smoke|"
+	smokeDownloadBlockCount  = 2048
 	smokeDownloadInterruptAt = int64(32 << 10)
 	smokeUploadVerifyMethod  = "bridra.smoke.upload.verify"
 	smokeUploadInterruptAt   = int64(32 << 10)

@@ -1,14 +1,14 @@
 # Security policy
 
-Bridra 0.19 is a pre-1.0 framework line. Security fixes are provided on a
+Bridra 0.20 is a pre-1.0 framework line. Security fixes are provided on a
 best-effort basis without a production SLA or LTS commitment.
 
 ## Supported versions
 
 | Version | Security support |
 | --- | --- |
-| Latest `0.19.x` patch | Security fixes accepted on a best-effort basis |
-| `0.18.x` and older | Unsupported; upgrade to the latest `0.19.x` patch |
+| Latest `0.20.x` patch | Security fixes accepted on a best-effort basis |
+| `0.19.x` and older | Unsupported; upgrade to the latest `0.20.x` patch |
 | `main` | Active development only |
 
 Before 1.0, only the latest patch of the current documented minor line is

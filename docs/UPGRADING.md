@@ -9,8 +9,8 @@ Run the read-only planner from a project root before changing dependencies:
 
 ```bash
 bridra upgrade
-bridra upgrade --plan --to 0.19.0
-bridra upgrade --plan --to 0.19.0 --json
+bridra upgrade --plan --to 0.20.0
+bridra upgrade --plan --to 0.20.0 --json
 ```
 
 When invoking the CLI through the backend dependency, use:
@@ -39,6 +39,53 @@ means that the complete release change can be represented by synchronized
 dependency and metadata updates. A transition requiring a codemod, Project
 Template edit, protocol regeneration, application decision, or database
 migration must remain manual.
+
+## Framework 0.19.0 to 0.20.0
+
+This transition advances Project Template `7` to `8` and requires manual
+adoption. The planner reports `planAvailable: true` and `applyAvailable: false`;
+`--apply` refuses to change files. Update the Go and Flutter dependencies and
+lockfiles together, then review the following application-owned files:
+
+- Windows and Linux secondary instances now exit after session cleanup. Existing
+  entrypoints using `DesktopSingleInstance.terminateSecondary` need the updated
+  Flutter runtime; macOS retains its native lifecycle handler.
+- Application shutdown caller deadlines bound waiting rather than abandoning
+  later provider cleanup. Hooks share the remaining deadline budget; after caller
+  cancellation, remaining hooks receive individual one-second grace
+  periods. Hooks must honor their context; processes still have an outer exit bound.
+- Regenerated unary Dart methods include `Duration timeout`, defaulting to five
+  seconds. Add this named parameter to handwritten API implementations and mocks,
+  and forward it through wrappers. Existing call sites and wire schemas need no
+  changes; the generated Go contract and application protocol remain unchanged.
+- Existing HTTP entrypoints must adopt the updated Application-owned server
+  template explicitly. Retain the Application from `app.Build`, stop HTTP work,
+  and call `Shutdown` on normal exit and startup errors.
+- Native display names are applied when creating new desktop projects. Existing
+  application-owned runners are not rewritten by framework upgrades. Publisher
+  metadata and organization IDs retain their existing behavior.
+  On macOS, keep `PRODUCT_NAME` equal to the project name because Flutter derives
+  the `.app` path from it; use `CFBundleName` and `CFBundleDisplayName` for the
+  product's display name.
+- Existing macOS runners using desktop single-instance coordination need
+  `com.apple.security.network.client` and `com.apple.security.network.server`
+  enabled in both `DebugProfile.entitlements` and `Release.entitlements`.
+  Keep `com.apple.security.app-sandbox` enabled. These entitlements permit client
+  and server sockets generally; Bridra's single-instance listener itself binds
+  only to `127.0.0.1`.
+
+After adopting the applicable changes, regenerate contracts with `make generate`
+and adapt handwritten API implementations, record Framework `0.20.0` and
+Template `8` in `.bridra/project.json`, and run `make verify` plus the relevant
+platform builds. Metadata schema `3` and Template RPC protocol baseline `1`
+remain unchanged; preserve the application's existing RPC protocol and deployed
+schema baseline. Do not run `schema baseline --update` merely to pass an upgrade.
+
+Runtime task controls and `bridra schema baseline --update` are opt-in tools.
+Dynamic task controls require a running Scheduler without a Store; persisted
+tasks retain their existing coordination contract. To roll back, restore the
+previous dependencies, lockfiles, metadata, generated contracts, and reviewed
+application-owned changes together from version control, then verify again.
 
 ## Apply transaction
 
@@ -79,8 +126,8 @@ adding the necessary path fails verification.
 | Identity | Current | Compatibility rule |
 | --- | ---: | --- |
 | Project metadata schema | 3 | Schemas 1 and 2 remain readable and conservatively imply all six platforms. A newer schema requires a newer CLI. |
-| Framework SemVer | 0.19.0 | The project and selected target must match. An older version requires a complete registered migration path; downgrade plans are rejected. |
-| Project Template | 7 | Template v7 adds the application-owned iOS Embedded Core wrapper, Swift adapter, XCFramework build, and resource lifecycle while retaining v6 macOS resource handoff. Older templates require manual review. |
+| Framework SemVer | 0.20.0 | The project and selected target must match. An older version requires a complete registered migration path; downgrade plans are rejected. |
+| Project Template | 8 | Template v8 adds Application-owned HTTP lifecycle, macOS single-instance socket entitlements, native display metadata, and unary Dart timeout parameters while retaining the iOS Embedded Core and macOS resource handoff. Older templates require manual review. |
 | Application RPC protocol | Application-owned | `.bridra/project.json`, `schema/bridra.json`, and generated Go/Dart contracts must agree exactly. It may be newer than the selected release's Project Template baseline. |
 
 Framework SemVer, the Project Template protocol baseline, and an application's
@@ -232,8 +279,8 @@ the Go and Flutter dependencies together, add the version contract:
   "projectName": "your_app",
   "goModule": "example.com/your/app",
   "frameworkModule": "github.com/cluion/bridra/backend",
-  "frameworkVersion": "0.19.0",
-  "templateVersion": 7,
+  "frameworkVersion": "0.20.0",
+  "templateVersion": 8,
   "protocolVersion": 1
 }
 ```
@@ -258,8 +305,8 @@ runner or release target:
   "projectName": "your_app",
   "goModule": "example.com/your/app",
   "frameworkModule": "github.com/cluion/bridra/backend",
-  "frameworkVersion": "0.19.0",
-  "templateVersion": 7,
+  "frameworkVersion": "0.20.0",
+  "templateVersion": 8,
   "protocolVersion": 1,
   "platforms": ["android", "ios", "linux", "macos", "windows", "web"]
 }

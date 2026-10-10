@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,6 +37,55 @@ func TestDoctorPassesWithMatchingPinnedToolchain(t *testing.T) {
 		if !strings.Contains(stdout.String(), expected) {
 			t.Fatalf("stdout = %q, want %q", stdout.String(), expected)
 		}
+	}
+}
+
+func TestDoctorWindowsDiscoversIDEAndBuildToolsOutsidePath(t *testing.T) {
+	for _, selectedWorkload := range []string{"NativeDesktop", "VCTools"} {
+		t.Run(selectedWorkload, func(t *testing.T) {
+			system := healthyDoctorSystem("cmake", "ninja")
+			system.goos = "windows"
+			system.getenv = func(string) string { return "/program-files" }
+			run := system.run
+			system.run = func(ctx context.Context, name string, arguments ...string) ([]byte, error) {
+				if name != filepath.Join("/program-files", "Microsoft Visual Studio", "Installer", "vswhere.exe") {
+					return run(ctx, name, arguments...)
+				}
+				args := strings.Join(arguments, " ")
+				for _, required := range []string{"-products *", "VC.Tools.x86.x64", "VC.CMake.Project"} {
+					if !strings.Contains(args, required) {
+						t.Errorf("vswhere missing %s: %s", required, args)
+					}
+				}
+				if !strings.Contains(args, "Workload."+selectedWorkload) {
+					return []byte("[]"), nil
+				}
+				return []byte(`[{"installationPath":"C:\\VS","isComplete":true,"isLaunchable":true,"isRebootRequired":false}]`), nil
+			}
+			var output bytes.Buffer
+			if err := (doctorCommand{system: system}).run([]string{"--root", writeFVMConfiguration(t, "3.44.6"), "--strict"}, &output, io.Discard); err != nil {
+				t.Fatalf("doctor: %v\n%s", err, output.String())
+			}
+			if !strings.Contains(output.String(), "[ok] Visual Studio C++") || strings.Contains(output.String(), "[warn]") {
+				t.Fatal(output.String())
+			}
+		})
+	}
+}
+
+func TestDoctorWindowsRejectsMissingOrIncompleteToolchain(t *testing.T) {
+	for _, output := range []string{"[]", `[{"installationPath":"C:\\VS","isComplete":false,"isLaunchable":true}]`, "invalid json"} {
+		t.Run(output, func(t *testing.T) {
+			system := healthyDoctorSystem()
+			system.goos = "windows"
+			system.getenv = func(string) string { return "/program-files" }
+			system.run = func(context.Context, string, ...string) ([]byte, error) { return []byte(output), nil }
+			report := &doctorReport{}
+			(doctorCommand{system: system}).checkHost([]string{"windows"}, report)
+			if report.count(doctorWarning) != 1 {
+				t.Fatalf("checks = %#v", report.checks)
+			}
+		})
 	}
 }
 

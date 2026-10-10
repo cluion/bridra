@@ -19,6 +19,7 @@ class FakeBackend implements BackendGateway {
   @override
   Future<GreetingResult> greet(
     GreetingRequest request, {
+    Duration timeout = const Duration(seconds: 5),
     RpcCancellationToken? cancellationToken,
   }) async {
     return GreetingResult(
@@ -50,7 +51,10 @@ class FakeBackend implements BackendGateway {
   }
 
   @override
-  Future<HealthInfo> health({RpcCancellationToken? cancellationToken}) async {
+  Future<HealthInfo> health({
+    Duration timeout = const Duration(seconds: 5),
+    RpcCancellationToken? cancellationToken,
+  }) async {
     healthCalls++;
     return HealthInfo(
       status: 'ok',
@@ -66,6 +70,7 @@ class ExitingBackend extends FakeBackend {
   @override
   Future<GreetingResult> greet(
     GreetingRequest request, {
+    Duration timeout = const Duration(seconds: 5),
     RpcCancellationToken? cancellationToken,
   }) async {
     throw const SidecarExitedException(9);

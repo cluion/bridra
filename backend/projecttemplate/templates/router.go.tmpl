@@ -24,19 +24,13 @@ func NewRouterWithFileTransfers(
 	runtime string,
 	fileTransfers *framework.FileTransferStore,
 ) *framework.Router {
-	container := framework.NewContainer()
-	if fileTransfers != nil {
-		if err := framework.Instance(
-			container,
-			framework.FileTransferStoreKey,
-			fileTransfers,
-		); err != nil {
-			panic(err)
-		}
+	application, err := Build(Config{
+		Token: token, Logs: logs, Runtime: runtime, FileTransfers: fileTransfers,
+	})
+	if err != nil {
+		panic(fmt.Errorf("app: build: %w", err))
 	}
-	router := framework.NewRouterWithContainer(container)
-	configureRouter(router, token, logs, runtime)
-	return router
+	return application.Router()
 }
 
 func configureRouter(
