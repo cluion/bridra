@@ -16,6 +16,12 @@ func TestSchemaBaselineUpdateDefaultsAndKeepsCompatibilityGate(t *testing.T) {
 		t.Fatal(err)
 	}
 	baselinePath := writeSchemaCheckFixture(t, "schema", "bridra.baseline.json", schemaCheckFixture(1))
+	baselineInfo, err := os.Stat(baselinePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Windows exposes writable/read-only modes rather than Unix permission bits.
+	originalMode := baselineInfo.Mode().Perm()
 	current := schemaCheckFixture(1)
 	current.Methods[0].Result.Fields[0].Type = "boolean"
 	currentPath := writeSchemaCheckFixture(t, "schema", "bridra.json", current)
@@ -47,8 +53,8 @@ func TestSchemaBaselineUpdateDefaultsAndKeepsCompatibilityGate(t *testing.T) {
 		t.Fatalf("compatibility gate after explicit update: %v", err)
 	}
 	info, err := os.Stat(baselinePath)
-	if err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("existing permissions not preserved: %v, %v", info, err)
+	if err != nil || info.Mode().Perm() != originalMode {
+		t.Fatalf("existing permissions not preserved (want %v): %v, %v", originalMode, info, err)
 	}
 }
 
