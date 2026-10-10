@@ -167,6 +167,12 @@ var registeredUpgradeReleases = []upgradeRelease{
 		TemplateVersion:         7,
 		TemplateProtocolVersion: 1,
 	},
+	{
+		FrameworkVersion:        "0.20.0",
+		ProjectMetadataVersion:  3,
+		TemplateVersion:         8,
+		TemplateProtocolVersion: 1,
+	},
 }
 
 var registeredFrameworkMigrations = []frameworkMigration{
@@ -316,6 +322,13 @@ var registeredFrameworkMigrations = []frameworkMigration{
 		To:          "0.19.0",
 		Description: "Update the Go and Flutter framework dependencies for opt-in camelCase RPC methods and snake_case wire fields without rewriting application contracts.",
 		Automatic:   true,
+	},
+	{
+		ID:          "framework-0.19.0-to-0.20.0",
+		From:        "0.19.0",
+		To:          "0.20.0",
+		Description: "Adopt Application-owned HTTP shutdown and macOS single-instance socket entitlements, review native display metadata, and regenerate Dart unary APIs with timeout-aware implementations before updating both framework dependencies and Template 8 metadata.",
+		Automatic:   false,
 	},
 }
 

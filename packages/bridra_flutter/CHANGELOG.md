@@ -1,9 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.20.0 - 2026-10-10
 
 - Exit secondary Windows and Linux desktop processes after acknowledged activation
   handoff and session cleanup. The macOS native lifecycle handler is unchanged.
+
+- Aligned package metadata with Bridra 0.20.0 and Project Template 8. Regenerated
+  unary Dart methods accept an optional five-second-default `timeout`;
+  handwritten implementations and mocks must accept and forward it. Existing
+  call sites and the RPC wire protocol remain unchanged.
 
 ## 0.19.0 - 2026-10-03
 

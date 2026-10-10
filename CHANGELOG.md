@@ -3,7 +3,7 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
-## [Unreleased]
+## [0.20.0] - 2026-10-10
 
 ### Fixed
 
@@ -35,6 +35,20 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 - Generated unary Dart methods accept an optional `timeout`, retaining the
   five-second default. Handwritten API implementations need the new named parameter
   when regenerating their contract; the RPC wire protocol remains unchanged.
+
+### Changed
+
+- Advanced the Project Template to version `8` for Application-owned HTTP
+  lifecycle, macOS single-instance socket entitlements, native display metadata,
+  and generated unary Dart timeout parameters. The `0.19.0` to `0.20.0`
+  migration requires manual review of application-owned files. Project metadata
+  schema `3` and Template RPC protocol baseline `1` remain unchanged.
+
+### Support
+
+- The latest `0.20.x` release receives best-effort security fixes until the next
+  minor line is published. The `0.19.x` line is no longer supported after this
+  release.
 
 ## [0.19.0] - 2026-10-03
 
