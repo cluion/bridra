@@ -28,12 +28,14 @@ server, HTTP handler, and Embedded runtime are adapters around the same `Router`
 
 ## Package boundaries
 
+<!-- bridra:release-current:start -->
 `backend/framework` is the reusable public Go package. Application Requests,
 Models, Services, Responses, Controllers, and route registration remain under
 `backend/app`. `packages/bridra_flutter` owns transport-neutral RPC, HTTP,
 desktop Sidecar, and opt-in Embedded clients. The generated `BridraRpcApi` owns
 the application RPC contract; `lib/api/backend_gateway.dart` adds connection lifecycle and health
 caching. Both packages remain in one Git repository and use Bridra 0.20.0.
+<!-- bridra:release-current:end -->
 
 Native macOS Sidecars may register a `ResourceBroker` backed by
 `NewMacOSResourceBookmarkResolver`. The resolver alone handles Foundation's
@@ -159,15 +161,20 @@ is separately verified across project metadata, `schema/bridra.json`, and the
 generated Go/Dart protocol identities; it is not bounded by the template
 baseline. A deterministic migration graph resolves every ordered patch and
 minor hop to `--to`; unknown targets, downgrades, and missing hops are rejected.
+Registered manual requirements are filtered by the project's selected platforms;
+shared requirements and unclassified migrations remain manual. An older template
+baseline triggers only applicable required adoption, or manual review when its
+adoption path is unknown. Optional starter changes do not block dependency upgrades.
 
-`upgrade --apply` accepts only a complete path whose steps are all marked
+`upgrade --apply` accepts only a complete path whose applicable steps are all marked
 automatic. It validates manifest identity, snapshots the Go/Dart
 manifests and lockfiles plus project metadata, updates the final target
 atomically, resolves both package managers, and runs full project verification.
 Every managed file is restored on failure, including removal of newly created
 lockfiles. Manual steps and application source rewriting remain outside the
-automatic boundary. Framework-only migrations preserve the application RPC
-protocol. Any release that needs RPC regeneration must make that requirement an
+automatic boundary. Framework-only migrations preserve the recorded template
+baseline, selected platforms, and application RPC protocol. Any release that
+needs RPC regeneration must make that requirement an
 explicit manual migration. The complete compatibility, deprecation, migration,
 and rollback policy lives in `UPGRADING.md`.
 

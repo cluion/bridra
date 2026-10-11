@@ -16,6 +16,13 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 
 ### Fixed
 
+- Limit release documentation updates to explicitly marked current-version
+  blocks, preserving historical migration references. Promote pending
+  `Unreleased` changelog notes into the prepared version without losing them.
+- Filter upgrade requirements by the project's selected platforms and avoid
+  redundant whole-template migrations. Preserve the recorded template baseline
+  during automatic dependency updates; shared and unclassified manual changes
+  continue to block automatic application.
 - Generate Windows native window titles with ASCII Unicode escapes so MSVC's
   source codepage cannot corrupt non-ASCII display names.
 - Add explicit Linux CJK font fallback families to the generated starter theme

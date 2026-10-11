@@ -22,9 +22,11 @@ Flutter UI -> typed gateway -> RPC transport
                               Middleware -> Controller -> Service
 ```
 
+<!-- bridra:release-current:start -->
 Framework version `0.20.0` and the Project Template protocol baseline `1`
 evolve independently. Applications own their RPC protocol and may increment it
 when regenerating a coordinated Go/Dart contract.
+<!-- bridra:release-current:end -->
 Bridra is licensed under the [MIT License](LICENSE), Copyright (c) 2026 Cluion.
 
 ## Design goal
@@ -113,10 +115,12 @@ never the selected URL path.
 Install Go 1.25+, FVM 4.x, and the native toolchain required by your target
 platform. Then install the exact Bridra CLI version:
 
+<!-- bridra:release-current:start -->
 ```bash
 go install github.com/cluion/bridra/backend/cmd/bridra@v0.20.0
 bridra version
 ```
+<!-- bridra:release-current:end -->
 
 Create and verify a six-platform application:
 
@@ -157,6 +161,8 @@ bridra upgrade --apply
 
 Run `bridra help <command>` for complete options. The CLI does not silently
 upgrade itself or overwrite application-owned code.
+Upgrade plans filter registered manual requirements by the project's selected
+platforms; optional starter changes do not force whole-template replacement.
 
 ## Develop Bridra itself
 

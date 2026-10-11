@@ -27,10 +27,12 @@ Flutter UI -> typed gateway -> RPC client
                               Router -> Middleware -> Controller -> Service
 ```
 
+<!-- bridra:release-current:start -->
 The application entrypoint is `lib/main.dart`. These transports use the same
 versioned request, response, error, and health-handshake contract. Framework
 SemVer (`0.20.0`), the Project Template protocol baseline (`1`), and each
 application's internally consistent RPC protocol evolve independently.
+<!-- bridra:release-current:end -->
 
 ## Platform support
 
@@ -143,11 +145,13 @@ this starter currently uses Flutter's Swift Package Manager integration.
 
 Install the exact CLI version through Go:
 
+<!-- bridra:release-current:start -->
 ```bash
 go install github.com/cluion/bridra/backend/cmd/bridra@v0.20.0
 bridra version
 bridra version --json
 ```
+<!-- bridra:release-current:end -->
 
 GitHub Releases will also provide `tar.gz` archives for macOS/Linux and `zip`
 archives for Windows on amd64 and arm64. Verify an archive against
@@ -177,11 +181,13 @@ system code signing or notarization.
 Upgrade by installing an explicit newer version, then inspect it before updating
 projects:
 
+<!-- bridra:release-current:start -->
 ```bash
 go install github.com/cluion/bridra/backend/cmd/bridra@v0.20.0
 bridra version --json
 bridra upgrade --plan --to 0.20.0 --root /path/to/project
 ```
+<!-- bridra:release-current:end -->
 
 Bridra does not silently auto-update the CLI. Project compatibility,
 migration, deprecation, and rollback rules are documented in
@@ -216,27 +222,41 @@ preserved by framework-only migrations. Projects upgrading from earlier
 releases must still complete any manual steps already in their ordered migration
 path.
 
+The current planner filters registered manual requirements by the project's
+selected platforms. Android-only projects omit iOS and macOS steps; shared
+backend and code generation requirements remain applicable. An older template
+number alone does not force starter replacement. Unknown migrations remain
+manual, and automatic dependency updates preserve the recorded template baseline.
+
 ## Prepare one framework release version
 
 Framework maintainers enter the public SemVer once:
 
+<!-- bridra:release-current:start -->
 ```bash
 make release-prepare VERSION=0.20.0
 make release-check VERSION=0.20.0
 make release-check VERSION=0.20.0 FINAL=1
 ```
+<!-- bridra:release-current:end -->
 
 `release-prepare` synchronizes the root `VERSION`, Go Framework and CLI metadata,
 the `bridra_flutter` package, repository project metadata, changelogs, and live
 release documentation. It refreshes Flutter dependency metadata afterward.
+Only documentation inside `bridra:release-current:start` / `end` HTML comment
+blocks follows the new version; historical migration text remains unchanged.
+A leading unversioned `Unreleased` changelog section becomes the new release
+section with its notes intact.
 Protocol, Project Template, and project metadata schema integers remain
 independent and change only when their compatibility contracts change.
 
+<!-- bridra:release-current:start -->
 The command prepares a reviewable change only. It never creates or pushes a Git
 tag, publishes to pub.dev, or creates a GitHub Release. Windows maintainers use
 `.\tool\windows.ps1 -Task release-prepare -Version 0.20.0` and the corresponding
 `release-check` task. The final check rejects a release while either changelog is
 still marked `Unreleased`; on Windows, add `-Final`.
+<!-- bridra:release-current:end -->
 
 ## Build CLI release artifacts
 
@@ -252,12 +272,14 @@ Windows maintainers may run:
 .\tool\windows.ps1 -Task cli-release
 ```
 
+<!-- bridra:release-current:start -->
 The release packager builds with `CGO_ENABLED=0`, `-trimpath`, disabled VCS
 stamping, an empty Go build ID, and ldflag-injected version/commit/date metadata.
 Archive timestamps come from the source commit date, so identical inputs produce
 identical archives and checksums. Outputs are written under `build/bridra/cli/`.
 Each version has its own directory, such as `build/bridra/cli/0.20.0/`, so stale
 assets from an earlier release cannot be uploaded accidentally.
+<!-- bridra:release-current:end -->
 
 ## Verify
 

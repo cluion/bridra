@@ -334,7 +334,7 @@ func releaseTestRoot(t *testing.T, version, changelogStatus string) string {
 		"docs/RELEASING.md",
 		"docs/UPGRADING.md",
 	} {
-		files[path] = "Bridra " + version + "\n"
+		files[path] = releaseDocumentationStart + "\nBridra " + version + "\n" + releaseDocumentationEnd + "\nHistorical Bridra " + version + " remains unchanged.\n"
 	}
 	for path, contents := range files {
 		writeReleaseTestFile(t, root, path, contents)

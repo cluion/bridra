@@ -65,6 +65,7 @@ alone is not publication authorization.
   `compatible` or a deliberately coordinated `versioned_break`; never release
   an `incompatible` result.
 
+<!-- bridra:release-current:start -->
 ## Prepare version data in the substantive Pull Request
 
 Use the feature/fix branch that owns the final substantive change planned for
@@ -89,6 +90,13 @@ never hide it by rewriting `main` or changing files only during publication.
    The prepare command never creates a tag, publishes a package, or creates a
    release. It refuses a downgrade, inconsistent starting state, or a new
    version while the previous changelog entry is still marked `Unreleased`.
+   A leading unversioned `Unreleased` section is promoted to the new version,
+   preserving its notes and all published changelog sections.
+   Live version references must be enclosed by the HTML comment markers
+   `bridra:release-current:start` and `bridra:release-current:end`.
+   Only those blocks follow the release version; historical migration text
+   outside them remains unchanged. Missing, nested, or inconsistent blocks
+   stop preparation before any managed file is written.
 3. Review the changelog, upgrade/rollback guidance, and independently versioned
    protocol, Project Template, and project metadata contracts. Preserve historical
    release references when reviewing the prepared documentation. Register the new
@@ -250,6 +258,7 @@ environment, and announce any deprecation or migration window. Keep the reviewed
 substantive PR, workflow artifacts, and GitHub Release as the evidence record.
 Delete completed work branches after merge; retain the release tag. There is no
 routine release branch to retain or clean up after publication.
+<!-- bridra:release-current:end -->
 
 ## Failed or compromised release
 
@@ -269,18 +278,22 @@ history. If a tag or artifact is already public, use a new patch version instead
 
 Users choose upgrades explicitly:
 
+<!-- bridra:release-current:start -->
 ```bash
 go install github.com/cluion/bridra/backend/cmd/bridra@v0.20.0
 bridra upgrade --plan --to 0.20.0
 ```
+<!-- bridra:release-current:end -->
 
 Bridra has no silent CLI auto-update. Breaking changes require release notes,
 migration instructions, and the version change required by Semantic Versioning.
-Apply is permitted only for fully automatic catalog paths and rolls back managed
+Apply is permitted only when all applicable catalog steps are automatic and rolls back managed
 manifests, lockfiles, and metadata when dependency resolution or verification
 fails. Application-owned Controllers, Services, Models, configuration, generated
 contracts, and native runners are never overwritten as part of a core package
-upgrade. The `0.6.0` to `0.6.1` path remains manual because projects generated
+upgrade. Platform-specific requirements are filtered by project metadata;
+shared requirements and unclassified changes remain manual. Automatic updates
+preserve the recorded template baseline. The `0.6.0` to `0.6.1` path remains manual because projects generated
 with `0.6.0` must repair an application-owned `FakeBackend` test that upgrades
 never overwrite. The `0.6.1` to `0.13.0` path is automatic through the additive,
 opt-in file-, SQL-, and Redis-backed persistence releases, the `0.10.0`
