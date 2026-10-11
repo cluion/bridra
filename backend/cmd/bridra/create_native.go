@@ -12,6 +12,8 @@ import (
 
 func applyNativeDisplayName(root string, options createOptions) error {
 	cppName := strconv.Quote(options.displayName)
+	// MSVC may decode UTF-8 source using the Windows ANSI codepage.
+	windowsName := strconv.QuoteToASCII(options.displayName)
 	rcName := "\"" + strings.NewReplacer(`\`, `\\`, `"`, `""`).Replace(options.displayName) + "\""
 	xcodeName := strings.NewReplacer("/", "$(BRIDRA_NAME_SLASH)", "$", "$(BRIDRA_NAME_DOLLAR)").Replace(options.displayName)
 	patches := []struct {
@@ -20,7 +22,7 @@ func applyNativeDisplayName(root string, options createOptions) error {
 		replacements [][2]string
 	}{
 		{"windows", "windows/runner/main.cpp", [][2]string{
-			{`window.Create(L"` + options.projectName + `"`, "window.Create(L" + cppName},
+			{`window.Create(L"` + options.projectName + `"`, "window.Create(L" + windowsName},
 		}},
 		{"windows", "windows/runner/Runner.rc", [][2]string{
 			{`VALUE "FileDescription", "` + options.projectName + `"`, `VALUE "FileDescription", ` + rcName},

@@ -93,6 +93,41 @@ func TestCreateNativeDisplayNameRejectsUnexpectedRunner(t *testing.T) {
 	}
 }
 
+func TestCreateNativeDisplayNameUsesASCIIWindowsUnicodeLiteral(t *testing.T) {
+	root := t.TempDir()
+	options := createOptions{
+		projectName:       "app",
+		displayName:       `Bridra 驗收 "Pro" \ é 🚀 & Co.`,
+		selectedPlatforms: []string{"windows", "linux"},
+	}
+	if err := writeNativeRunnerFixtures(root, options.projectName, options.selectedPlatforms); err != nil {
+		t.Fatal(err)
+	}
+	if err := applyNativeDisplayName(root, options); err != nil {
+		t.Fatal(err)
+	}
+	windows, err := os.ReadFile(filepath.Join(root, "windows", "runner", "main.cpp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const literal = `L"Bridra \u9a57\u6536 \"Pro\" \\ \u00e9 \U0001f680 & Co."`
+	if !strings.Contains(string(windows), "window.Create("+literal+",") {
+		t.Fatalf("Windows title must use codepage-independent Unicode escapes:\n%s", windows)
+	}
+	for _, b := range windows {
+		if b > 0x7f {
+			t.Fatalf("Windows title source contains non-ASCII byte: %x", b)
+		}
+	}
+	linux, err := os.ReadFile(filepath.Join(root, "linux", "runner", "my_application.cc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(linux), `驗收 \"Pro\" \\ é 🚀`) {
+		t.Fatalf("GTK titles must retain their UTF-8 encoding:\n%s", linux)
+	}
+}
+
 func TestCreateMacOSLoopbackEntitlementsPreserveSandboxAndExistingKeys(t *testing.T) {
 	root := t.TempDir()
 	options := createOptions{selectedPlatforms: []string{"macos"}}

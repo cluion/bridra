@@ -14,6 +14,14 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
   digests. Prepare necessary version metadata in substantive PRs instead of
   requiring a separate release branch, commit, and PR.
 
+### Fixed
+
+- Generate Windows native window titles with ASCII Unicode escapes so MSVC's
+  source codepage cannot corrupt non-ASCII display names.
+- Add explicit Linux CJK font fallback families to the generated starter theme
+  for ARM64 Flutter engines that do not discover fallback fonts through
+  Fontconfig. A matching system font must be installed.
+
 ## [0.20.0] - 2026-10-10
 
 ### Fixed

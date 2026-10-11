@@ -17,6 +17,14 @@ make verify
 make run
 ```
 
+{{if hasPlatform "linux"}}The starter's Linux CJK fallback uses installed `Noto Sans CJK` or
+`Droid Sans Fallback` fonts. On Ubuntu, install `fonts-noto-cjk` if the app needs
+Chinese, Japanese, or Korean text. Some ARM64 Flutter engines cannot discover
+fallback fonts through Fontconfig automatically, so the starter explicitly
+lists these families in `ThemeData.fontFamilyFallback`. Applications that need
+portable typography should bundle appropriately licensed fonts.
+
+{{end}}
 {{if hasPlatform "macos"}}On macOS, `make macos-native-test` verifies the native lifecycle bridge used to
 terminate an acknowledged secondary application instance before it enters
 `runApp`, plus the bookmark creator used for native resource grants.

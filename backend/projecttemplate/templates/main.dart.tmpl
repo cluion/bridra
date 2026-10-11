@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import {{quote .BridraDartImport}};
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'api/backend_gateway.dart';
@@ -51,6 +52,16 @@ class StarterApp extends StatelessWidget {
       title: '{{.DisplayName}}',
       theme: ThemeData(
         brightness: Brightness.dark,
+        // ARM64 Linux engines without Fontconfig need explicit fallback families.
+        fontFamilyFallback: !kIsWeb && defaultTargetPlatform == TargetPlatform.linux
+            ? const [
+                'Noto Sans CJK TC',
+                'Noto Sans CJK SC',
+                'Noto Sans CJK JP',
+                'Noto Sans CJK KR',
+                'Droid Sans Fallback',
+              ]
+            : null,
         scaffoldBackgroundColor: _background,
         colorScheme: const ColorScheme.dark(
           primary: _primary,
