@@ -59,9 +59,9 @@ func TestLifecycleReleaseRequiresManualAdoptionWithoutWriting(t *testing.T) {
 			}
 			if report.Status != upgradeMigrationRequired || !report.PlanAvailable ||
 				report.ApplyAvailable || !report.ReadOnly || report.Applied ||
-				len(report.Steps) != 2 ||
+				len(report.Steps) != 1 ||
 				report.Steps[0].ID != "framework-0.19.0-to-0.20.0" || report.Steps[0].Automatic ||
-				report.Steps[1].ID != "template-7-to-8" || report.Steps[1].Automatic ||
+				!hasUpgradeDiagnostic(report, "template_adoption_required") ||
 				report.Project.ProtocolVersion != 3 || report.Target.TemplateVersion != 8 ||
 				report.Target.TemplateProtocolVersion != 1 ||
 				!hasUpgradeDiagnostic(report, "application_protocol_custom") {

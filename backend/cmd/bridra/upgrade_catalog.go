@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/cluion/bridra/backend/internal/projectplatform"
 	"github.com/cluion/bridra/backend/internal/releaseinfo"
 )
 
@@ -22,11 +23,17 @@ type upgradeRelease struct {
 }
 
 type frameworkMigration struct {
-	ID          string
-	From        string
-	To          string
+	ID           string
+	From         string
+	To           string
+	Description  string
+	Automatic    bool
+	Requirements []migrationRequirement
+}
+
+type migrationRequirement struct {
 	Description string
-	Automatic   bool
+	Platforms   []string // Empty means shared application code on every platform.
 }
 
 type migrationPredecessor struct {
@@ -203,6 +210,10 @@ var registeredFrameworkMigrations = []frameworkMigration{
 		To:          "0.4.0",
 		Description: "Update both framework dependencies and adopt parent-process observation in the application-owned Sidecar entrypoint.",
 		Automatic:   false,
+		Requirements: []migrationRequirement{{
+			Description: "Adopt parent-process observation in the application-owned Sidecar entrypoint.",
+			Platforms:   []string{projectplatform.Linux, projectplatform.MacOS, projectplatform.Windows},
+		}},
 	},
 	{
 		ID:          "framework-0.4.0-to-0.5.0",
@@ -210,6 +221,10 @@ var registeredFrameworkMigrations = []frameworkMigration{
 		To:          "0.5.0",
 		Description: "Update both framework dependencies and adopt desktop single-instance ownership in the application-owned Flutter entrypoint.",
 		Automatic:   false,
+		Requirements: []migrationRequirement{{
+			Description: "Adopt desktop single-instance ownership in the application-owned Flutter entrypoint.",
+			Platforms:   []string{projectplatform.Linux, projectplatform.MacOS, projectplatform.Windows},
+		}},
 	},
 	{
 		ID:          "framework-0.5.0-to-0.6.0",
@@ -294,6 +309,10 @@ var registeredFrameworkMigrations = []frameworkMigration{
 		To:          "0.15.0",
 		Description: "Adopt the application-owned generated Sidecar and Application shutdown lifecycle, then update both framework dependencies.",
 		Automatic:   false,
+		Requirements: []migrationRequirement{
+			{Description: "Adopt the application-owned Sidecar and Application shutdown lifecycle and await secondary-instance termination.", Platforms: []string{projectplatform.Linux, projectplatform.MacOS, projectplatform.Windows}},
+			{Description: "Review the macOS native terminateSecondary handler and Runner tests.", Platforms: []string{projectplatform.MacOS}},
+		},
 	},
 	{
 		ID:          "framework-0.15.0-to-0.16.0",
@@ -301,6 +320,10 @@ var registeredFrameworkMigrations = []frameworkMigration{
 		To:          "0.16.0",
 		Description: "Adopt the application-owned macOS bookmark bridge and ResourceBroker-enabled Sidecar entrypoint, then update both framework dependencies.",
 		Automatic:   false,
+		Requirements: []migrationRequirement{
+			{Description: "Review the ResourceBroker-enabled application-owned Sidecar provider wiring.", Platforms: []string{projectplatform.Linux, projectplatform.MacOS, projectplatform.Windows}},
+			{Description: "Review the macOS bookmark channel, native resource lifecycle and entitlements.", Platforms: []string{projectplatform.MacOS}},
+		},
 	},
 	{
 		ID:          "framework-0.16.0-to-0.17.0",
@@ -308,6 +331,10 @@ var registeredFrameworkMigrations = []frameworkMigration{
 		To:          "0.17.0",
 		Description: "Adopt the application-owned iOS Embedded Core bridge, XCFramework packaging, and security-scoped resource lifecycle, then update both framework dependencies.",
 		Automatic:   false,
+		Requirements: []migrationRequirement{{
+			Description: "Review the opt-in iOS Embedded Core bridge, XCFramework packaging and security-scoped resource lifecycle before adopting them.",
+			Platforms:   []string{projectplatform.IOS},
+		}},
 	},
 	{
 		ID:          "framework-0.17.0-to-0.18.0",
@@ -329,6 +356,11 @@ var registeredFrameworkMigrations = []frameworkMigration{
 		To:          "0.20.0",
 		Description: "Adopt Application-owned HTTP shutdown and macOS single-instance socket entitlements, review native display metadata, and regenerate Dart unary APIs with timeout-aware implementations before updating both framework dependencies and Template 8 metadata.",
 		Automatic:   false,
+		Requirements: []migrationRequirement{
+			{Description: "Review Application-owned HTTP shutdown in the application backend; custom entrypoints require manual verification."},
+			{Description: "Regenerate unary Dart APIs and review handwritten timeout-aware implementations and mocks."},
+			{Description: "Enable client and server socket entitlements in both macOS sandbox profiles while preserving app-sandbox.", Platforms: []string{projectplatform.MacOS}},
+		},
 	},
 }
 
@@ -420,6 +452,19 @@ func (catalog upgradeCatalog) migrationPath(from, to string) ([]frameworkMigrati
 	for _, migration := range catalog.Migrations {
 		if migration.ID == "" || migration.Description == "" {
 			return nil, false, fmt.Errorf("migration catalog entries require an ID and description")
+		}
+		migration.Requirements = append([]migrationRequirement(nil), migration.Requirements...)
+		for index, requirement := range migration.Requirements {
+			if requirement.Description == "" {
+				return nil, false, fmt.Errorf("migration %s has an empty requirement", migration.ID)
+			}
+			if len(requirement.Platforms) > 0 {
+				platforms, err := projectplatform.Normalize(requirement.Platforms)
+				if err != nil {
+					return nil, false, fmt.Errorf("migration %s: %w", migration.ID, err)
+				}
+				migration.Requirements[index].Platforms = platforms
+			}
 		}
 		if _, exists := releases[migration.From]; !exists {
 			return nil, false, fmt.Errorf(

@@ -27,6 +27,7 @@ var (
 	packageChangelogPattern = regexp.MustCompile(
 		`(?m)^## ([^\s]+) - (Unreleased|[0-9]{4}-[0-9]{2}-[0-9]{2})\r?$`,
 	)
+	pendingChangelogPattern      = regexp.MustCompile(`(?m)^## (?:\[Unreleased\]|Unreleased)\r?$`)
 	supportCurrentReleasePattern = regexp.MustCompile(
 		`(?m)^Bridra ([0-9]+\.[0-9]+) is the current pre-1\.0 framework line\b`,
 	)
@@ -379,6 +380,9 @@ func inspectReleaseSurfaces(root, expected string, final bool) []string {
 			continue
 		}
 		matches := changelog.pattern.FindSubmatch(contents)
+		if final && pendingChangelogPattern.Match(contents) {
+			diagnostics = append(diagnostics, changelog.path+": pending Unreleased section must be prepared")
+		}
 		if matches == nil {
 			diagnostics = append(diagnostics, changelog.path+": release heading not found")
 		} else if string(matches[1]) != expected {
@@ -405,10 +409,10 @@ func inspectReleaseSurfaces(root, expected string, final bool) []string {
 			diagnostics = append(diagnostics, fmt.Sprintf("%s: %v", document.path, err))
 			continue
 		}
-		if !strings.Contains(string(contents), expected) {
+		if _, err := updateReleaseDocumentation(contents, expected, expected); err != nil {
 			diagnostics = append(
 				diagnostics,
-				fmt.Sprintf("%s does not reference %s", document.path, expected),
+				fmt.Sprintf("%s: %v", document.path, err),
 			)
 		}
 	}
@@ -581,7 +585,7 @@ func buildReleaseUpdates(root, current, target string) ([]releaseUpdate, error) 
 			if surface := findReleaseSurface(relative); surface != nil {
 				updated, err = updateReleaseSurface(contents, surface.pattern, current, target)
 			} else {
-				updated = []byte(strings.ReplaceAll(string(contents), current, target))
+				updated, err = updateReleaseDocumentation(contents, current, target)
 			}
 		}
 		if err != nil {
@@ -647,6 +651,20 @@ func updateReleaseChangelog(
 	heading := "## " + target + " - Unreleased\n\n"
 	if bracketed {
 		heading = "## [" + target + "] - Unreleased\n\n"
+	}
+	if pending := pendingChangelogPattern.FindAllIndex(contents, -1); len(pending) > 0 {
+		if len(pending) != 1 || pending[0][0] > pattern.FindIndex(contents)[0] {
+			return nil, errors.New("expected one leading Unreleased section")
+		}
+		// Promote the pending notes without changing a published release section.
+		start, end := pending[0][0], pending[0][1]
+		replacement := strings.TrimSuffix(heading, "\n\n")
+		if end > start && contents[end-1] == '\r' {
+			replacement += "\r"
+		}
+		updated := append([]byte(nil), contents[:start]...)
+		updated = append(updated, replacement...)
+		return append(updated, contents[end:]...), nil
 	}
 	start := pattern.FindIndex(contents)
 	if start == nil {

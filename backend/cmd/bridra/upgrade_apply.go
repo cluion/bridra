@@ -274,7 +274,8 @@ func prepareUpgradeFiles(
 	updatedMetadata := metadata
 	updatedMetadata.SchemaVersion = target.ProjectMetadataVersion
 	updatedMetadata.FrameworkVersion = target.FrameworkVersion
-	updatedMetadata.TemplateVersion = target.TemplateVersion
+	// Dependency updates do not prove that application-owned template code was adopted.
+	updatedMetadata.TemplateVersion = metadata.TemplateVersion
 	metadataJSON, err := json.MarshalIndent(updatedMetadata, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("encode .bridra/project.json: %w", err)

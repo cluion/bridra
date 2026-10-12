@@ -1070,11 +1070,10 @@ func TestCurrentUpgradeCatalogPlansSchemaBaselineForCustomApplicationProtocol(t 
 		t.Fatalf("decode report: %v", err)
 	}
 	if report.Status != upgradeMigrationRequired || !report.PlanAvailable ||
-		report.ApplyAvailable || len(report.Steps) != 2 ||
+		report.ApplyAvailable || len(report.Steps) != 1 ||
 		report.Steps[0].ID != "framework-0.13.0-to-0.14.0" ||
 		report.Steps[0].Automatic ||
-		report.Steps[1].ID != "template-2-to-3" ||
-		report.Steps[1].Automatic ||
+		!hasUpgradeDiagnostic(report, "template_adoption_required") ||
 		report.Project.ProtocolVersion != 3 ||
 		report.Target.TemplateProtocolVersion != 1 ||
 		!hasUpgradeDiagnostic(report, "application_protocol_custom") {
@@ -1111,11 +1110,10 @@ func TestCurrentUpgradeCatalogPlansApplicationLifecycleForCustomProtocol(t *test
 		t.Fatalf("decode report: %v", err)
 	}
 	if report.Status != upgradeMigrationRequired || !report.PlanAvailable ||
-		report.ApplyAvailable || len(report.Steps) != 2 ||
+		report.ApplyAvailable || len(report.Steps) != 1 ||
 		report.Steps[0].ID != "framework-0.14.0-to-0.15.0" ||
 		report.Steps[0].Automatic ||
-		report.Steps[1].ID != "template-3-to-5" ||
-		report.Steps[1].Automatic ||
+		!hasUpgradeDiagnostic(report, "template_adoption_required") ||
 		report.Project.ProtocolVersion != 3 ||
 		report.Target.TemplateProtocolVersion != 1 ||
 		!hasUpgradeDiagnostic(report, "application_protocol_custom") {
@@ -1152,11 +1150,10 @@ func TestCurrentUpgradeCatalogPlansMacOSResourceHandoffForCustomProtocol(t *test
 		t.Fatalf("decode report: %v", err)
 	}
 	if report.Status != upgradeMigrationRequired || !report.PlanAvailable ||
-		report.ApplyAvailable || len(report.Steps) != 2 ||
+		report.ApplyAvailable || len(report.Steps) != 1 ||
 		report.Steps[0].ID != "framework-0.15.0-to-0.16.0" ||
 		report.Steps[0].Automatic ||
-		report.Steps[1].ID != "template-5-to-6" ||
-		report.Steps[1].Automatic ||
+		!hasUpgradeDiagnostic(report, "template_adoption_required") ||
 		report.Project.ProtocolVersion != 3 ||
 		report.Target.TemplateProtocolVersion != 1 ||
 		!hasUpgradeDiagnostic(report, "application_protocol_custom") {
@@ -1193,11 +1190,10 @@ func TestCurrentUpgradeCatalogPlansIOSEmbeddedCoreForCustomProtocol(t *testing.T
 		t.Fatalf("decode report: %v", err)
 	}
 	if report.Status != upgradeMigrationRequired || !report.PlanAvailable ||
-		report.ApplyAvailable || len(report.Steps) != 2 ||
+		report.ApplyAvailable || len(report.Steps) != 1 ||
 		report.Steps[0].ID != "framework-0.16.0-to-0.17.0" ||
 		report.Steps[0].Automatic ||
-		report.Steps[1].ID != "template-6-to-7" ||
-		report.Steps[1].Automatic ||
+		!hasUpgradeDiagnostic(report, "template_adoption_required") ||
 		report.Project.ProtocolVersion != 3 ||
 		report.Target.TemplateProtocolVersion != 1 ||
 		!hasUpgradeDiagnostic(report, "application_protocol_custom") {

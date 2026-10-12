@@ -16,7 +16,7 @@ import (
 	"github.com/cluion/bridra/backend/internal/releaseinfo"
 )
 
-const upgradeReportSchemaVersion = 4
+const upgradeReportSchemaVersion = 5
 
 var generatedGoProtocolPattern = regexp.MustCompile(
 	`(?m)^const ProtocolVersion = ([1-9][0-9]*)\r?$`,
@@ -56,11 +56,12 @@ type upgradeTarget struct {
 }
 
 type upgradeProject struct {
-	Name                   string `json:"name"`
-	ProjectMetadataVersion int    `json:"projectMetadataVersion"`
-	FrameworkVersion       string `json:"frameworkVersion,omitempty"`
-	TemplateVersion        int    `json:"templateVersion,omitempty"`
-	ProtocolVersion        int    `json:"protocolVersion,omitempty"`
+	Name                   string   `json:"name"`
+	ProjectMetadataVersion int      `json:"projectMetadataVersion"`
+	FrameworkVersion       string   `json:"frameworkVersion,omitempty"`
+	TemplateVersion        int      `json:"templateVersion,omitempty"`
+	ProtocolVersion        int      `json:"protocolVersion,omitempty"`
+	Platforms              []string `json:"platforms"`
 }
 
 type upgradeDiagnostic struct {
@@ -250,6 +251,7 @@ func evaluateUpgrade(
 			FrameworkVersion:       metadata.FrameworkVersion,
 			TemplateVersion:        metadata.TemplateVersion,
 			ProtocolVersion:        metadata.ProtocolVersion,
+			Platforms:              metadata.Platforms,
 		},
 		Target: target,
 	}
@@ -336,13 +338,14 @@ func evaluateUpgrade(
 				"Review every ordered migration step, then update the Go and Flutter framework dependencies together.",
 			))
 			for _, migration := range path {
+				automatic, description := migrationForPlatforms(migration, metadata.Platforms)
 				report.addStep(upgradePlanStep{
 					ID:          migration.ID,
 					Kind:        "framework",
 					From:        migration.From,
 					To:          migration.To,
-					Automatic:   migration.Automatic,
-					Description: migration.Description,
+					Automatic:   automatic,
+					Description: description,
 				})
 			}
 		}
@@ -358,14 +361,9 @@ func evaluateUpgrade(
 			Action: "Choose the same or a newer target; Bridra upgrade plans never perform framework downgrades.",
 		})
 	}
-	compareIntegerContract(
-		&report,
-		"template",
-		metadata.TemplateVersion,
-		target.TemplateVersion,
-		"Review docs/UPGRADING.md and apply template migrations manually; Bridra will not overwrite application-owned files.",
-		"project_template",
-	)
+	if err := planTemplateAdoption(&report, metadata, target, catalog); err != nil {
+		return upgradeReport{}, err
+	}
 	if metadata.ProtocolVersion != target.TemplateProtocolVersion {
 		report.Diagnostics = append(report.Diagnostics, upgradeDiagnostic{
 			Level: "ok", Code: "application_protocol_custom",
@@ -568,6 +566,7 @@ func writeUpgradeReport(output io.Writer, report upgradeReport) {
 	fmt.Fprintln(output, title)
 	fmt.Fprintf(output, "Mode: %s\n", report.Mode)
 	fmt.Fprintf(output, "Project: %s\n", report.Project.Name)
+	fmt.Fprintf(output, "Project platforms: %s\n", strings.Join(report.Project.Platforms, ", "))
 	fmt.Fprintf(output, "Status: %s\n", report.Status)
 	fmt.Fprintf(output, "Read only: %s\n", yesOrNo(report.ReadOnly))
 	fmt.Fprintf(output, "Plan available: %s\n", yesOrNo(report.PlanAvailable))

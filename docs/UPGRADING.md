@@ -1,17 +1,19 @@
 # Upgrading Bridra
 
 Bridra upgrades are explicit and reviewable. Bridra plans every migration
-first and applies only plans made entirely of registered automatic steps. It
+first and applies only plans whose applicable steps are all registered as automatic. It
 never updates the CLI itself, generated application code, native runners, or
 application-owned files.
 
 Run the read-only planner from a project root before changing dependencies:
 
+<!-- bridra:release-current:start -->
 ```bash
 bridra upgrade
 bridra upgrade --plan --to 0.20.0
 bridra upgrade --plan --to 0.20.0 --json
 ```
+<!-- bridra:release-current:end -->
 
 When invoking the CLI through the backend dependency, use:
 
@@ -35,10 +37,30 @@ required patch or pre-1.0 minor migration.
 
 `--apply` is opt-in. The report exposes `applyAvailable`; Bridra refuses to write
 when the plan is incomplete or contains a manual step. An automatic transition
-means that the complete release change can be represented by synchronized
+means that the applicable required changes can be represented by synchronized
 dependency and metadata updates. A transition requiring a codemod, Project
 Template edit, protocol regeneration, application decision, or database
 migration must remain manual.
+
+The planner uses the selected `platforms` in metadata schema `3` to filter
+registered manual requirements. For example, an Android-only project does not
+need the iOS Embedded Core or macOS entitlement steps. Schemas `1` and `2`
+conservatively imply all six platforms. Shared backend and code generation
+requirements still apply, and unclassified historical or custom migrations
+remain manual. Platform selection does not prove how custom application code
+uses a feature; review that code when the remaining steps require it.
+
+An older Project Template number alone does not require replacing the starter.
+The planner checks registered adoption requirements for the project's platforms,
+including requirements that may have been missed by updating dependencies outside
+Bridra. It reports optional template improvements as a notice, without blocking
+an otherwise current or automatic upgrade. Unknown adoption paths remain manual.
+`--apply` preserves the recorded template baseline; advance it explicitly only
+after adopting and verifying the applicable application-owned changes.
+
+The historical sections below describe each release's full migration scope.
+The current planner filters their classified platform requirements as described
+above; it does not rewrite application-owned files.
 
 ## Unreleased desktop Unicode fixes
 
@@ -116,8 +138,9 @@ still declare the versions recorded in `.bridra/project.json`. It snapshots:
 - `.bridra/project.json`
 
 It then updates the Go and Flutter framework versions together, records the
-target metadata schema, framework, and Project Template versions, preserves the
-application's RPC protocol, runs `go mod tidy`, runs `fvm flutter pub get`, and
+target metadata schema and framework version, preserves the recorded Project
+Template baseline, selected platforms, and application's RPC protocol, runs
+`go mod tidy`, runs `fvm flutter pub get`, and
 runs the generated project's full `make verify`.
 
 Any write, dependency-resolution, or verification failure restores every
@@ -138,16 +161,24 @@ description. The CLI test suite requires every registered older release to have
 a complete path to the current release, so bumping the framework version without
 adding the necessary path fails verification.
 
+Manual requirements may specify a platform list; an empty list applies to shared
+application code on every platform. Keep unclassified migrations manual until
+their scope is known. A requirement is skipped only when none of its platforms
+are selected. Register required application changes separately from optional
+starter improvements, and test both affected and unaffected platform selections.
+
 ## Version contract
 
 `.bridra/project.json` records four independent compatibility identities:
 
+<!-- bridra:release-current:start -->
 | Identity | Current | Compatibility rule |
 | --- | ---: | --- |
 | Project metadata schema | 3 | Schemas 1 and 2 remain readable and conservatively imply all six platforms. A newer schema requires a newer CLI. |
 | Framework SemVer | 0.20.0 | The project and selected target must match. An older version requires a complete registered migration path; downgrade plans are rejected. |
-| Project Template | 8 | Template v8 adds Application-owned HTTP lifecycle, macOS single-instance socket entitlements, native display metadata, and unary Dart timeout parameters while retaining the iOS Embedded Core and macOS resource handoff. Older templates require manual review. |
+| Project Template | 8 | Records adopted application-owned starter changes. Only applicable registered requirements or an unknown adoption path require manual review; template age alone does not block an upgrade. Dependency updates preserve this baseline. |
 | Application RPC protocol | Application-owned | `.bridra/project.json`, `schema/bridra.json`, and generated Go/Dart contracts must agree exactly. It may be newer than the selected release's Project Template baseline. |
+<!-- bridra:release-current:end -->
 
 Framework SemVer, the Project Template protocol baseline, and an application's
 RPC protocol are deliberately separate. An automatic framework migration
@@ -156,7 +187,9 @@ be a manual migration with explicit instructions. An application may increment
 its own protocol for an incompatible typed-contract change after coordinating
 the schema, generated Go code, generated Dart code, and project metadata.
 
-The versioned JSON report exposes `project.protocolVersion` for the verified
+JSON report schema `5` includes `project.platforms` and reports only applicable
+manual requirements. Consumers must recognize the report schema before using
+its plan semantics. The report exposes `project.protocolVersion` for the verified
 application contract and `target.templateProtocolVersion` for the initial
 protocol generated by the selected Project Template. A consistent application
 whose protocol is newer than that baseline remains `current` or receives the
@@ -292,6 +325,7 @@ Project Template v1 did not record framework, template, or protocol versions.
 The v1-to-v2 migration does not require application code changes. After updating
 the Go and Flutter dependencies together, add the version contract:
 
+<!-- bridra:release-current:start -->
 ```json
 {
   "schemaVersion": 2,
@@ -303,6 +337,7 @@ the Go and Flutter dependencies together, add the version contract:
   "protocolVersion": 1
 }
 ```
+<!-- bridra:release-current:end -->
 
 Keep the existing project identity and module values. Template 2 introduced this
 upgrade contract; Template 3 adds the deployed-schema baseline gate, Template 4
@@ -318,6 +353,7 @@ Schema 3 adds the canonical `platforms` list. Upgrading schema 1 or 2 defaults t
 all six platforms so an automatic metadata migration cannot silently remove a
 runner or release target:
 
+<!-- bridra:release-current:start -->
 ```json
 {
   "schemaVersion": 3,
@@ -330,6 +366,7 @@ runner or release target:
   "platforms": ["android", "ios", "linux", "macos", "windows", "web"]
 }
 ```
+<!-- bridra:release-current:end -->
 
 New projects may select a narrower scope through `bridra create --platforms`.
 For an existing project, narrow the metadata only after reviewing and removing
