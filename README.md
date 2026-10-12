@@ -197,6 +197,12 @@ before and after reconnect, repeats the managed download/upload recovery flow,
 then installs a signed Profile app and proves two launches without Flutter
 tooling.
 
+PRs use short-lived branches and squash into `main`. CI selects checks by
+changed surface and requires `ci-gate`; there is no routine `main` push run.
+Version tags trigger full release verification and artifact preparation before
+protected publication. See [CI and merge policy](docs/CI.md) for the required
+repository protection and workflow run counts.
+
 ## Documentation
 
 - [Complete guide](docs/GUIDE.md): prerequisites, CLI workflows, platform runs,
@@ -214,6 +220,8 @@ tooling.
   deprecation, and rollback
 - [Release process](docs/RELEASING.md): release authority, validation,
   artifacts, tags, package publication, and failure handling
+- [CI and merge policy](docs/CI.md): PR scope, required checks, tag verification,
+  and repository protection
 - [Contributing](CONTRIBUTING.md): development rules and Pull Request contract
 - [Security](SECURITY.md): supported versions and private vulnerability reports
 - [Support](SUPPORT.md): framework support boundary and Issue expectations
