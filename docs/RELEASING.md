@@ -8,7 +8,8 @@ Bridra is licensed under MIT. Its canonical public repository is
 `https://github.com/cluion/bridra`, its Go module is
 `github.com/cluion/bridra/backend`, and `bridra_flutter` is assigned to the
 verified `cluion.com` publisher. No tag or package may be published until every
-release blocker is resolved and recorded in a release Pull Request.
+release blocker is resolved and recorded in the reviewed change and release
+evidence. The development and merge gates are defined in [CI.md](CI.md).
 
 The tag-triggered workflow is disabled unless the public GitHub repository
 variable `BRIDRA_PUBLIC_RELEASE_ENABLED` is exactly `true`. Configure a protected
@@ -24,10 +25,12 @@ The roles in [GOVERNANCE.md](../GOVERNANCE.md) apply. A named release manager
 prepares and verifies a release, but only a Cluion repository owner may authorize
 the first public release, package ownership, license, or canonical identity.
 
-Every release is prepared through one reviewable release Pull Request. The Pull
-Request records the release manager, target version, source commit, support
-window, security status, artifact evidence, package owners, and final owner
-approval. CI success alone is not publication authorization.
+Prepare necessary version data in the last substantive feature/fix Pull Request
+planned for the release. Do not create a routine release branch, release-only
+commit, or additional release Pull Request. The reviewed PR and release evidence
+record the release manager, target version, source SHA, support window, security
+status, artifact evidence, package owners, and final owner approval. CI success
+alone is not publication authorization.
 
 ## Preconditions
 
@@ -62,13 +65,16 @@ approval. CI success alone is not publication authorization.
   `compatible` or a deliberately coordinated `versioned_break`; never release
   an `incompatible` result.
 
-## Prepare the release Pull Request
+## Prepare version data in the substantive Pull Request
 
-Use one branch named `release-MAJOR.MINOR.PATCH`, one release preparation
-commit, and one Pull Request for each version. Before merge, correct a release
-preparation error by amending that same commit and pushing with
-`--force-with-lease`; do not create a sequence of speculative correction
-commits or Pull Requests.
+Use the feature/fix branch that owns the final substantive change planned for
+this version. Preparation fixes may be separate commits on that branch; squash
+the complete reviewed result into `main`. Do not rewrite shared history or
+force a second release PR solely to group version changes.
+
+Choose the release version before this PR merges. If all work has already merged
+and the source version is wrong, a reviewed metadata correction is still needed;
+never hide it by rewriting `main` or changing files only during publication.
 
 1. Choose the SemVer and decide independently whether the RPC protocol, Project
    Template, or project metadata schema changes.
@@ -92,17 +98,19 @@ commits or Pull Requests.
 4. Replace `Unreleased` in both changelogs with the intended release date, then
    run `make release-check VERSION=0.20.0 FINAL=1`. The protected release workflow
    repeats this final check and refuses an unfinished changelog.
-5. Run the full local verification and workflow lint. From the clean release
-   commit, require a zero-warning Dart publish dry run, build the CLI artifacts
-   twice, and confirm both builds have identical archives, manifest, checksums,
-   and SBOM. Attach `coverage/summary.md` plus the CLI release
-   manifest/checksums and SBOM digest to the Pull Request.
+5. Run relevant local checks and workflow lint for CI changes. Require the PR's
+   `ci-gate` against an up-to-date merge result and record verification limits.
+   Tag CI later runs the full cross-platform release checks, coverage floors,
+   Dart dry run, reproducible CLI builds, and native archive smoke test against
+   the actual release SHA before requesting publication approval.
 6. Obtain maintainer review and repository-owner release authorization.
 
-The Verify workflow runs for Pull Requests and pushes to `main`, not every
-branch push. New commits cancel superseded runs for the same Pull Request or
-branch. After merge, wait for the exact `main` commit's Verify workflow before
-tagging it.
+The Verify workflow runs for Pull Requests targeting `main` and merge groups;
+it does not run for ordinary branch pushes or after a squash merge. It selects
+platform checks, cancels superseded runs for the same PR, and reports the fixed
+`ci-gate`. Require PR protection and a current base before relying on this
+policy. After merge, record the actual squash commit SHA for authorization and
+tagging. See [CI.md](CI.md) for scope and required repository settings.
 
 Windows maintainers use:
 
@@ -153,8 +161,8 @@ by these attestations.
 
 ## Tag and publish
 
-For Bridra 0.20.0, create the annotated Go submodule tag only after the release
-Pull Request is merged and the repository owner gives final authorization:
+For Bridra 0.20.0, create the annotated Go submodule tag only after the substantive
+Pull Request is merged and the repository owner authorizes the version and SHA:
 
 ```bash
 git fetch origin main
@@ -162,11 +170,19 @@ git tag -a backend/v0.20.0 <verified-main-sha> -m "Bridra 0.20.0"
 git push origin backend/v0.20.0
 ```
 
-The protected GitHub workflow requires the tag to point at the current `main`
-commit and reuses that exact commit's successful Verify workflow instead of
-running the full cross-platform suite again. It still repeats final version
-alignment, deterministic CLI packaging, Dart package validation, and
-provenance/SBOM attestation before creating the matching GitHub Release. The Release
+The GitHub workflow requires the exact tag SHA to be reachable from `main` and
+its version to match `VERSION`. It runs all shared cross-platform release checks
+against that SHA; it does not require or search for a `main` push Verify run.
+A later merge to `main` does not change the approved release source.
+
+Before environment approval, the read-only verification jobs enforce coverage,
+final version alignment, Dart package validation, two identical CLI builds, and
+a native Linux CLI smoke test. They upload one immutable candidate artifact.
+Only after all jobs pass does `public-release` request owner approval and gain
+publication/OIDC permissions. It downloads the exact artifact by ID, verifies
+the tag is unchanged and the manifest's version, full source SHA, digests, sizes,
+and file set, then attests and publishes those same CLI bytes without rebuilding.
+The Release
 contains exactly nine assets: six archives, `SHA256SUMS`, `manifest.json`, and
 the SPDX SBOM. Every archive must contain the executable and the MIT `LICENSE`;
 the schema-versioned manifest must identify the license as `MIT` and record the
@@ -230,12 +246,10 @@ documentation, and external consumer all agree on supported versions.
 
 After publication, confirm `SECURITY.md` and `SUPPORT.md` still match the
 supported line, verify GitHub installation instructions from a clean
-environment, and announce any deprecation or migration window. Keep the release
-Pull Request and GitHub Release as the evidence record.
-
-Only after every public verification passes, delete the local and remote
-`release-MAJOR.MINOR.PATCH` branch. Finish on a clean local `main` that exactly
-matches `origin/main`.
+environment, and announce any deprecation or migration window. Keep the reviewed
+substantive PR, workflow artifacts, and GitHub Release as the evidence record.
+Delete completed work branches after merge; retain the release tag. There is no
+routine release branch to retain or clean up after publication.
 
 ## Failed or compromised release
 
@@ -246,11 +260,10 @@ when appropriate, and correct the release with a new patch version. Dart package
 retraction/yanking and GitHub Release warnings reduce exposure but do not make a
 published artifact disappear; release notes must point users to the replacement.
 
-If the release Pull Request was already merged but no tag, Dart package, or
-GitHub Release is public, prepare one consolidated correction Pull Request and
-repeat the exact-main verification gate. Do not stack speculative correction
-commits or Pull Requests. If any artifact is already public, use a new patch
-version instead.
+If the substantive PR was already merged but no tag, Dart package, or GitHub
+Release is public, prepare a focused correction PR and pass the current merge
+gate. Record the resulting SHA for release authorization. Never rewrite merged
+history. If a tag or artifact is already public, use a new patch version instead.
 
 ## Upgrade policy
 

@@ -81,8 +81,9 @@ reproduction.
 
 Scheduled workflows use the latest commit on the default branch and can be
 delayed by GitHub Actions load. A scheduled green run complements the required
-Pull Request gate; it does not replace `make verify`, code review, or release
-validation. These semantics come from GitHub's
+Pull Request `ci-gate`; it does not replace applicable core verification, code
+review, or the exact-tag release validation in [CI.md](CI.md). There is no
+routine verification triggered by a push to `main`. These semantics come from GitHub's
 [workflow event documentation](https://docs.github.com/en/enterprise-cloud@latest/actions/reference/workflows-and-actions/events-that-trigger-workflows).
 
 ## Limits

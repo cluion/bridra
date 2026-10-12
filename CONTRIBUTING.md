@@ -70,6 +70,25 @@ Public Go APIs require tests from the external `framework_test` package. Public
 Dart entries should be tested through the exported package library. A breaking
 change requires changelog, migration, deprecation, and rollback documentation.
 
+## Branches and CI
+
+Use `main` as the long-lived branch and short-lived `feat/*`, `fix/*`,
+`refactor/*`, `docs/*`, or `chore/*` branches. Each PR owns one independently
+reviewable change; squash it to one Conventional Commit and delete the branch
+once merged. Do not use a routine `dev` integration or release-only PR layer.
+
+Run the smallest sufficient local checks for the affected behavior. The PR
+workflow selects platform work and requires the stable `ci-gate`; shared core,
+SDK, schema, build or CI changes retain all applicable regressions and coverage
+floors. `main` pushes do not trigger another verification run. This requires
+strict PR protection and up-to-date merge results, as described in
+[docs/CI.md](docs/CI.md).
+
+Prepare a planned version's necessary metadata in the final substantive PR;
+merging does not publish it. The tag workflow independently validates the exact
+release SHA and final artifacts before owner-approved publication. See
+[docs/RELEASING.md](docs/RELEASING.md).
+
 ## Pull requests
 
 Keep a Pull Request focused enough to review and revert independently. Complete

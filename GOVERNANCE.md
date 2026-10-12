@@ -30,8 +30,9 @@ contracts, keep CI healthy, and may merge changes within approved scope.
 
 ### Release manager
 
-One maintainer is named in each release Pull Request as release manager. The
-release manager runs the checklist in
+One maintainer is named in the reviewed change and release evidence as release
+manager; a separate release Pull Request is not required. The release manager
+runs the checklist in
 [RELEASING.md](docs/RELEASING.md), verifies the source commit and artifacts,
 coordinates package publication, and records the final evidence. This role does
 not override repository-owner authorization.

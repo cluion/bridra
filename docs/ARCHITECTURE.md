@@ -840,10 +840,13 @@ The GitHub Actions workflow is configured to build and verify:
   total/no-progress watchdogs and uploaded failure diagnostics
 - Windows on Windows
 
-Verify runs on Pull Requests and the merged `main` commit. The protected tag
-workflow accepts only the current `main` commit after its Verify run succeeds,
-then performs release-specific version, package, and artifact checks without
-repeating the full cross-platform suite.
+Verify runs on Pull Requests and merge groups, selects relevant checks, and
+reports the required `ci-gate`. It does not run on `main` pushes. The tag
+workflow verifies the exact tagged commit reachable from `main`, runs every
+platform check, and builds and validates the CLI candidate before requesting
+owner approval. The publication job rechecks the source and artifact identity,
+then attests and publishes that same candidate without rebuilding it. See
+[CI.md](CI.md) for scope selection and required repository settings.
 
 Native store submission and physical-device end-to-end tests require product
 credentials and deployment environments, so they are deliberately outside the

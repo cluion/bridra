@@ -3,6 +3,17 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
+## [Unreleased]
+
+### Changed
+
+- Use scoped Pull Request verification with a fixed `ci-gate`, squash merges,
+  and no routine `main` push CI. Tag releases verify the exact source and all
+  platforms, prepare reproducible CLI artifacts before environment approval,
+  and publish the same immutable candidate after checking its identity and
+  digests. Prepare necessary version metadata in substantive PRs instead of
+  requiring a separate release branch, commit, and PR.
+
 ## [0.20.0] - 2026-10-10
 
 ### Fixed
