@@ -3,10 +3,15 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
-## [Unreleased]
+## [0.21.0] - 2026-10-13
 
 ### Changed
 
+- Advance the upgrade CLI JSON report from schema `4` to `5`. Reports include
+  selected project platforms and revised migration/adoption semantics; schema-4
+  consumers must explicitly support schema `5` before switching CLI versions.
+  Plan steps, automatic eligibility, diagnostics, and exit results can differ
+  when only optional starter changes remain.
 - Use scoped Pull Request verification with a fixed `ci-gate`, squash merges,
   and no routine `main` push CI. Tag releases verify the exact source and all
   platforms, prepare reproducible CLI artifacts before environment approval,
@@ -16,9 +21,10 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 
 ### Fixed
 
-- Limit release documentation updates to explicitly marked current-version
-  blocks, preserving historical migration references. Promote pending
-  `Unreleased` changelog notes into the prepared version without losing them.
+- Limit release preparation to required version metadata and changelogs. General
+  documentation links to `VERSION` or uses version-independent examples and is
+  never rewritten during preparation. Preserve historical migration references
+  and promote pending `Unreleased` changelog notes without losing them.
 - Filter upgrade requirements by the project's selected platforms and avoid
   redundant whole-template migrations. Preserve the recorded template baseline
   during automatic dependency updates; shared and unclassified manual changes
@@ -28,6 +34,22 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 - Add explicit Linux CJK font fallback families to the generated starter theme
   for ARM64 Flutter engines that do not discover fallback fonts through
   Fontconfig. A matching system font must be installed.
+
+### Compatibility
+
+- The `0.20.0` to `0.21.0` framework dependency transition is automatic for
+  projects with the required earlier adoption complete. Go and Dart runtime APIs
+  and RPC payloads remain compatible; metadata schema `3`, Template `8`, and
+  Template RPC protocol baseline `1` are unchanged. Existing application runners
+  and themes need the documented manual edits to adopt the desktop Unicode fixes.
+- CLI JSON consumers require a separate schema-aware update. Automatic dependency
+  upgrades do not update those scripts or infer application-owned template adoption.
+
+### Support
+
+- The latest `0.21.x` release receives best-effort security fixes until the next
+  minor line is published. The `0.20.x` line is no longer supported after this
+  release.
 
 ## [0.20.0] - 2026-10-10
 

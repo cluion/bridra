@@ -54,10 +54,6 @@ type releaseSurface struct {
 	pattern *regexp.Regexp
 }
 
-type releaseDocumentation struct {
-	path string
-}
-
 func newReleaseCommand() releaseCommand {
 	return releaseCommand{}
 }
@@ -77,7 +73,7 @@ func (releaseCommand) usage() string {
 
 Commands:
   prepare  Synchronize managed release surfaces without tagging or publishing
-  check    Verify the canonical version, Go, Flutter, metadata, and documentation
+  check    Verify the canonical version, Go, Flutter, metadata, and changelogs
 
 The framework, CLI, Go module, and bridra_flutter package share one Semantic
 Version. Protocol, Project Template, and project metadata versions change only
@@ -334,16 +330,6 @@ func managedReleaseSurfaces() []releaseSurface {
 	}
 }
 
-func managedReleaseDocumentation() []releaseDocumentation {
-	return []releaseDocumentation{
-		{path: "docs/ARCHITECTURE.md"},
-		{path: "docs/GUIDE.md"},
-		{path: "README.md"},
-		{path: "docs/RELEASING.md"},
-		{path: "docs/UPGRADING.md"},
-	}
-}
-
 func inspectReleaseSurfaces(root, expected string, final bool) []string {
 	diagnostics := make([]string, 0)
 	for _, surface := range managedReleaseSurfaces() {
@@ -403,19 +389,6 @@ func inspectReleaseSurfaces(root, expected string, final bool) []string {
 		}
 	}
 
-	for _, document := range managedReleaseDocumentation() {
-		contents, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(document.path)))
-		if err != nil {
-			diagnostics = append(diagnostics, fmt.Sprintf("%s: %v", document.path, err))
-			continue
-		}
-		if _, err := updateReleaseDocumentation(contents, expected, expected); err != nil {
-			diagnostics = append(
-				diagnostics,
-				fmt.Sprintf("%s: %v", document.path, err),
-			)
-		}
-	}
 	if final {
 		diagnostics = append(diagnostics, inspectFinalReleasePolicy(root, expected)...)
 	}
@@ -546,10 +519,6 @@ func buildReleaseUpdates(root, current, target string) ([]releaseUpdate, error) 
 		paths = append(paths, surface.path)
 	}
 	paths = append(paths, "CHANGELOG.md", "packages/bridra_flutter/CHANGELOG.md")
-	for _, document := range managedReleaseDocumentation() {
-		paths = append(paths, document.path)
-	}
-
 	updates := make([]releaseUpdate, 0, len(paths))
 	for _, relative := range paths {
 		path := filepath.Join(root, filepath.FromSlash(relative))
@@ -582,11 +551,11 @@ func buildReleaseUpdates(root, current, target string) ([]releaseUpdate, error) 
 				false,
 			)
 		default:
-			if surface := findReleaseSurface(relative); surface != nil {
-				updated, err = updateReleaseSurface(contents, surface.pattern, current, target)
-			} else {
-				updated, err = updateReleaseDocumentation(contents, current, target)
+			surface := findReleaseSurface(relative)
+			if surface == nil {
+				return nil, fmt.Errorf("release: unknown version surface %s", relative)
 			}
+			updated, err = updateReleaseSurface(contents, surface.pattern, current, target)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("release: update %s: %w", relative, err)

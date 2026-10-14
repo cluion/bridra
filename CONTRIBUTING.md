@@ -101,8 +101,9 @@ the repository Pull Request template and include:
 - exact verification commands and relevant platform limitations.
 
 Use concise commit subjects such as `feat:`, `fix:`, `test:`, `docs:`, or
-`refactor:`. Do not rewrite shared history, publish tags, or create releases as
-part of a contribution.
+`refactor:`. Every commit has exactly one title line and no body, including
+squash commits. Keep explanations and validation in the PR description. Do not
+rewrite shared history, publish tags, or create releases as part of a contribution.
 
 Maintainers may request scope reduction, a design Issue, additional platform
 evidence, or a migration plan before review. Passing CI is required but does not

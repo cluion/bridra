@@ -27,12 +27,12 @@ Flutter UI -> typed gateway -> RPC client
                               Router -> Middleware -> Controller -> Service
 ```
 
-<!-- bridra:release-current:start -->
 The application entrypoint is `lib/main.dart`. These transports use the same
 versioned request, response, error, and health-handshake contract. Framework
-SemVer (`0.20.0`), the Project Template protocol baseline (`1`), and each
-application's internally consistent RPC protocol evolve independently.
-<!-- bridra:release-current:end -->
+SemVer, the Project Template protocol baseline, and each application's internally
+consistent RPC protocol evolve independently. [VERSION](../VERSION) records the
+source-tree framework version; [GitHub Releases](https://github.com/cluion/bridra/releases)
+lists published versions.
 
 ## Platform support
 
@@ -143,15 +143,13 @@ this starter currently uses Flutter's Swift Package Manager integration.
 
 ## Install the Bridra CLI
 
-Install the exact CLI version through Go:
+Install an exact published CLI version through Go using the
+[README quick start](../README.md#quick-start), then inspect its identity:
 
-<!-- bridra:release-current:start -->
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.20.0
 bridra version
 bridra version --json
 ```
-<!-- bridra:release-current:end -->
 
 GitHub Releases will also provide `tar.gz` archives for macOS/Linux and `zip`
 archives for Windows on amd64 and arm64. Verify an archive against
@@ -178,41 +176,22 @@ Use the matching `.zip` filename on Windows. Attestations establish which
 workflow and source commit produced the bytes; they do not replace operating
 system code signing or notarization.
 
-Upgrade by installing an explicit newer version, then inspect it before updating
-projects:
+Upgrade by installing an explicit newer published CLI using the same quick start,
+then inspect it before updating projects. The plan defaults to that CLI's
+framework version; use `--to X.Y.Z` to select another registered target.
 
-<!-- bridra:release-current:start -->
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.20.0
 bridra version --json
-bridra upgrade --plan --to 0.20.0 --root /path/to/project
+bridra upgrade --plan --root /path/to/project
 ```
-<!-- bridra:release-current:end -->
 
-Bridra does not silently auto-update the CLI. Project compatibility,
-migration, deprecation, and rollback rules are documented in
-[UPGRADING.md](UPGRADING.md). Maintainer release steps are documented in
-[RELEASING.md](RELEASING.md). The `0.9.0` to `0.20.0` path contains the
-automatic `0.10.0` HTTP-security step, the `0.10.1` diagnostics and
-upgrade-planner patch, the runtime-neutral `0.11.0` supply-chain release, and
-the `0.12.0` bounded-stdin Sidecar launch update. The `0.14.0` baseline-gate,
-`0.15.0` Application lifecycle, `0.16.0` macOS resource handoff, and `0.17.0`
-iOS Embedded Core steps are
-manual because Bridra does not overwrite application-owned schema baselines,
-app wiring, Sidecar／Embedded Core entrypoints, or native runners. The `0.18.0`
-`number` scalar and `0.19.0` camelCase method／snake_case field support are
-opt-in. Both dependency-only transitions are automatic and preserve the
-application protocol. Adopting new names requires explicit contract generation;
-changing an existing wire name remains a breaking change. Version `0.19.0` also
-rejects generated-member collisions before code generation, including previously
-accepted schemas that would emit uncompilable Go or Dart code. See the upgrade
-guide before adopting new names or rolling back the generator.
+Bridra does not silently auto-update the CLI. The canonical
+[upgrade guide](UPGRADING.md) records each version's compatibility requirements,
+manual steps, CLI JSON changes, deprecation window, and rollback instructions.
+Review every hop in the installed CLI's plan; an automatic final step does not
+remove earlier required adoption. Maintainer release steps are documented in
+[RELEASING.md](RELEASING.md).
 
-The `0.19.0` to `0.20.0` transition is manual and advances Project Template to
-`8`. Existing applications must review HTTP Application shutdown, macOS
-single-instance socket entitlements, native display metadata, and regenerated
-unary Dart APIs with timeout-aware implementations. Metadata schema `3` and
-Template RPC protocol baseline `1` remain unchanged.
 Existing application-owned server entrypoints are not overwritten; adopt the
 production controls deliberately using
 [HTTP_SECURITY.md](HTTP_SECURITY.md). The planner validates each application's
@@ -230,33 +209,31 @@ manual, and automatic dependency updates preserve the recorded template baseline
 
 ## Prepare one framework release version
 
-Framework maintainers enter the public SemVer once:
+Framework maintainers choose the public SemVer once, replacing `X.Y.Z` below.
+Subsequent checks read the canonical root `VERSION`:
 
-<!-- bridra:release-current:start -->
 ```bash
-make release-prepare VERSION=0.20.0
-make release-check VERSION=0.20.0
-make release-check VERSION=0.20.0 FINAL=1
+make release-prepare VERSION=X.Y.Z
+make release-check
+make release-check FINAL=1
 ```
-<!-- bridra:release-current:end -->
 
 `release-prepare` synchronizes the root `VERSION`, Go Framework and CLI metadata,
-the `bridra_flutter` package, repository project metadata, changelogs, and live
-release documentation. It refreshes Flutter dependency metadata afterward.
-Only documentation inside `bridra:release-current:start` / `end` HTML comment
-blocks follows the new version; historical migration text remains unchanged.
+the `bridra_flutter` package, repository project metadata, and changelogs. It
+refreshes Flutter dependency metadata afterward. General documentation links to
+`VERSION` or uses version-independent examples; preparation leaves it unchanged.
+Update migration guidance and support policy when their actual contracts change.
 A leading unversioned `Unreleased` changelog section becomes the new release
 section with its notes intact.
 Protocol, Project Template, and project metadata schema integers remain
 independent and change only when their compatibility contracts change.
 
-<!-- bridra:release-current:start -->
 The command prepares a reviewable change only. It never creates or pushes a Git
 tag, publishes to pub.dev, or creates a GitHub Release. Windows maintainers use
-`.\tool\windows.ps1 -Task release-prepare -Version 0.20.0` and the corresponding
-`release-check` task. The final check rejects a release while either changelog is
-still marked `Unreleased`; on Windows, add `-Final`.
-<!-- bridra:release-current:end -->
+`.\tool\windows.ps1 -Task release-prepare -Version X.Y.Z` and the corresponding
+`release-check` task, which reads `VERSION` when `-Version` is omitted. The final
+check rejects a release while either changelog is still marked `Unreleased`;
+on Windows, add `-Final`.
 
 ## Build CLI release artifacts
 
@@ -272,14 +249,12 @@ Windows maintainers may run:
 .\tool\windows.ps1 -Task cli-release
 ```
 
-<!-- bridra:release-current:start -->
 The release packager builds with `CGO_ENABLED=0`, `-trimpath`, disabled VCS
 stamping, an empty Go build ID, and ldflag-injected version/commit/date metadata.
 Archive timestamps come from the source commit date, so identical inputs produce
 identical archives and checksums. Outputs are written under `build/bridra/cli/`.
-Each version has its own directory, such as `build/bridra/cli/0.20.0/`, so stale
+Each version has its own `build/bridra/cli/<version>/` directory, so stale
 assets from an earlier release cannot be uploaded accidentally.
-<!-- bridra:release-current:end -->
 
 ## Verify
 

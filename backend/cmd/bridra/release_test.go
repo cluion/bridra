@@ -27,11 +27,6 @@ func TestReleasePrepareSynchronizesManagedVersionsWithoutPublishing(t *testing.T
 		"packages/bridra_flutter/pubspec.yaml",
 		"pubspec.yaml",
 		".bridra/project.json",
-		"docs/ARCHITECTURE.md",
-		"docs/GUIDE.md",
-		"README.md",
-		"docs/RELEASING.md",
-		"docs/UPGRADING.md",
 	} {
 		contents := readReleaseTestFile(t, root, path)
 		if !strings.Contains(contents, "0.1.1") {
@@ -327,14 +322,8 @@ func releaseTestRoot(t *testing.T, version, changelogStatus string) string {
 			" is a pre-1.0 framework line.\n\n| Version | Security support |\n" +
 			"| --- | --- |\n| Latest `" + releaseLine + ".x` patch | Supported |\n",
 	}
-	for _, path := range []string{
-		"docs/ARCHITECTURE.md",
-		"docs/GUIDE.md",
-		"README.md",
-		"docs/RELEASING.md",
-		"docs/UPGRADING.md",
-	} {
-		files[path] = releaseDocumentationStart + "\nBridra " + version + "\n" + releaseDocumentationEnd + "\nHistorical Bridra " + version + " remains unchanged.\n"
+	for _, path := range releaseTestDocumentationPaths {
+		files[path] = "Source version: VERSION\nHistorical Bridra " + version + " remains unchanged.\n"
 	}
 	for path, contents := range files {
 		writeReleaseTestFile(t, root, path, contents)

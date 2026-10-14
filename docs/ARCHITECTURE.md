@@ -28,14 +28,13 @@ server, HTTP handler, and Embedded runtime are adapters around the same `Router`
 
 ## Package boundaries
 
-<!-- bridra:release-current:start -->
 `backend/framework` is the reusable public Go package. Application Requests,
 Models, Services, Responses, Controllers, and route registration remain under
 `backend/app`. `packages/bridra_flutter` owns transport-neutral RPC, HTTP,
 desktop Sidecar, and opt-in Embedded clients. The generated `BridraRpcApi` owns
 the application RPC contract; `lib/api/backend_gateway.dart` adds connection lifecycle and health
-caching. Both packages remain in one Git repository and use Bridra 0.20.0.
-<!-- bridra:release-current:end -->
+caching. Both packages remain in one Git repository and share the framework
+version recorded in [VERSION](../VERSION).
 
 Native macOS Sidecars may register a `ResourceBroker` backed by
 `NewMacOSResourceBookmarkResolver`. The resolver alone handles Foundation's

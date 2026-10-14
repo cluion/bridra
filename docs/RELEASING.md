@@ -43,9 +43,10 @@ alone is not publication authorization.
   commit; never infer a new pin from a floating major tag alone.
 - Confirm the canonical Git remote, normally `origin`, and the reviewed commit
   belong to `https://github.com/cluion/bridra`.
-- Use root `VERSION` as the release intent and keep
+- Use root [VERSION](../VERSION) as the release intent and keep
   `framework.FrameworkVersion`, `bridra_flutter`'s version, generated dependency
-  defaults, changelogs, documentation, and the intended tag aligned.
+  defaults, changelogs, and the intended tag aligned. General documentation links
+  to `VERSION` or uses placeholders; edit it only when its described behavior changes.
 - Run `make release-check FINAL=1`, `make verify`, `make coverage`, and
   `bridra upgrade --plan`; confirm all required GitHub Actions jobs and coverage
   floors pass.
@@ -65,7 +66,6 @@ alone is not publication authorization.
   `compatible` or a deliberately coordinated `versioned_break`; never release
   an `incompatible` result.
 
-<!-- bridra:release-current:start -->
 ## Prepare version data in the substantive Pull Request
 
 Use the feature/fix branch that owns the final substantive change planned for
@@ -80,11 +80,12 @@ never hide it by rewriting `main` or changing files only during publication.
 1. Choose the SemVer and decide independently whether the RPC protocol, Project
    Template, or project metadata schema changes.
 2. Synchronize the framework, CLI, Go module, Dart package, project metadata,
-   changelogs, and live documentation from one version:
+   and changelogs from one chosen version. Replace `X.Y.Z` below; later commands
+   read `VERSION`:
 
    ```bash
-   make release-prepare VERSION=0.20.0
-   make release-check VERSION=0.20.0
+   make release-prepare VERSION=X.Y.Z
+   make release-check
    ```
 
    The prepare command never creates a tag, publishes a package, or creates a
@@ -92,11 +93,12 @@ never hide it by rewriting `main` or changing files only during publication.
    version while the previous changelog entry is still marked `Unreleased`.
    A leading unversioned `Unreleased` section is promoted to the new version,
    preserving its notes and all published changelog sections.
-   Live version references must be enclosed by the HTML comment markers
-   `bridra:release-current:start` and `bridra:release-current:end`.
-   Only those blocks follow the release version; historical migration text
-   outside them remains unchanged. Missing, nested, or inconsistent blocks
-   stop preparation before any managed file is written.
+   Preparation updates `VERSION`, the four required Go/Dart/project metadata
+   surfaces, and both changelogs; the Make target then refreshes the Flutter
+   lockfile. It leaves README, architecture, usage, release, and upgrade documents
+   byte-identical. Historical migration examples retain their original versions.
+   Update migration guidance only for actual contract changes and support policy
+   when the supported minor line changes.
 3. Review the changelog, upgrade/rollback guidance, and independently versioned
    protocol, Project Template, and project metadata contracts. Preserve historical
    release references when reviewing the prepared documentation. Register the new
@@ -104,7 +106,7 @@ never hide it by rewriting `main` or changing files only during publication.
    verification rejects a new current version without a complete path from each
    older registered release.
 4. Replace `Unreleased` in both changelogs with the intended release date, then
-   run `make release-check VERSION=0.20.0 FINAL=1`. The protected release workflow
+   run `make release-check FINAL=1`. The protected release workflow
    repeats this final check and refuses an unfinished changelog.
 5. Run relevant local checks and workflow lint for CI changes. Require the PR's
    `ci-gate` against an up-to-date merge result and record verification limits.
@@ -123,9 +125,9 @@ tagging. See [CI.md](CI.md) for scope and required repository settings.
 Windows maintainers use:
 
 ```powershell
-.\tool\windows.ps1 -Task release-prepare -Version 0.20.0
-.\tool\windows.ps1 -Task release-check -Version 0.20.0
-.\tool\windows.ps1 -Task release-check -Version 0.20.0 -Final
+.\tool\windows.ps1 -Task release-prepare -Version X.Y.Z
+.\tool\windows.ps1 -Task release-check
+.\tool\windows.ps1 -Task release-check -Final
 ```
 
 Security fixes under embargo use a private advisory and private fork until the
@@ -138,7 +140,7 @@ Request before the agreed disclosure time.
 make cli-release
 ```
 
-This produces the following under `build/bridra/cli/0.20.0/`:
+This produces the following under `build/bridra/cli/<version>/`, using `VERSION`:
 
 - macOS amd64 and arm64 `tar.gz` archives
 - Linux amd64 and arm64 `tar.gz` archives
@@ -151,7 +153,8 @@ The source commit and commit timestamp are embedded into each binary. Confirm
 the native archive before publishing:
 
 ```bash
-(cd build/bridra/cli/0.20.0 && shasum -a 256 -c SHA256SUMS)
+BRIDRA_VERSION="$(cat VERSION)"
+(cd "build/bridra/cli/${BRIDRA_VERSION}" && shasum -a 256 -c SHA256SUMS)
 bridra version --json
 ```
 
@@ -169,13 +172,17 @@ by these attestations.
 
 ## Tag and publish
 
-For Bridra 0.20.0, create the annotated Go submodule tag only after the substantive
-Pull Request is merged and the repository owner authorizes the version and SHA:
+Create the annotated Go submodule tag only after the substantive Pull Request
+is merged and the repository owner authorizes the version and SHA. Replace
+`FULL_APPROVED_MAIN_SHA` with that exact commit and read its version, rather than
+the version of a possibly different local checkout:
 
 ```bash
 git fetch origin main
-git tag -a backend/v0.20.0 <verified-main-sha> -m "Bridra 0.20.0"
-git push origin backend/v0.20.0
+BRIDRA_RELEASE_SHA=FULL_APPROVED_MAIN_SHA
+BRIDRA_VERSION="$(git show "${BRIDRA_RELEASE_SHA}:VERSION")" || exit 1
+git tag -a "backend/v${BRIDRA_VERSION}" "$BRIDRA_RELEASE_SHA" -m "Bridra ${BRIDRA_VERSION}"
+git push origin "backend/v${BRIDRA_VERSION}"
 ```
 
 The GitHub workflow requires the exact tag SHA to be reachable from `main` and
@@ -226,10 +233,11 @@ approval is not an administrative bypass.
 
 ## Post-release verification
 
-Verify installation without a repository checkout:
+Verify installation without a repository checkout. Set `BRIDRA_VERSION` to the
+exact published version approved above:
 
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.20.0
+go install "github.com/cluion/bridra/backend/cmd/bridra@v${BRIDRA_VERSION}"
 bridra version --json
 bridra create release_smoke --module example.com/acme/release-smoke
 ```
@@ -258,7 +266,6 @@ environment, and announce any deprecation or migration window. Keep the reviewed
 substantive PR, workflow artifacts, and GitHub Release as the evidence record.
 Delete completed work branches after merge; retain the release tag. There is no
 routine release branch to retain or clean up after publication.
-<!-- bridra:release-current:end -->
 
 ## Failed or compromised release
 
@@ -276,74 +283,35 @@ history. If a tag or artifact is already public, use a new patch version instead
 
 ## Upgrade policy
 
-Users choose upgrades explicitly:
+Users choose upgrades explicitly. Install an exact published CLI through the
+[quick start](../README.md#quick-start), then inspect its default framework target:
 
-<!-- bridra:release-current:start -->
 ```bash
-go install github.com/cluion/bridra/backend/cmd/bridra@v0.20.0
-bridra upgrade --plan --to 0.20.0
+bridra version --json
+bridra upgrade --plan
 ```
-<!-- bridra:release-current:end -->
 
 Bridra has no silent CLI auto-update. Breaking changes require release notes,
 migration instructions, and the version change required by Semantic Versioning.
-Apply is permitted only when all applicable catalog steps are automatic and rolls back managed
-manifests, lockfiles, and metadata when dependency resolution or verification
-fails. Application-owned Controllers, Services, Models, configuration, generated
-contracts, and native runners are never overwritten as part of a core package
-upgrade. Platform-specific requirements are filtered by project metadata;
-shared requirements and unclassified changes remain manual. Automatic updates
-preserve the recorded template baseline. The `0.6.0` to `0.6.1` path remains manual because projects generated
-with `0.6.0` must repair an application-owned `FakeBackend` test that upgrades
-never overwrite. The `0.6.1` to `0.13.0` path is automatic through the additive,
-opt-in file-, SQL-, and Redis-backed persistence releases, the `0.10.0`
-HTTP-security step, the `0.10.1` diagnostics and upgrade-planner patch, and the
-runtime-neutral `0.11.0` supply-chain release, the `0.12.0` secure Sidecar launch
-update, and the `0.13.0` RPC schema compatibility tooling release. Paths from
-earlier releases to `0.20.0` still include any required manual application
-baseline-gate, generated Application and macOS secondary lifecycle, and native
-resource-handoff steps. The direct `0.17.0` to `0.18.0` and `0.18.0` to `0.19.0`
-dependency-only transitions are automatic. Adopting authentication, rate
-limiting, observability, and server limits in an
-existing application-owned HTTP entrypoint remains an explicit deployment
-decision. The public Dart API adds
-`RpcRateLimitedException` in `0.10.0` and `SidecarDiagnostics` in `0.10.1`;
-`0.12.0` adds the public Go `ReadSidecarLaunch` helper while preserving legacy
-application-owned Sidecar entrypoints; `0.13.0` additively exposes RPC schema
-compatibility reports through the CLI and public Go Codegen API. `0.14.0`
-advances Project Template version to `3`, adds the application-owned deployed
-schema baseline, and gates generated-project verification. `0.15.0` advances
-Project Template version to `4`, gives generated Sidecars exactly-once,
-bounded Application shutdown, and adds reliable macOS secondary-instance
-termination through the additive `DesktopSingleInstance.terminateSecondary`
-API plus a native runner gate. It also adds scalar integer schema bounds,
-generated public Go validation rules, compatibility coverage, and actionable
-method-name diagnostics. Reusable named schema objects and structured object
-arrays generate deduplicated Go／Dart models, indexed nested validation, and
-reference-resolved compatibility reports. Project Template `5` and project
-metadata schema `3` add canonical platform scope for generated runners, targets,
-checks, and documentation. `0.16.0` advances Project Template version to `6`
-for the application-owned macOS bookmark bridge and ResourceBroker-enabled
-Sidecar entrypoint. `0.17.0` advances Project Template version to `7` for the
-application-owned iOS Embedded Core wrapper, Swift adapter, XCFramework build,
-managed transfers, and security-scoped resource lifecycle. Project metadata
-schema `3` and Template protocol baseline `1` remain unchanged. `0.18.0` adds
-opt-in RPC `number` scalar codegen without advancing those independent versions;
-`0.19.0` adds opt-in camelCase RPC method actions and snake_case JSON fields,
-preserving wire names while validating generated-member collisions in their
-actual Go／Dart scopes. Previously accepted schemas that generated conflicting
-members now fail before code generation. Template `7`, metadata schema `3`, and
-Template protocol baseline `1` remain unchanged. Every migration preserves each
-application's internally consistent RPC protocol; adopting new schema names is
-an explicit application change, not part of the dependency-only migration.
+Apply is permitted only when all applicable catalog steps are automatic; it
+restores managed manifests, lockfiles, and metadata when dependency resolution
+or verification fails. Application-owned Controllers, Services, Models,
+configuration, generated contracts, and native runners are never overwritten
+as part of a core package upgrade.
 
-`0.20.0` advances Project Template to `8` for Application-owned HTTP lifecycle,
-macOS single-instance socket entitlements, native display metadata, and unary
-Dart timeout parameters. The `0.19.0` to `0.20.0` transition is manual because
-the CLI does not overwrite application-owned entrypoints, runners, or generated
-API implementations. Metadata schema `3` and Template protocol baseline `1`
-remain unchanged. Runtime task controls and explicit schema baseline updates
-are opt-in additions.
+Platform-specific requirements are filtered by project metadata. Shared,
+unclassified, and previously missed required adoption remain manual. Automatic
+updates preserve the adopted template baseline and the application's internally
+consistent RPC protocol. Review generated-contract, native, and server changes
+explicitly when the applicable migration requires them. Production HTTP controls
+remain an application deployment decision; see [HTTP_SECURITY.md](HTTP_SECURITY.md).
 
-The project-facing compatibility matrix, deprecation window, manual migration
-workflow, and rollback contract are defined in [UPGRADING.md](UPGRADING.md).
+Automation must recognize the upgrade report's schema before interpreting its
+plan. Updating framework dependencies does not update the installed CLI or its
+JSON consumers. Record any reader migration and rollback instructions alongside
+the corresponding CLI contract change.
+
+Maintain version-specific migration history, the compatibility matrix,
+deprecation window, and rollback instructions in [UPGRADING.md](UPGRADING.md).
+General usage and release documents link there rather than duplicating a new
+version summary on every release.
