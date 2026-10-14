@@ -42,6 +42,9 @@ of `main` CI:
 - Require a Pull Request and the `ci-gate` check from GitHub Actions.
 - Require the branch to be up to date with `main`, or enable a merge queue.
 - Allow squash merges, require linear history, and disable merge/rebase methods.
+- Use the PR title for the squash title and a blank squash message (`PR_TITLE`
+  and `BLANK`). Every commit is one title line with no body; merge tools must
+  explicitly keep the message empty. Details belong in the PR description.
 - Restrict direct pushes, force pushes, deletions, and protection bypasses.
 - Delete completed work branches automatically; set review counts appropriate
   to the active maintainer team.

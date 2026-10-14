@@ -7,6 +7,14 @@ import (
 	"testing"
 )
 
+var releaseTestDocumentationPaths = []string{
+	"README.md",
+	"docs/ARCHITECTURE.md",
+	"docs/GUIDE.md",
+	"docs/RELEASING.md",
+	"docs/UPGRADING.md",
+}
+
 func TestReleasePreparePreservesHistoricalDocumentationAndPromotesPendingNotes(t *testing.T) {
 	root := releaseTestRoot(t, "0.1.0", "2026-07-23")
 	history := readReleaseTestFile(t, root, "CHANGELOG.md")
@@ -15,11 +23,10 @@ func TestReleasePreparePreservesHistoricalDocumentationAndPromotesPendingNotes(t
 	if err := prepareRelease(root, "0.1.1", &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
-	for _, document := range managedReleaseDocumentation() {
-		text := readReleaseTestFile(t, root, document.path)
-		if !strings.Contains(text, "Bridra 0.1.1\n") ||
-			!strings.Contains(text, "Historical Bridra 0.1.0 remains unchanged.") {
-			t.Fatalf("live or historical text corrupted in %s: %s", document.path, text)
+	for _, path := range releaseTestDocumentationPaths {
+		text := readReleaseTestFile(t, root, path)
+		if text != "Source version: VERSION\nHistorical Bridra 0.1.0 remains unchanged.\n" {
+			t.Fatalf("documentation changed in %s: %s", path, text)
 		}
 	}
 	text := readReleaseTestFile(t, root, "CHANGELOG.md")
@@ -83,54 +90,21 @@ func TestReleasePrepareRejectsAmbiguousPendingChangelogWithoutWriting(t *testing
 	}
 }
 
-func TestReleaseDocumentationUpdatesOnlyMarkedBlocksWithCRLF(t *testing.T) {
-	block := releaseDocumentationStart + "\r\nInstall 0.1.0\r\n" + releaseDocumentationEnd
-	input := "Historical 0.1.0\r\n" + block + "\r\nPrevious 0.1.0\r\n" + block + "\r\n"
-	got, err := updateReleaseDocumentation([]byte(input), "0.1.0", "0.1.1")
-	if err != nil {
+func TestReleasePrepareLeavesGeneralDocumentationByteIdentical(t *testing.T) {
+	root := releaseTestRoot(t, "0.1.0", "2026-07-23")
+	const text = "Source: [VERSION](../VERSION)\r\nHistorical 0.1.0 and 0.0.9.\r\n<!-- bridra:release-current:start -->\r\nLegacy example 0.0.9 without a closing marker.\r\n"
+	for _, path := range releaseTestDocumentationPaths {
+		writeReleaseTestFile(t, root, path, text)
+	}
+	if err := prepareRelease(root, "0.1.1", &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
-	want := strings.ReplaceAll(input, "Install 0.1.0", "Install 0.1.1")
-	if string(got) != want {
-		t.Fatalf("got %q, want %q", got, want)
+	for _, path := range releaseTestDocumentationPaths {
+		if got := readReleaseTestFile(t, root, path); got != text {
+			t.Fatalf("prepare rewrote %s: %q", path, got)
+		}
 	}
-	again, err := updateReleaseDocumentation(got, "0.1.1", "0.1.1")
-	if err != nil || !bytes.Equal(again, got) {
-		t.Fatalf("idempotent update = %q, %v", again, err)
-	}
-}
-
-func TestReleaseDocumentationDoesNotReplaceVersionPrefixes(t *testing.T) {
-	input := releaseDocumentationStart + "\nInstall v0.1.0. Keep 0.1.01 and 0.1.0-rc.1 unchanged.\n" + releaseDocumentationEnd
-	got, err := updateReleaseDocumentation([]byte(input), "0.1.0", "0.1.1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(got) != strings.Replace(input, "Install v0.1.0", "Install v0.1.1", 1) {
-		t.Fatalf("changed a different version: %s", got)
-	}
-}
-
-func TestReleasePrepareRefusesInvalidDocumentationWithoutWriting(t *testing.T) {
-	for name, text := range map[string]string{
-		"missing markers":         "Historical 0.1.0",
-		"unclosed":                releaseDocumentationStart + "0.1.0",
-		"unexpected end":          releaseDocumentationEnd + releaseDocumentationStart + "0.1.0" + releaseDocumentationEnd,
-		"nested":                  releaseDocumentationStart + releaseDocumentationStart + "0.1.0" + releaseDocumentationEnd,
-		"drift hidden by history": releaseDocumentationStart + "0.0.9" + releaseDocumentationEnd + "Historical 0.1.0",
-		"different patch prefix":  releaseDocumentationStart + "0.1.01" + releaseDocumentationEnd,
-		"prerelease prefix":       releaseDocumentationStart + "0.1.0-rc.1" + releaseDocumentationEnd,
-	} {
-		t.Run(name, func(t *testing.T) {
-			root := releaseTestRoot(t, "0.1.0", "2026-07-23")
-			writeReleaseTestFile(t, root, "docs/UPGRADING.md", text)
-			before := releaseTestSnapshot(t, root)
-			if err := prepareRelease(root, "0.1.1", &bytes.Buffer{}); err == nil {
-				t.Fatal("invalid documentation accepted")
-			}
-			if releaseTestSnapshot(t, root) != before {
-				t.Fatal("failed prepare changed files")
-			}
-		})
+	if err := checkRelease(root, "0.1.1", false, &bytes.Buffer{}); err != nil {
+		t.Fatalf("general documentation affected version check: %v", err)
 	}
 }

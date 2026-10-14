@@ -180,6 +180,12 @@ var registeredUpgradeReleases = []upgradeRelease{
 		TemplateVersion:         8,
 		TemplateProtocolVersion: 1,
 	},
+	{
+		FrameworkVersion:        "0.21.0",
+		ProjectMetadataVersion:  3,
+		TemplateVersion:         8,
+		TemplateProtocolVersion: 1,
+	},
 }
 
 var registeredFrameworkMigrations = []frameworkMigration{
@@ -361,6 +367,13 @@ var registeredFrameworkMigrations = []frameworkMigration{
 			{Description: "Regenerate unary Dart APIs and review handwritten timeout-aware implementations and mocks."},
 			{Description: "Enable client and server socket entitlements in both macOS sandbox profiles while preserving app-sandbox.", Platforms: []string{projectplatform.MacOS}},
 		},
+	},
+	{
+		ID:          "framework-0.20.0-to-0.21.0",
+		From:        "0.20.0",
+		To:          "0.21.0",
+		Description: "Update the Go and Flutter framework dependencies without rewriting application-owned files or changing the adopted template baseline or RPC protocol. Review CLI upgrade-report schema 5 separately if automation consumes its JSON output.",
+		Automatic:   true,
 	},
 }
 

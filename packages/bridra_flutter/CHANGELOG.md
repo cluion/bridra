@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.21.0 - 2026-10-13
+
+- Align package metadata with Bridra 0.21.0. The public Dart runtime API and RPC
+  payloads are unchanged. Project Template `8`, project metadata schema `3`, and
+  Template RPC protocol baseline `1` remain unchanged.
+- The CLI upgrade-report schema and starter Unicode fixes are documented in the
+  framework upgrade guide; a package update does not rewrite application-owned
+  runners, themes, or automation scripts.
+
 ## 0.20.0 - 2026-10-10
 
 - Exit secondary Windows and Linux desktop processes after acknowledged activation
