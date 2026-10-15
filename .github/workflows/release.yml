@@ -148,7 +148,7 @@ jobs:
         if: ${{ vars.BRIDRA_PUBDEV_AUTOMATION_ENABLED == 'true' && steps.pubdev.outputs.published != 'true' }}
         timeout-minutes: 5
         working-directory: packages/bridra_flutter
-        run: dart pub publish --force
+        run: fvm flutter pub publish --force
 
       - name: Require manual Dart publication
         if: ${{ vars.BRIDRA_PUBDEV_AUTOMATION_ENABLED != 'true' && steps.pubdev.outputs.published != 'true' }}
