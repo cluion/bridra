@@ -207,8 +207,16 @@ patch version.
 The release candidate intentionally omits `publish_to: 'none'`. When
 `BRIDRA_PUBDEV_AUTOMATION_ENABLED=true`, the protected workflow publishes a
 missing Dart version through pub.dev OIDC and safely skips an already-published
-version on a rerun. When automation is disabled, publish the package manually
-before approving the protected workflow:
+version on a rerun.
+
+Use `fvm flutter pub publish` for both automated and manual publication. The
+protected publication job has a separate, fresh Flutter SDK cache; the Flutter
+wrapper initializes required SDK artifacts, including `sky_engine`, before
+resolving package dependencies. `fvm install` alone does not prepare all of
+these artifacts. Keep `dart-lang/setup-dart` for pub.dev OIDC authentication.
+
+When automation is disabled, publish the package manually before approving the
+protected workflow:
 
 ```bash
 cd packages/bridra_flutter
