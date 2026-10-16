@@ -5,6 +5,60 @@ import XCTest
 @testable import bridra
 
 final class RunnerTests: XCTestCase {
+  @MainActor
+  func testWindowControlsStayCenteredAfterNativeRelayout() throws {
+    let window = try XCTUnwrap(NSApp.windows.compactMap { $0 as? MainFlutterWindow }.first)
+    XCTAssertTrue(window.isVisible, "Validate the real application window after launch")
+    let originalFrame = window.frame
+    defer { window.setFrame(originalFrame, display: true) }
+
+    func checkCenter(_ phase: String) throws {
+      let content = try XCTUnwrap(window.contentView)
+      for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+        let button = try XCTUnwrap(window.standardWindowButton(type))
+        let frame = button.convert(button.bounds, to: content)
+        let fromTop = content.isFlipped
+          ? frame.midY - content.bounds.minY : content.bounds.maxY - frame.midY
+        XCTAssertEqual(fromTop, 28, accuracy: 0.5, "\(phase): button \(type.rawValue)")
+        XCTAssertTrue(
+          button.superview?.bounds.contains(button.frame) == true,
+          "\(phase): native button \(type.rawValue) must remain inside its parent"
+        )
+        XCTAssertTrue(
+          button.visibleRect.contains(button.bounds),
+          "\(phase): native button must not be clipped"
+        )
+      }
+    }
+
+    RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+    try checkCenter("launched and displayed")
+    for size in [NSSize(width: 800, height: 632), NSSize(width: 1280, height: 820), NSSize(width: 600, height: 700)] {
+      window.setContentSize(size)
+      for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+        let button = try XCTUnwrap(window.standardWindowButton(type))
+        var origin = button.frame.origin
+        origin.y += 7
+        button.setFrameOrigin(origin)
+        try checkCenter("native button reposition")
+      }
+      let parent = try XCTUnwrap(window.standardWindowButton(.closeButton)?.superview)
+      let parentOrigin = parent.frame.origin
+      parent.setFrameOrigin(NSPoint(x: parentOrigin.x, y: parentOrigin.y + 7))
+      try checkCenter("native container reposition")
+      parent.setFrameOrigin(parentOrigin)
+      window.contentView?.superview?.needsLayout = true
+      window.contentView?.superview?.layoutSubtreeIfNeeded()
+      RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+      try checkCenter("AppKit layout and run loop complete")
+    }
+    for phase in ["native zoom", "native zoom restore"] {
+      window.performZoom(nil)
+      RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+      try checkCenter(phase)
+    }
+  }
+
   func testSecondaryTerminationAcknowledgesBeforeTerminatingApplication() {
     var events = [String]()
     let handler = BridraApplicationLifecycleHandler {

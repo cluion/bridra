@@ -1,0 +1,178 @@
+import 'package:bridra/ui/theme/app_theme.dart';
+import 'package:bridra/ui/widgets/app_toast.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+Widget toastHarness({
+  required Widget child,
+  ThemeData? theme,
+  EdgeInsets padding = EdgeInsets.zero,
+}) => MaterialApp(
+  theme: theme,
+  home: Scaffold(
+    body: Padding(
+      padding: padding,
+      child: AppToastHost(child: child),
+    ),
+  ),
+);
+
+void main() {
+  final toast = find.byKey(const Key('app-toast'));
+
+  testWidgets('slides down and replaces the active toast with a fresh expiry', (
+    tester,
+  ) async {
+    late BuildContext context;
+    await tester.pumpWidget(
+      toastHarness(
+        child: Builder(
+          builder: (value) {
+            context = value;
+            return const SizedBox.expand();
+          },
+        ),
+      ),
+    );
+    AppToastHost.show(context, 'Copied First');
+    await tester.pump();
+    final initialY = tester.getTopLeft(toast).dy;
+    await tester.pump(const Duration(milliseconds: 100));
+    final movingY = tester.getTopLeft(toast).dy;
+    expect(movingY, greaterThan(initialY));
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(toast).dy, greaterThan(movingY));
+    await tester.pump(const Duration(seconds: 2));
+    AppToastHost.show(context, 'Copied Second');
+    await tester.pumpAndSettle();
+    expect(find.text('Copied First'), findsNothing);
+    expect(find.text('Copied Second'), findsOneWidget);
+    expect(toast, findsOneWidget);
+    await tester.pump(const Duration(seconds: 1));
+    expect(toast, findsOneWidget);
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+    expect(toast, findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'keeps focus and underlying controls usable and supports dismissal',
+    (tester) async {
+      final focus = FocusNode();
+      addTearDown(focus.dispose);
+      var taps = 0;
+      await tester.pumpWidget(
+        toastHarness(
+          child: Column(
+            children: [
+              const SizedBox(height: 140),
+              TextField(focusNode: focus),
+              FilledButton(
+                onPressed: () => taps++,
+                child: const Text('Underlying action'),
+              ),
+            ],
+          ),
+        ),
+      );
+      focus.requestFocus();
+      await tester.pump();
+      AppToastHost.show(
+        tester.element(find.byType(TextField)),
+        'Copied command',
+      );
+      await tester.pumpAndSettle();
+      expect(FocusManager.instance.primaryFocus, focus);
+      await tester.tap(find.text('Underlying action'));
+      await tester.pump();
+      expect(taps, 1);
+      await tester.tap(find.byTooltip('Dismiss notification'));
+      await tester.pumpAndSettle();
+      expect(toast, findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'fits short narrow windows and enlarged text in both appearances',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 240);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final semantics = tester.ensureSemantics();
+      try {
+        for (final theme in [AppTheme.light(), AppTheme.dark()]) {
+          late BuildContext context;
+          await tester.pumpWidget(
+            toastHarness(
+              theme: theme,
+              padding: const EdgeInsets.only(top: 56, bottom: 80),
+              child: Builder(
+                builder: (value) {
+                  context = value;
+                  return const SizedBox.expand();
+                },
+              ),
+            ),
+          );
+          AppToastHost.show(
+            context,
+            'Copied make verify with additional details',
+          );
+          await tester.pumpAndSettle();
+          final rect = tester.getRect(toast);
+          expect(rect.left, greaterThanOrEqualTo(12));
+          expect(rect.right, lessThanOrEqualTo(308));
+          expect(rect.top, greaterThanOrEqualTo(56));
+          expect(rect.bottom, lessThanOrEqualTo(160));
+          expect(
+            find.bySemanticsLabel('Copied make verify with additional details'),
+            findsOneWidget,
+          );
+          expect(find.bySemanticsLabel('Dismiss notification'), findsOneWidget);
+          expect(tester.takeException(), isNull);
+          await tester.tap(find.byTooltip('Dismiss notification'));
+          await tester.pumpAndSettle();
+        }
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
+
+  testWidgets('honors reduced motion and cancels its timer on disposal', (
+    tester,
+  ) async {
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    late BuildContext context;
+    await tester.pumpWidget(
+      toastHarness(
+        child: Builder(
+          builder: (value) {
+            context = value;
+            return const SizedBox.expand();
+          },
+        ),
+      ),
+    );
+    AppToastHost.show(context, 'Copied command');
+    await tester.pump();
+    expect(toast, findsOneWidget);
+    expect(tester.hasRunningAnimations, isFalse);
+    await tester.tap(find.byTooltip('Dismiss notification'));
+    await tester.pump();
+    expect(toast, findsNothing);
+    AppToastHost.show(context, 'Copied again');
+    await tester.pump();
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 4));
+    expect(tester.takeException(), isNull);
+  });
+}

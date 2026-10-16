@@ -4,6 +4,7 @@
 
 [Documentation](docs/GUIDE.md) ·
 [Architecture](docs/ARCHITECTURE.md) ·
+[Starter UI](docs/UI.md) ·
 [HTTP security](docs/HTTP_SECURITY.md) ·
 [Upgrading](docs/UPGRADING.md) ·
 [Contributing](CONTRIBUTING.md)
@@ -247,7 +248,11 @@ backend/
 packages/
   bridra_flutter/       Flutter RPC and Sidecar runtime
 schema/                 Versioned RPC contract
-lib/                    Starter Flutter application
+lib/
+  app/                  Flutter composition and local preferences
+  ui/                   Theme, adaptive shell and shared widgets
+  features/             Feature views and presentation state
+  api/                  Typed gateway and generated RPC API
 docs/                   User, architecture, upgrade, and release documentation
 ```
 

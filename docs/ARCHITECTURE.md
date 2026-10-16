@@ -56,6 +56,18 @@ new open. The workflow never prints the bookmark or selected path and removes
 the temporary folder and bundles. Persistent bookmark behavior remains a
 separate application entitlement and relaunch contract.
 
+## Starter UI
+
+The reference and generated Flutter applications separate app composition,
+shared theme/layout, feature views and observable presentation state. One
+application-owned workspace view model manages the connection and request
+lifetime through `BackendGateway`; widgets do not create RPC transports.
+Adaptive, collapsible sidebar/bar navigation and a Settings page for
+System/Light/Dark appearance keep that owner and feature drafts alive. Settings
+shares the same Back/Forward history; backend health stays in Runtime. Optional UI adoption does not rewrite existing
+application files or introduce a required runtime migration. See [UI.md](UI.md)
+for the directory structure, extension points and lifecycle guarantees.
+
 ## Contract generation
 
 `schema/bridra.json` is the single source for protocol version, RPC methods,

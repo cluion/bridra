@@ -1,63 +1,271 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:{{.ProjectName}}/api/backend_gateway.dart';
+import {{quote .BridraDartImport}};
 import 'package:{{.ProjectName}}/main.dart';
-import '{{.BridraDartImport}}';
 
-class FakeBackend implements BackendGateway {
-  @override
-  Future<void> close() async {}
+import 'support/fake_backend.dart';
 
-  @override
-  Future<HealthInfo> health({
-    Duration timeout = const Duration(seconds: 5),
-    RpcCancellationToken? cancellationToken,
-  }) async {
-    return HealthInfo(
-      status: 'ok',
-      frameworkVersion: '{{.FrameworkVersion}}',
-      protocolVersion: {{.ProtocolVersion}},
-      runtime: 'Go sidecar',
-      architecture: 'Middleware -> Controller -> Service',
-    );
-  }
-
+class ExitingBackend extends FakeBackend {
   @override
   Future<GreetingResult> greet(
     GreetingRequest request, {
     Duration timeout = const Duration(seconds: 5),
     RpcCancellationToken? cancellationToken,
   }) async {
-    return GreetingResult(
-      message: 'Hello, ${request.name}!',
-      servedBy: 'Go GreetingService',
-      timestamp: DateTime.utc(2026),
-      pipeline: const ['middleware', 'controller', 'service'],
-    );
-  }
-
-  @override
-  Stream<List<int>> download(
-    RpcFileReference file, {
-    Duration timeout = const Duration(minutes: 15),
-    RpcCancellationToken? cancellationToken,
-    int maxAttempts = 3,
-  }) {
-    return const Stream.empty();
-  }
-
-  @override
-  Future<RpcFileReference> upload(
-    RpcFileUpload file, {
-    Duration timeout = const Duration(minutes: 15),
-    RpcCancellationToken? cancellationToken,
-    int maxAttempts = 3,
-  }) async {
-    throw UnsupportedError('FakeBackend.upload');
+    throw const BackendClosedException();
   }
 }
 
 void main() {
+  testWidgets(
+    'places the macOS app name and toolbar beside native window controls',
+    (tester) async {
+      tester.view.physicalSize = const Size(600, 700);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(StarterApp(connector: () async => FakeBackend()));
+      await tester.pumpAndSettle();
+      expect(
+        tester.getTopLeft(find.text({{dartString .DisplayName}})).dx,
+        greaterThanOrEqualTo(88),
+      );
+      expect(
+        tester.getTopLeft(find.byKey(const Key('navigation-back'))).dx,
+        greaterThan(tester.getTopLeft(find.text({{dartString .DisplayName}})).dx),
+      );
+      final row = find.byKey(const Key('toolbar-row'));
+      expect(tester.getSize(row).height, 56);
+      for (final key in [
+        'toolbar-product-name',
+        'navigation-back',
+        'navigation-forward',
+        'sidebar-toggle',
+        'toolbar-page-title',
+      ]) {
+        expect(
+          tester.getCenter(find.byKey(Key(key))).dy,
+          tester.getCenter(row).dy,
+        );
+      }
+      await tester.tap(find.byKey(const Key('sidebar-toggle')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('navigation-overlay')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('destination-settings')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('appearance-dark')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+  );
+
+  testWidgets(
+    'keeps a working sidebar toggle at medium widths and shares header colors',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 700);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(StarterApp(connector: () async => FakeBackend()));
+      await tester.pumpAndSettle();
+      final toggle = find.byKey(const Key('sidebar-toggle'));
+      final navigation = find.byKey(const Key('desktop-navigation'));
+      expect(tester.getSize(navigation).width, 64);
+      expect(toggle.hitTestable(), findsOneWidget);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(tester.getSize(navigation).width, 240);
+      expect(find.byKey(const Key('workspace-heading')), findsNothing);
+      for (final mode in ['dark', 'light']) {
+        await tester.tap(find.byKey(const Key('destination-settings')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(Key('appearance-$mode')));
+        await tester.pumpAndSettle();
+        final header = tester.widget<ColoredBox>(
+          find.byKey(const Key('window-toolbar')),
+        );
+        final surface = tester.widget<DecoratedBox>(
+          find.byKey(const Key('sidebar-surface')),
+        );
+        expect(header.color, (surface.decoration as BoxDecoration).color);
+        final row = find.byKey(const Key('toolbar-row'));
+        expect(tester.getSize(row).height, 60);
+        for (final key in [
+          'toolbar-product-name',
+          'navigation-back',
+          'navigation-forward',
+          'sidebar-toggle',
+          'toolbar-page-title',
+        ]) {
+          expect(
+            tester.getCenter(find.byKey(Key(key))).dy,
+            tester.getCenter(row).dy,
+          );
+        }
+      }
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(tester.getSize(navigation).width, 64);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'opens and closes narrow navigation below the toolbar and retains workspace state',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 720);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final backend = FakeBackend();
+      await tester.pumpWidget(StarterApp(connector: () async => backend));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('name-field')), 'Narrow');
+      await tester.testTextInput.receiveAction(TextInputAction.go);
+      await tester.pumpAndSettle();
+      final toggle = find.byKey(const Key('sidebar-toggle'));
+      final overlay = find.byKey(const Key('navigation-overlay'));
+      final title = find.byKey(const Key('toolbar-page-title'));
+      expect(toggle.hitTestable(), findsOneWidget);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(overlay, findsOneWidget);
+      expect(
+        tester.getTopLeft(overlay).dy,
+        greaterThanOrEqualTo(
+          tester.getBottomLeft(find.byKey(const Key('window-toolbar'))).dy,
+        ),
+      );
+      expect(toggle.hitTestable(), findsOneWidget);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(overlay, findsNothing);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('destination-runtime')));
+      await tester.pumpAndSettle();
+      expect(overlay, findsNothing);
+      expect(tester.widget<Text>(title).data, 'Runtime');
+      await tester.tap(find.byKey(const Key('navigation-back')));
+      await tester.pumpAndSettle();
+      expect(tester.widget<Text>(title).data, 'Workspace');
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('name-field')))
+            .controller
+            ?.text,
+        'Narrow',
+      );
+      await tester.ensureVisible(find.text('Hello, Narrow!'));
+      expect(find.text('Hello, Narrow!'), findsOneWidget);
+      expect(backend.healthCalls, 1);
+      expect(backend.greetCalls, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'dismisses overlay navigation with Escape, the scrim and desktop resizing',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 720);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(StarterApp(connector: () async => FakeBackend()));
+      await tester.pumpAndSettle();
+      final toggle = find.byKey(const Key('sidebar-toggle'));
+      final overlay = find.byKey(const Key('navigation-overlay'));
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(overlay, findsNothing);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(300, 200));
+      await tester.pumpAndSettle();
+      expect(overlay, findsNothing);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      tester.view.physicalSize = const Size(1280, 820);
+      await tester.pumpAndSettle();
+      expect(overlay, findsNothing);
+      tester.view.physicalSize = const Size(320, 720);
+      await tester.pumpAndSettle();
+      expect(overlay, findsNothing);
+      expect(toggle.hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'keeps the sidebar toggle usable in a short narrow window',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 240);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(StarterApp(connector: () async => FakeBackend()));
+      await tester.pumpAndSettle();
+      final toggle = find.byKey(const Key('sidebar-toggle'));
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('navigation-overlay')), findsOneWidget);
+      expect(toggle.hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('navigation-overlay')), findsNothing);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      final settings = find.byKey(const Key('destination-settings'));
+      await tester.ensureVisible(settings);
+      await tester.pumpAndSettle();
+      await tester.tap(settings);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('navigation-overlay')), findsNothing);
+      expect(
+        tester.widget<Text>(find.byKey(const Key('toolbar-page-title'))).data,
+        'Settings',
+      );
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+  );
+
+  testWidgets(
+    'keeps toolbar controls exposed to assistive technology while narrow navigation is open',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 720);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final semantics = tester.ensureSemantics();
+      try {
+        await tester.pumpWidget(
+          StarterApp(connector: () async => FakeBackend()),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('sidebar-toggle')));
+        await tester.pumpAndSettle();
+        expect(find.semantics.byLabel('Collapse sidebar'), findsOneWidget);
+        expect(find.semantics.byLabel('Back'), findsOneWidget);
+        expect(find.semantics.byLabel('Forward'), findsOneWidget);
+        expect(find.semantics.byLabel('Close navigation'), findsOneWidget);
+        expect(find.semantics.byLabel('Your name'), findsNothing);
+        await tester.tap(find.byKey(const Key('sidebar-toggle')));
+        await tester.pumpAndSettle();
+        expect(find.semantics.byLabel('Expand sidebar'), findsOneWidget);
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
+
   testWidgets('fits the connected starter on an iPhone-width surface', (
     tester,
   ) async {
@@ -66,31 +274,762 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(
-      StarterApp(connector: () async => FakeBackend()),
-    );
+    await tester.pumpWidget(StarterApp(connector: () async => FakeBackend()));
     await tester.pumpAndSettle();
 
-    expect(find.text('Go core online'), findsOneWidget);
+    expect(find.text('Go core online'), findsNothing);
+    await tester.tap(find.byIcon(Icons.dns_outlined));
+    await tester.pumpAndSettle();
+    expect(find.text('Ready'), findsOneWidget);
   });
 
-  testWidgets('renders the generated Bridra welcome page', (tester) async {
-    await tester.pumpWidget(
-      StarterApp(connector: () async => FakeBackend()),
-    );
+  testWidgets('renders health and calls the typed backend gateway', (
+    tester,
+  ) async {
+    await tester.pumpWidget(StarterApp(connector: () async => FakeBackend()));
     await tester.pumpAndSettle();
 
-    expect(find.text('{{.DisplayName}}'), findsOneWidget);
-    expect(find.text('Flutter in front.\nGo at the core.'), findsOneWidget);
-    expect(find.text('Go core online'), findsOneWidget);
+    expect(find.text({{dartString .DisplayName}}), findsOneWidget);
+    expect(find.text('Request playground'), findsOneWidget);
+    expect(find.byKey(const Key('runtime-status')), findsNothing);
+    expect(
+      find.text('Explore your application through its typed Go backend.'),
+      findsNothing,
+    );
+    expect(find.byIcon(Icons.layers_rounded), findsNothing);
+    await tester.tap(find.byKey(const Key('destination-runtime')));
+    await tester.pumpAndSettle();
+    expect(find.text('Ready'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('navigation-back')));
+    await tester.pumpAndSettle();
 
+    await tester.enterText(find.byKey(const Key('name-field')), 'Codex');
     final callButton = find.byKey(const Key('call-button'));
     await tester.ensureVisible(callButton);
-    await tester.enterText(find.byKey(const Key('name-field')), 'Bridra');
     await tester.tap(callButton);
     await tester.pumpAndSettle();
 
-    expect(find.text('Hello, Bridra!'), findsOneWidget);
+    expect(find.text('Hello, Codex!'), findsOneWidget);
     expect(find.text('200 · CONTROLLER RESPONSE'), findsOneWidget);
+    expect(find.text('auth:before'), findsOneWidget);
+    expect(find.text('auth:after'), findsOneWidget);
   });
+
+  testWidgets('retries a failed sidecar connection', (tester) async {
+    var attempts = 0;
+    final backend = FakeBackend();
+    await tester.pumpWidget(
+      StarterApp(
+        connector: () async {
+          attempts++;
+          if (attempts == 1) throw StateError('launch failed');
+          return backend;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('runtime-status')), findsNothing);
+    expect(find.byKey(const Key('retry-button')), findsOneWidget);
+
+    final retryButton = find.byKey(const Key('retry-button'));
+    await tester.ensureVisible(retryButton);
+    await tester.tap(retryButton);
+    await tester.pumpAndSettle();
+
+    expect(attempts, 2);
+    expect(find.byKey(const Key('retry-button')), findsNothing);
+    await tester.tap(find.byKey(const Key('destination-runtime')));
+    await tester.pumpAndSettle();
+    expect(find.text('Ready'), findsOneWidget);
+  });
+
+  testWidgets('offers restart after the sidecar exits', (tester) async {
+    final backend = ExitingBackend();
+    await tester.pumpWidget(StarterApp(connector: () async => backend));
+    await tester.pumpAndSettle();
+
+    final callButton = find.byKey(const Key('call-button'));
+    await tester.ensureVisible(callButton);
+    await tester.tap(callButton);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('runtime-status')), findsNothing);
+    expect(find.byKey(const Key('retry-button')), findsOneWidget);
+    expect(backend.closeCalls, 1);
+    await tester.tap(find.byKey(const Key('destination-runtime')));
+    await tester.pumpAndSettle();
+    expect(find.text('Not connected'), findsOneWidget);
+  });
+
+  testWidgets('switches features without losing input or reconnecting', (
+    tester,
+  ) async {
+    final backend = FakeBackend();
+    var connections = 0;
+    await tester.pumpWidget(
+      StarterApp(
+        connector: () async {
+          connections++;
+          return backend;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('name-field')), 'My workspace');
+    await tester.tap(find.byIcon(Icons.dns_outlined));
+    await tester.pumpAndSettle();
+    expect(find.text('Middleware -> Controller -> Service'), findsOneWidget);
+    expect(find.text('{{.FrameworkVersion}}'), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.menu_book_outlined));
+    await tester.pumpAndSettle();
+    expect(find.text('make doctor'), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.dashboard_outlined));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('name-field')))
+          .controller
+          ?.text,
+      'My workspace',
+    );
+    expect(connections, 1);
+    expect(backend.closeCalls, 0);
+  });
+
+  testWidgets(
+    'uses Settings appearance with history and retained workspace state',
+    (tester) async {
+      final backend = FakeBackend();
+      await tester.pumpWidget(StarterApp(connector: () async => backend));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('name-field')), 'Theme');
+      await tester.tap(find.byKey(const Key('call-button')));
+      await tester.pumpAndSettle();
+      final settings = find.byKey(const Key('destination-settings'));
+      final title = find.byKey(const Key('toolbar-page-title'));
+      await tester.tap(settings);
+      await tester.pumpAndSettle();
+      expect(tester.widget<Text>(title).data, 'Settings');
+      expect(find.byType(PopupMenuButton<ThemeMode>), findsNothing);
+      for (final mode in [ThemeMode.dark, ThemeMode.light, ThemeMode.system]) {
+        await tester.tap(find.byKey(Key('appearance-${mode.name}')));
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<MaterialApp>(find.byType(MaterialApp)).themeMode,
+          mode,
+        );
+        expect(
+          tester
+              .widget<RadioGroup<ThemeMode>>(find.byType(RadioGroup<ThemeMode>))
+              .groupValue,
+          mode,
+        );
+        if (mode != ThemeMode.system) {
+          expect(
+            Theme.of(
+              tester.element(find.byKey(Key('appearance-${mode.name}'))),
+            ).brightness,
+            mode == ThemeMode.dark ? Brightness.dark : Brightness.light,
+          );
+        }
+      }
+      addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+      for (final brightness in [Brightness.dark, Brightness.light]) {
+        tester.platformDispatcher.platformBrightnessTestValue = brightness;
+        await tester.pumpAndSettle();
+        expect(
+          Theme.of(tester.element(find.text('Appearance'))).brightness,
+          brightness,
+        );
+      }
+      // Revisiting the current section must not add a duplicate history entry.
+      await tester.tap(settings);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('navigation-back')));
+      await tester.pumpAndSettle();
+      expect(tester.widget<Text>(title).data, 'Workspace');
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('name-field')))
+            .controller
+            ?.text,
+        'Theme',
+      );
+      expect(find.text('Hello, Theme!'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('navigation-forward')));
+      await tester.pumpAndSettle();
+      expect(tester.widget<Text>(title).data, 'Settings');
+      expect(
+        tester
+            .widget<RadioGroup<ThemeMode>>(find.byType(RadioGroup<ThemeMode>))
+            .groupValue,
+        ThemeMode.system,
+      );
+      expect(backend.healthCalls, 1);
+      expect(backend.greetCalls, 1);
+      expect(backend.closeCalls, 0);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('opens Settings from narrow navigation and closes its overlay', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 720);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final backend = FakeBackend();
+    await tester.pumpWidget(StarterApp(connector: () async => backend));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('name-field')),
+      'Settings draft',
+    );
+    await tester.tap(find.byIcon(Icons.settings_outlined));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+      3,
+    );
+    expect(
+      tester.widget<Text>(find.byKey(const Key('toolbar-page-title'))).data,
+      'Settings',
+    );
+    await tester.ensureVisible(find.byKey(const Key('appearance-dark')));
+    await tester.tap(find.byKey(const Key('appearance-dark')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('navigation-back')));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('name-field')))
+          .controller
+          ?.text,
+      'Settings draft',
+    );
+    await tester.tap(find.byKey(const Key('sidebar-toggle')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('destination-settings')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('navigation-overlay')), findsNothing);
+    expect(
+      tester.widget<Text>(find.byKey(const Key('toolbar-page-title'))).data,
+      'Settings',
+    );
+    expect(
+      tester
+          .widget<RadioGroup<ThemeMode>>(find.byType(RadioGroup<ThemeMode>))
+          .groupValue,
+      ThemeMode.dark,
+    );
+    final forward = tester.widget<IconButton>(
+      find.descendant(
+        of: find.byKey(const Key('navigation-forward')),
+        matching: find.byType(IconButton),
+      ),
+    );
+    expect(forward.onPressed, isNull);
+    expect(backend.healthCalls, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('adapts navigation across widths and retains the request draft', (
+    tester,
+  ) async {
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1280, 900);
+    final backend = FakeBackend();
+    await tester.pumpWidget(StarterApp(connector: () async => backend));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('name-field')), 'Resize');
+    for (final size in const [
+      Size(402, 874),
+      Size(800, 700),
+      Size(1280, 900),
+      Size(800, 400),
+    ]) {
+      tester.view.physicalSize = size;
+      await tester.pumpAndSettle();
+      final sidebar = size.width >= 760 && size.height >= 480;
+      expect(
+        find.byKey(const Key('desktop-navigation')),
+        sidebar ? findsOneWidget : findsNothing,
+      );
+      expect(
+        find.byType(NavigationBar),
+        sidebar ? findsNothing : findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('name-field')))
+            .controller
+            ?.text,
+        'Resize',
+      );
+      expect(tester.takeException(), isNull);
+    }
+    expect(backend.healthCalls, 1);
+  });
+
+  testWidgets(
+    'uses the full sidebar with Settings and no backend status footer',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 820);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final backend = FakeBackend();
+      await tester.pumpWidget(StarterApp(connector: () async => backend));
+      await tester.pumpAndSettle();
+      expect(
+        tester.getSize(find.byKey(const Key('desktop-navigation'))).width,
+        240,
+      );
+      expect(find.text('Backend runtime'), findsNothing);
+      expect(find.text('Go core online'), findsNothing);
+      expect(find.byKey(const Key('destination-settings')), findsOneWidget);
+      final destination = find.byKey(const Key('destination-workspace'));
+      expect(tester.getSize(destination).width, greaterThan(220));
+      final selected = tester.widget<TextButton>(destination);
+      final theme = Theme.of(tester.element(destination));
+      expect(
+        selected.style?.backgroundColor?.resolve({}),
+        theme.navigationRailTheme.indicatorColor,
+      );
+      await tester.enterText(find.byKey(const Key('name-field')), 'Sidebar');
+      await tester.tap(find.byKey(const Key('destination-runtime')));
+      await tester.pumpAndSettle();
+      expect(find.text('Middleware -> Controller -> Service'), findsOneWidget);
+      await tester.tap(destination);
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('name-field')))
+            .controller
+            ?.text,
+        'Sidebar',
+      );
+      expect(backend.healthCalls, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'collapses the sidebar without changing appearance or losing the request',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 820);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final backend = FakeBackend();
+      await tester.pumpWidget(StarterApp(connector: () async => backend));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('name-field')), 'Collapse');
+      await tester.tap(find.byKey(const Key('call-button')));
+      await tester.pumpAndSettle();
+      final collapse = find.byTooltip('Collapse sidebar');
+      expect(
+        tester.getTopLeft(find.byKey(const Key('navigation-forward'))).dx,
+        greaterThan(
+          tester.getTopLeft(find.byKey(const Key('navigation-back'))).dx,
+        ),
+      );
+      expect(
+        tester.getTopLeft(collapse).dx,
+        greaterThan(
+          tester.getTopLeft(find.byKey(const Key('navigation-forward'))).dx,
+        ),
+      );
+      expect(
+        tester.getTopLeft(collapse).dy,
+        lessThan(
+          tester.getTopLeft(find.byKey(const Key('destination-settings'))).dy,
+        ),
+      );
+      await tester.tap(collapse);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      final animatedWidth = tester
+          .getSize(find.byKey(const Key('desktop-navigation')))
+          .width;
+      expect(animatedWidth, greaterThan(64));
+      expect(animatedWidth, lessThan(240));
+      expect(tester.takeException(), isNull);
+      await tester.pumpAndSettle();
+      expect(
+        tester.getSize(find.byKey(const Key('desktop-navigation'))).width,
+        64,
+      );
+      expect(
+        tester.widget<MaterialApp>(find.byType(MaterialApp)).themeMode,
+        ThemeMode.system,
+      );
+      expect(find.byTooltip('Expand sidebar'), findsOneWidget);
+      for (final size in const [Size(402, 874), Size(1280, 820)]) {
+        tester.view.physicalSize = size;
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      }
+      expect(
+        tester.getSize(find.byKey(const Key('desktop-navigation'))).width,
+        64,
+      );
+      await tester.tap(find.byTooltip('Expand sidebar'));
+      await tester.pumpAndSettle();
+      expect(
+        tester.getSize(find.byKey(const Key('desktop-navigation'))).width,
+        240,
+      );
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('name-field')))
+            .controller
+            ?.text,
+        'Collapse',
+      );
+      expect(find.text('Hello, Collapse!'), findsOneWidget);
+      expect(backend.healthCalls, 1);
+      expect(backend.closeCalls, 0);
+    },
+  );
+
+  testWidgets(
+    'navigates backward and forward, clears a forward branch and retains workspace state',
+    (tester) async {
+      final backend = FakeBackend();
+      await tester.pumpWidget(StarterApp(connector: () async => backend));
+      await tester.pumpAndSettle();
+      IconButton historyButton(String key) => tester.widget<IconButton>(
+        find.descendant(
+          of: find.byKey(Key(key)),
+          matching: find.byType(IconButton),
+        ),
+      );
+      expect(historyButton('navigation-back').onPressed, isNull);
+      expect(historyButton('navigation-forward').onPressed, isNull);
+      await tester.enterText(find.byKey(const Key('name-field')), 'History');
+      await tester.tap(find.byKey(const Key('call-button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('destination-runtime')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('destination-guide')));
+      await tester.pumpAndSettle();
+      expect(historyButton('navigation-back').onPressed, isNotNull);
+      expect(historyButton('navigation-forward').onPressed, isNull);
+      await tester.tap(find.byKey(const Key('navigation-back')));
+      await tester.pumpAndSettle();
+      expect(find.text('Middleware -> Controller -> Service'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('navigation-back')));
+      await tester.pumpAndSettle();
+      expect(find.text('Hello, History!'), findsOneWidget);
+      expect(historyButton('navigation-back').onPressed, isNull);
+      await tester.tap(find.byKey(const Key('navigation-forward')));
+      await tester.pumpAndSettle();
+      expect(find.text('Middleware -> Controller -> Service'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('destination-workspace')));
+      await tester.pumpAndSettle();
+      expect(historyButton('navigation-forward').onPressed, isNull);
+      await tester.tap(find.byKey(const Key('destination-workspace')));
+      await tester.tap(find.byKey(const Key('navigation-back')));
+      await tester.pumpAndSettle();
+      expect(find.text('Middleware -> Controller -> Service'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('navigation-back')));
+      await tester.pumpAndSettle();
+      expect(historyButton('navigation-back').onPressed, isNull);
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('name-field')))
+            .controller
+            ?.text,
+        'History',
+      );
+      expect(find.text('Hello, History!'), findsOneWidget);
+      expect(backend.healthCalls, 1);
+      expect(backend.closeCalls, 0);
+    },
+  );
+
+  testWidgets('keeps rapid history actions within navigation bounds', (
+    tester,
+  ) async {
+    await tester.pumpWidget(StarterApp(connector: () async => FakeBackend()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('destination-runtime')));
+    await tester.pumpAndSettle();
+    VoidCallback callback(String key) => tester
+        .widget<IconButton>(
+          find.descendant(
+            of: find.byKey(Key(key)),
+            matching: find.byType(IconButton),
+          ),
+        )
+        .onPressed!;
+    final back = callback('navigation-back');
+    back();
+    back();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('name-field')), findsOneWidget);
+    final forward = callback('navigation-forward');
+    forward();
+    forward();
+    await tester.pumpAndSettle();
+    expect(find.text('Middleware -> Controller -> Service'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('honors reduced motion while collapsing the sidebar', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 820);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    await tester.pumpWidget(StarterApp(connector: () async => FakeBackend()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('sidebar-toggle')));
+    await tester.pump();
+    expect(
+      tester.getSize(find.byKey(const Key('desktop-navigation'))).width,
+      64,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'keeps the compact sidebar actions named and keyboard accessible',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 700);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(StarterApp(connector: () async => FakeBackend()));
+      await tester.pumpAndSettle();
+      expect(
+        tester.getSize(find.byKey(const Key('desktop-navigation'))).width,
+        64,
+      );
+      expect(find.byTooltip('Runtime'), findsOneWidget);
+      Key? focusedDestination;
+      for (var attempt = 0; attempt < 8; attempt++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pumpAndSettle();
+        focusedDestination = FocusManager.instance.primaryFocus?.context
+            ?.findAncestorWidgetOfExactType<TextButton>()
+            ?.key;
+        if (focusedDestination == const Key('destination-runtime')) break;
+      }
+      expect(focusedDestination, const Key('destination-runtime'));
+      final runtimeButton = find.byKey(const Key('destination-runtime'));
+      final theme = Theme.of(tester.element(runtimeButton));
+      expect(
+        tester.widget<TextButton>(runtimeButton).style?.side?.resolve({
+          WidgetState.focused,
+        })?.color,
+        theme.colorScheme.primary,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.text('Middleware -> Controller -> Service'), findsOneWidget);
+      expect(find.byKey(const Key('runtime-status')), findsNothing);
+      expect(find.byTooltip('Settings'), findsOneWidget);
+      for (var attempt = 0; attempt < 12; attempt++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pumpAndSettle();
+        focusedDestination = FocusManager.instance.primaryFocus?.context
+            ?.findAncestorWidgetOfExactType<TextButton>()
+            ?.key;
+        if (focusedDestination == const Key('destination-settings')) break;
+      }
+      expect(focusedDestination, const Key('destination-settings'));
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.text('Appearance'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'supports enlarged text on narrow and desktop surfaces in every feature',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 720);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await tester.pumpWidget(StarterApp(connector: () async => FakeBackend()));
+      await tester.pumpAndSettle();
+      for (final size in const [Size(320, 720), Size(1280, 820)]) {
+        tester.view.physicalSize = size;
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        for (final icon in [
+          Icons.dns_outlined,
+          Icons.menu_book_outlined,
+          Icons.dashboard_outlined,
+          Icons.settings_outlined,
+        ]) {
+          await tester.tap(find.byIcon(icon));
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+        }
+      }
+    },
+  );
+
+  testWidgets('submits from the keyboard and shows the actual response', (
+    tester,
+  ) async {
+    final backend = FakeBackend();
+    await tester.pumpWidget(StarterApp(connector: () async => backend));
+    await tester.pumpAndSettle();
+    final field = find.byKey(const Key('name-field'));
+    await tester.ensureVisible(field);
+    await tester.enterText(field, 'Keyboard');
+    await tester.testTextInput.receiveAction(TextInputAction.go);
+    await tester.pumpAndSettle();
+    expect(find.text('Hello, Keyboard!'), findsOneWidget);
+    expect(backend.greetCalls, 1);
+  });
+
+  testWidgets('shows progress and replaces a previous response', (
+    tester,
+  ) async {
+    final pending = Completer<GreetingResult>();
+    final backend = FakeBackend(
+      onGreet: (request, _) async {
+        return request.name == 'Second' ? pending.future : greetingFor(request);
+      },
+    );
+    await tester.pumpWidget(StarterApp(connector: () async => backend));
+    await tester.pumpAndSettle();
+    final field = find.byKey(const Key('name-field'));
+    final button = find.byKey(const Key('call-button'));
+    await tester.enterText(field, 'First');
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(find.text('Hello, First!'), findsOneWidget);
+    await tester.ensureVisible(field);
+    await tester.enterText(field, 'Second');
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pump();
+    expect(find.text('Sending…'), findsOneWidget);
+    expect(find.text('Hello, First!'), findsNothing);
+    expect(tester.widget<FilledButton>(button).onPressed, isNull);
+    pending.complete(greetingFor(const GreetingRequest(name: 'Second')));
+    await tester.pumpAndSettle();
+    expect(find.text('Hello, Second!'), findsOneWidget);
+  });
+
+  testWidgets('replaces a connector and disposes its previous backend', (
+    tester,
+  ) async {
+    final previous = FakeBackend();
+    final replacement = FakeBackend();
+    await tester.pumpWidget(StarterApp(connector: () async => previous));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(StarterApp(connector: () async => replacement));
+    await tester.pumpAndSettle();
+    expect(previous.closeCalls, 1);
+    expect(replacement.healthCalls, 1);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    expect(replacement.closeCalls, 1);
+  });
+
+  testWidgets('copies real development commands from the guide', (
+    tester,
+  ) async {
+    String? copied;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied = (call.arguments as Map)['text'] as String;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    await tester.pumpWidget(StarterApp(connector: () async => FakeBackend()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.menu_book_outlined));
+    await tester.pumpAndSettle();
+    final copy = find.byTooltip('Copy make doctor');
+    await tester.ensureVisible(copy);
+    await tester.tap(copy);
+    await tester.pumpAndSettle();
+    expect(copied, 'make doctor');
+    expect(find.text('Copied make doctor'), findsOneWidget);
+    expect(find.byType(SnackBar), findsNothing);
+    final toast = find.byKey(const Key('app-toast'));
+    expect(
+      tester.getTopLeft(toast).dy,
+      greaterThan(
+        tester.getBottomLeft(find.byKey(const Key('window-toolbar'))).dy,
+      ),
+    );
+    expect(tester.getTopLeft(toast).dy, lessThan(100));
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+    expect(toast, findsNothing);
+  });
+
+  testWidgets('names icon actions for assistive technology', (tester) async {
+    final semantics = tester.ensureSemantics();
+    try {
+      await tester.pumpWidget(StarterApp(connector: () async => FakeBackend()));
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel('Settings'), findsOneWidget);
+      expect(
+        find.bySemanticsLabel('Go core online. Inspect runtime'),
+        findsNothing,
+      );
+      await tester.tap(find.byIcon(Icons.menu_book_outlined));
+      await tester.pumpAndSettle();
+      for (final command in ['make doctor', 'make verify', 'make run']) {
+        expect(find.bySemanticsLabel('Copy $command'), findsOneWidget);
+      }
+    } finally {
+      semantics.dispose();
+    }
+  });
+
+  testWidgets(
+    'renders connecting state and closes late connection on removal',
+    (tester) async {
+      final pending = Completer<BackendGateway>();
+      final backend = FakeBackend();
+      await tester.pumpWidget(StarterApp(connector: () => pending.future));
+      await tester.pump();
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(const Key('call-button')))
+            .onPressed,
+        isNull,
+      );
+      await tester.tap(find.byKey(const Key('destination-runtime')));
+      await tester.pump();
+      expect(find.text('Connecting'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      pending.complete(backend);
+      await tester.pumpAndSettle();
+      expect(backend.closeCalls, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

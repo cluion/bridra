@@ -3,6 +3,35 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
+## [Unreleased]
+
+### Added
+
+- An optional modular Flutter starter with application composition, shared
+  theme/layout, and feature views backed by observable presentation state.
+  Workspace, Runtime, Guide and Settings support adaptive, collapsible sidebar/bar navigation,
+  System/Light/Dark appearance, retained request drafts, and gateway lifetime
+  cleanup. Existing application UI and runtime contracts remain unchanged.
+- A unified product toolbar with bounded Back/Forward section history and
+  animated sidebar transitions that honor reduced motion. Its toggle remains
+  available at every size, with overlay navigation in narrow windows. The taller
+  header shares the sidebar color and displays the current page title without a
+  repeated Workspace heading or introductory subtitle. Settings participates in
+  the same history and offers appearance controls inside the content area; backend
+  health remains in Runtime without a persistent sidebar status block.
+- An integrated macOS title bar that hides the separate background and title
+  while retaining native window controls, with narrow-layout spacing to avoid
+  covering application actions.
+- Floating top copy confirmations with slide/fade transitions, automatic or
+  manual dismissal, replacement of repeated notifications and reduced motion.
+- Preserve application-owned UI and starter test files during template
+  rendering, and verify generated consumers with the same UI regressions.
+
+### Fixed
+
+- Await secondary-instance termination in the reference application entrypoint,
+  matching the generated starter's existing desktop lifecycle.
+
 ## [0.21.0] - 2026-10-13
 
 ### Changed

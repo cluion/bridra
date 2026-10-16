@@ -10,7 +10,10 @@ Future<void> main([List<String> arguments = const []]) async {
       applicationId: 'dev.example.bridra',
       arguments: arguments,
     );
-    if (!instance.isPrimary) return;
+    if (!instance.isPrimary) {
+      await DesktopSingleInstance.terminateSecondary(instance);
+      return;
+    }
     instance.activations.listen(_handleActivation);
   }
   runApp(const BridraApp());
