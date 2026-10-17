@@ -379,7 +379,9 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 		t.Fatalf("read generated platform HTTP smoke test: %v", err)
 	}
 	if !strings.Contains(string(smokeTest), "package:starter_app/main.dart") ||
-		!strings.Contains(string(smokeTest), "Go core unavailable") ||
+		!strings.Contains(string(smokeTest), "const Key('retry-button')") ||
+		!strings.Contains(string(smokeTest), "expect(tester.widget<FilledButton>(callButton).onPressed, isNull)") ||
+		!strings.Contains(string(smokeTest), "expect(canRequest(), isTrue)") ||
 		!strings.Contains(string(smokeTest), "RpcStreamProgress<RpcReply>") ||
 		!strings.Contains(string(smokeTest), "RpcFileReference.fromJson") ||
 		!strings.Contains(string(smokeTest), "client.download(reference)") ||
