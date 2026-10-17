@@ -64,6 +64,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -73,14 +75,8 @@ jobs:
             backend/go.mod
             backend/integration/sqljobstore/go.mod
 
-      - name: Install FVM
-        run: |
-          curl -fsSL https://fvm.app/install.sh -o /tmp/fvm-install.sh
-          bash /tmp/fvm-install.sh 4.1.2
-          echo "$HOME/fvm/bin" >> "$GITHUB_PATH"
-
-      - name: Install project Flutter SDK
-        run: fvm install
+      - name: Set up pinned Flutter
+        uses: ./.github/actions/setup-flutter
 
       - name: Stress Runtime resources, lifecycle, and transports
         run: |
@@ -97,3 +93,35 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           path: backend/framework/testdata/fuzz/
+
+  cache-warm:
+    # Default-branch caches can be restored by PRs and tags; PR merge-ref caches cannot.
+    if: github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - name: Check out trusted default branch
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Set up pinned Flutter
+        uses: ./.github/actions/setup-flutter
+        with:
+          android: ${{ runner.os == 'Linux' }}
+      - name: Warm platform SDK artifacts
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in
+            Linux) fvm flutter precache --linux --android --web ;;
+            macOS) fvm flutter precache --macos --ios ;;
+            Windows) fvm flutter precache --windows ;;
+          esac
+      - name: Warm Gradle wrapper
+        if: runner.os == 'Linux'
+        run: |
+          python3 tool/ci.py gradle-wrapper
+          "$RUNNER_TEMP/bridra-gradle-warm/gradlew" --version

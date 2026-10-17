@@ -1,0 +1,72 @@
+name: Set up pinned Flutter
+description: Install FVM and restore SDK and dependency caches without caching credentials
+inputs:
+  android:
+    description: Restore Gradle dependencies for Android work
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - name: Resolve cache paths and pinned SDK
+      id: paths
+      shell: bash
+      run: |
+        bridra_python=python3
+        if [[ "$RUNNER_OS" == "Windows" ]]; then bridra_python=python; fi
+        "$bridra_python" tool/ci.py cache-env
+
+    - name: Restore pinned Flutter SDK
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.paths.outputs.fvm }}/versions
+        key: flutter-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}
+
+    - name: Restore Pub dependencies
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ${{ steps.paths.outputs.pub }}/hosted
+          ${{ steps.paths.outputs.pub }}/hosted-hashes
+          ${{ steps.paths.outputs.pub }}/git
+        key: pub-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-${{ hashFiles('pubspec.lock', 'packages/bridra_flutter/pubspec.yaml') }}
+        restore-keys: |
+          pub-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-
+
+    - name: Restore Gradle dependencies
+      if: inputs.android == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper/dists
+        key: gradle-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('android/**/*.gradle.kts', 'android/gradle.properties', 'android/gradle/wrapper/gradle-wrapper.properties', 'pubspec.lock') }}
+        restore-keys: |
+          gradle-v1-${{ runner.os }}-${{ runner.arch }}-
+
+    - name: Install FVM on Unix
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        curl -fsSL https://fvm.app/install.sh -o "$RUNNER_TEMP/fvm-install.sh"
+        bash "$RUNNER_TEMP/fvm-install.sh" 4.1.2
+        echo "$HOME/fvm/bin" >> "$GITHUB_PATH"
+
+    - name: Install FVM on Windows
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: choco install fvm --version=4.1.2 --yes
+
+    - name: Install and initialize pinned Flutter
+      shell: bash
+      run: |
+        fvm install
+        fvm flutter --version
+        fvm flutter pub get
+        (cd packages/bridra_flutter && fvm flutter pub get)
+
+    - name: Export the installed Flutter SDK
+      shell: bash
+      run: |
+        bridra_python=python3
+        if [[ "$RUNNER_OS" == "Windows" ]]; then bridra_python=python; fi
+        "$bridra_python" tool/ci.py flutter-env

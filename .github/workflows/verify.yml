@@ -21,13 +21,6 @@ jobs:
     outputs:
       scope: ${{ steps.plan.outputs.scope }}
       run_checks: ${{ steps.plan.outputs.run_checks }}
-      core: ${{ steps.plan.outputs.core }}
-      linux: ${{ steps.plan.outputs.linux }}
-      android: ${{ steps.plan.outputs.android }}
-      web: ${{ steps.plan.outputs.web }}
-      macos: ${{ steps.plan.outputs.macos }}
-      ios: ${{ steps.plan.outputs.ios }}
-      windows: ${{ steps.plan.outputs.windows }}
     steps:
       - name: Check out merge result
         uses: actions/checkout@v7
@@ -48,13 +41,7 @@ jobs:
     if: needs.changes.outputs.run_checks == 'true'
     uses: ./.github/workflows/checks.yml
     with:
-      core: ${{ needs.changes.outputs.core == 'true' }}
-      linux: ${{ needs.changes.outputs.linux == 'true' }}
-      android: ${{ needs.changes.outputs.android == 'true' }}
-      web: ${{ needs.changes.outputs.web == 'true' }}
-      macos: ${{ needs.changes.outputs.macos == 'true' }}
-      ios: ${{ needs.changes.outputs.ios == 'true' }}
-      windows: ${{ needs.changes.outputs.windows == 'true' }}
+      plan: ${{ needs.changes.outputs.scope }}
 
   ci-gate:
     if: ${{ always() }}

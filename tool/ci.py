@@ -6,10 +6,13 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 
 
-SCOPES = ("core", "linux", "android", "web", "macos", "ios", "windows")
+SCOPES = ("core", "linux", "android", "web", "macos", "ios", "windows",
+          "android_emulator", "ios_simulator")
+PLATFORMS = ("linux", "android", "web", "macos", "ios", "windows")
 TARGETS = [(system, arch) for system in ("darwin", "linux", "windows")
            for arch in ("amd64", "arm64")]
 
@@ -19,21 +22,106 @@ def plan(paths):
     for path in paths:
         if path.endswith(".md") and ("/" not in path or path.startswith("docs/")):
             continue
+        template_prefix = "backend/projecttemplate/templates/"
+        if path.startswith(template_prefix):
+            selected.add("core")
+            selected.update(key for key, enabled in plan([path[len(template_prefix):]]).items() if enabled)
+            continue
         platform = path.split("/", 1)[0]
-        if platform in SCOPES and platform != "core":
+        if platform in PLATFORMS:
             selected.add(platform)
+            if platform in ("android", "ios"):
+                selected.add(platform + ("_emulator" if platform == "android" else "_simulator"))
         elif path.startswith("tool/"):
             name = path.split("/", 1)[1]
             if name.startswith(("ios_", "gomobile/")):
-                selected.add("ios")
+                selected.update(("ios", "ios_simulator"))
             elif name.startswith(("linux_", "macos_", "android_", "windows.")):
                 selected.add(name.split("_", 1)[0].split(".", 1)[0])
+                if name.startswith("android_"):
+                    selected.add("android_emulator")
             else:
                 selected.update(SCOPES)
+        elif path.startswith("lib/ui/window/"):
+            selected.update(("core", "linux", "macos", "windows"))
+        elif path.startswith("integration_test/android_"):
+            selected.update(("core", "android", "android_emulator"))
+        elif path.startswith("integration_test/ios_"):
+            selected.update(("core", "ios", "ios_simulator"))
+        elif path.startswith("backend/") and path.endswith(("_windows.go", "_windows_test.go")):
+            selected.update(("core", "windows"))
+        elif path.startswith("backend/") and path.endswith(("_darwin.go", "_darwin_test.go")):
+            selected.update(("core", "macos"))
+        elif path.startswith("backend/") and path.endswith(("_linux.go", "_linux_test.go")):
+            selected.update(("core", "linux"))
+        elif path.startswith(("backend/framework/", "backend/cmd/sidecar/", "backend/cmd/server/",
+                              "packages/bridra_flutter/lib/", "schema/")) and not path.endswith("_test.go"):
+            # Runtime/wire changes keep real transport checks before merge.
+            selected.update(SCOPES)
+        elif (path.startswith(("lib/", "test/", "assets/", "packages/bridra_flutter/test/"))
+              or (path.startswith("backend/") and path.endswith(".go"))
+              or path in ("VERSION", ".bridra/project.json")):
+            # Representative desktop coverage for application, CLI and test work;
+            # the exact tagged source still builds every target before publication.
+            selected.update(("core", "linux"))
         else:
-            # Shared code, build configuration and unknown paths can affect every target.
+            # SDK/dependency/build configuration and unknown paths remain conservative.
             selected.update(SCOPES)
     return {scope: scope in selected for scope in SCOPES}
+
+
+def validate_plan(scope):
+    if set(scope) != set(SCOPES) or any(type(value) is not bool for value in scope.values()):
+        raise ValueError("missing or invalid check plan")
+
+
+def pinned_flutter(root):
+    version = json.loads((Path(root) / ".fvmrc").read_text()).get("flutter")
+    if not isinstance(version, str) or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?", version):
+        raise ValueError("CI requires an exact pinned Flutter version")
+    return version
+
+
+def cache_environment(root, environment):
+    version = pinned_flutter(root)
+    cache = Path(environment["RUNNER_TOOL_CACHE"])
+    values = {"FVM_CACHE_PATH": (cache / "bridra-fvm").as_posix(),
+              "PUB_CACHE": (cache / "bridra-pub").as_posix()}
+    with open(environment["GITHUB_ENV"], "a") as output:
+        for key, value in values.items():
+            output.write(f"{key}={value}\n")
+    with open(environment["GITHUB_OUTPUT"], "a") as output:
+        output.write(f'version={version}\nfvm={values["FVM_CACHE_PATH"]}\npub={values["PUB_CACHE"]}\n')
+
+
+def flutter_environment(root, environment):
+    version = pinned_flutter(root)
+    versions = json.loads(subprocess.check_output(["fvm", "api", "list"], text=True))["versions"]
+    matches = [item for item in versions if item.get("name") == version]
+    if len(matches) != 1:
+        raise ValueError("expected one installed SDK matching the pinned Flutter version")
+    sdk = Path(matches[0]["directory"])
+    dart = sdk / "bin/cache/dart-sdk/bin" / ("dart.exe" if os.name == "nt" else "dart")
+    if not dart.is_file() or (os.name != "nt" and not os.access(dart, os.X_OK)):
+        raise ValueError(f"pinned Dart SDK not found: {dart}")
+    with open(environment["GITHUB_ENV"], "a") as output:
+        output.write(f"FLUTTER_ROOT={sdk.as_posix()}\n")
+    with open(environment["GITHUB_PATH"], "a") as output:
+        output.write(f"{sdk.as_posix()}/bin\n{dart.parent.as_posix()}\n")
+
+
+def prepare_gradle_wrapper(root, environment):
+    # Flutter generates these ignored files during a build, not a plain pub get.
+    # Warm the committed distribution in scratch space without building the app.
+    source = Path(environment["FLUTTER_ROOT"]) / "bin/cache/artifacts/gradle_wrapper"
+    destination = Path(environment["RUNNER_TEMP"]) / "bridra-gradle-warm"
+    for relative in ("gradlew", "gradle/wrapper/gradle-wrapper.jar"):
+        target = destination / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source / relative, target)
+    shutil.copyfile(Path(root) / "android/gradle/wrapper/gradle-wrapper.properties",
+                    destination / "gradle/wrapper/gradle-wrapper.properties")
+    (destination / "gradlew").chmod(0o755)
 
 
 def changed_paths(base, head):
@@ -50,8 +138,7 @@ def changed_paths(base, head):
 def check_gate(scope, needs):
     if needs.get("changes", {}).get("result") != "success":
         raise ValueError("change planning did not succeed")
-    if set(scope) != set(SCOPES) or any(type(value) is not bool for value in scope.values()):
-        raise ValueError("missing or invalid check plan")
+    validate_plan(scope)
     result = needs.get("checks", {}).get("result")
     allowed = {"success"} if any(scope.values()) else {"skipped"}
     if result not in allowed:
@@ -59,11 +146,16 @@ def check_gate(scope, needs):
 
 
 def check_results(scope, full, needs):
+    validate_plan(scope)
     expected = {
-        "linux-android-web": full or any(scope[key] for key in ("core", "linux", "android", "web")),
-        "android-emulator": full or scope["android"],
-        "macos-ios": full or scope["macos"] or scope["ios"],
+        "core": full or scope["core"],
+        "linux": full or scope["linux"],
+        "android-web": full or scope["android"] or scope["web"],
+        "android-emulator": full or scope["android_emulator"],
+        "macos": full or scope["macos"],
+        "ios": full or scope["ios"] or scope["ios_simulator"],
         "windows": full or scope["windows"],
+        "release-package": full,
     }
     if set(needs) != set(expected):
         raise ValueError("missing verification job result")
@@ -142,6 +234,9 @@ def main():
     artifacts.add_argument("--directory", required=True)
     artifacts.add_argument("--version", required=True)
     artifacts.add_argument("--commit", required=True)
+    for name in ("cache-env", "flutter-env", "gradle-wrapper"):
+        setup = commands.add_parser(name)
+        setup.add_argument("--root", default=".")
     args = parser.parse_args()
     try:
         if args.command == "plan":
@@ -156,11 +251,22 @@ def main():
             check_gate(json.loads(args.plan), json.loads(args.needs))
             print("All applicable PR checks passed.")
         elif args.command == "results":
-            check_results(json.loads(args.plan), args.full == "true", json.loads(args.needs))
+            scope = json.loads(args.plan)
+            full = args.full == "true"
+            # Tag callers intentionally omit a PR plan; full mode still requires every job.
+            if full and scope == {}:
+                scope = {key: False for key in SCOPES}
+            check_results(scope, full, json.loads(args.needs))
             print("Every selected verification job succeeded.")
-        else:
+        elif args.command == "artifacts":
             verify_artifacts(args.directory, args.version, args.commit)
             print("Release files match the verified version, source SHA and digests.")
+        elif args.command == "cache-env":
+            cache_environment(args.root, os.environ)
+        elif args.command == "flutter-env":
+            flutter_environment(args.root, os.environ)
+        else:
+            prepare_gradle_wrapper(args.root, os.environ)
     except (ValueError, KeyError, OSError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"CI validation failed: {error}\n")
 

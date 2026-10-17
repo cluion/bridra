@@ -171,11 +171,13 @@ platforms; optional starter changes do not force whole-template replacement.
 
 The repository pins Flutter 3.44.6 through the committed `.fvmrc`:
 
+Start with focused checks for the changed behavior. The commands below are
+verification options; the tag workflow owns the complete release matrix.
+
 ```bash
 make setup
 make doctor
-make verify
-make coverage
+make verify-coverage
 make runtime-stress
 make http-fault-test
 make android-emulator-smoke
@@ -185,8 +187,10 @@ make ios-device-smoke
 
 `make verify` checks generated contracts, Go formatting and vet, race-enabled
 tests, external public APIs, real Sidecar and HTTP round trips, Chrome, Flutter
-tests, and static analysis. `make coverage` enforces the committed
-non-regression floors. `make runtime-stress` runs the slower fuzz, repeated
+tests, and static analysis. When both verification and coverage are needed,
+`make verify-coverage` runs each suite once with race detection and enforces the
+committed non-regression floors. Standalone `make coverage` remains available.
+`make runtime-stress` runs the slower fuzz, repeated
 lifecycle, concurrency, persistence, Sidecar recovery, and bounded resource
 stability suite.
 `make http-fault-test` deterministically injects HTTP latency, timeouts, stream

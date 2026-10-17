@@ -35,15 +35,17 @@ toolchains listed in [README.md](README.md).
 ```bash
 make setup
 make doctor
-make verify
-make coverage
+make verify-coverage
 make runtime-stress
 ```
 
 `make verify` includes license-copy consistency, generated-file checks,
 external-package Go public API tests, race tests, real Sidecar/HTTP integration,
-Chrome, widget tests, formatting, vet, and analysis. `make coverage` enforces the
-committed non-regression floors.
+Chrome, widget tests, formatting, vet, and analysis. When full verification and
+coverage are needed together, `make verify-coverage` preserves those checks and
+race detection while collecting coverage in one test pass. Standalone
+`make coverage` remains available. Ordinary edits should start with the smallest
+relevant checks rather than automatically running every command above.
 
 `make runtime-stress` is the slower opt-in Runtime suite. It actively fuzzes
 Sidecar and HTTP RPC input, repeats race-enabled lifecycle and persistence
@@ -78,9 +80,11 @@ reviewable change; squash it to one Conventional Commit and delete the branch
 once merged. Do not use a routine `dev` integration or release-only PR layer.
 
 Run the smallest sufficient local checks for the affected behavior. The PR
-workflow selects platform work and requires the stable `ci-gate`; shared core,
-SDK, schema, build or CI changes retain all applicable regressions and coverage
-floors. `main` pushes do not trigger another verification run. This requires
+workflow selects platform work and requires the stable `ci-gate`. Application/UI
+and CLI changes use core verification/coverage and representative Linux smoke;
+native changes select their platforms, while shared runtime, SDK, schema, build,
+CI and unknown changes retain conservative platform regressions. `main` pushes
+do not trigger another verification run. This requires
 strict PR protection and up-to-date merge results, as described in
 [docs/CI.md](docs/CI.md).
 

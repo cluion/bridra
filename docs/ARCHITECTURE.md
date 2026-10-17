@@ -846,7 +846,10 @@ typed-client, widget, and two real executable integration paths.
 combined app/runtime LCOV profiles. The versioned threshold configuration names
 the protected surfaces; a Go checker emits a Markdown report and fails after
 reporting any regression below its floor. CI uploads the profiles and summary so
-coverage failures remain inspectable.
+coverage failures remain inspectable. CI uses `make verify-coverage`: its Go
+profile retains race detection, both Flutter suites collect coverage directly,
+and Chrome runs once. This replaces running verification and coverage as separate
+passes while leaving the standalone developer commands available.
 
 The GitHub Actions workflow is configured to build and verify:
 
@@ -859,7 +862,10 @@ The GitHub Actions workflow is configured to build and verify:
 - Windows on Windows
 
 Verify runs on Pull Requests and merge groups, selects relevant checks, and
-reports the required `ci-gate`. It does not run on `main` pushes. The tag
+reports the required `ci-gate`. Ordinary UI/CLI work uses core plus representative
+Linux smoke; shared runtime/wire, dependency and unknown changes remain
+conservative. Core, native builds, macOS, iOS and release packaging are independent
+jobs rather than long combined chains. It does not run on `main` pushes. The tag
 workflow verifies the exact tagged commit reachable from `main`, runs every
 platform check, and builds and validates the CLI candidate before requesting
 owner approval. The publication job rechecks the source and artifact identity,
