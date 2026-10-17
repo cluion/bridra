@@ -3,6 +3,42 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
+## [Unreleased]
+
+### Added
+
+- An application-owned Windows/Linux title bar with keyboard-accessible window
+  controls, title drag and double-click regions, resize handles and native state
+  updates. Generated projects select its desktop dependency by platform.
+- An optional modular Flutter starter with application composition, shared
+  theme/layout, and feature views backed by observable presentation state.
+  Workspace, Runtime, Guide and Settings support adaptive, collapsible sidebar/bar navigation,
+  System/Light/Dark appearance, retained request drafts, and gateway lifetime
+  cleanup. Existing application UI and runtime contracts remain unchanged.
+- A unified product toolbar with bounded Back/Forward section history and
+  animated sidebar transitions that honor reduced motion. Its toggle remains
+  available at every size, with overlay navigation in narrow windows. The taller
+  header shares the sidebar color and displays the current page title without a
+  repeated Workspace heading or introductory subtitle. Settings participates in
+  the same history and offers appearance controls inside the content area; backend
+  health remains in Runtime without a persistent sidebar status block.
+- An integrated macOS title bar that hides the separate background and title
+  while retaining native window controls, with narrow-layout spacing to avoid
+  covering application actions.
+- Floating top copy confirmations with slide/fade transitions, automatic or
+  manual dismissal, replacement of repeated notifications and reduced motion.
+- Preserve application-owned UI and starter test files during template
+  rendering, and verify generated consumers with the same UI regressions.
+
+### Fixed
+
+- Replace Flutter's default entrypoint and counter test when creating a new
+  project, while preserving application-owned files during later rendering.
+- Keep platform smoke checks compatible with the starter's optional runtime
+  status display by waiting for request readiness and reconnect controls.
+- Await secondary-instance termination in the reference application entrypoint,
+  matching the generated starter's existing desktop lifecycle.
+
 ## [0.21.0] - 2026-10-13
 
 ### Changed

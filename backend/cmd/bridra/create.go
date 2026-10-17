@@ -283,6 +283,13 @@ func (item createCommand) create(options createOptions, stdout io.Writer) (resul
 	); err != nil {
 		return fmt.Errorf("create: Flutter runners: %w", err)
 	}
+	// These files belong to Flutter's new-project scaffold, not an existing app.
+	// Remove them so application-owned Bridra seeds can be written once.
+	for _, relative := range []string{"lib/main.dart", "test/widget_test.dart"} {
+		if err := os.Remove(filepath.Join(staging, filepath.FromSlash(relative))); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("create: replace Flutter scaffold %s: %w", relative, err)
+		}
+	}
 	if err := applyNativeDisplayName(staging, options); err != nil {
 		return fmt.Errorf("create: native display name: %w", err)
 	}

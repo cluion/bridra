@@ -188,6 +188,9 @@ func renderFile(root string, file ManifestFile, config Config) error {
 		Option("missingkey=error").
 		Funcs(template.FuncMap{
 			"quote": strconv.Quote,
+			"dartString": func(value string) string {
+				return strings.ReplaceAll(strconv.Quote(value), "$", `\$`)
+			},
 			"hasPlatform": func(platform string) bool {
 				return projectplatform.Contains(config.Platforms, platform)
 			},

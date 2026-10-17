@@ -1,0 +1,193 @@
+import 'dart:async';
+
+import 'package:{{.ProjectName}}/api/backend_gateway.dart';
+import 'package:{{.ProjectName}}/features/workspace/workspace_view_model.dart';
+import {{quote .BridraDartImport}};
+import 'package:flutter_test/flutter_test.dart';
+
+import 'support/fake_backend.dart';
+
+void main() {
+  test('connects once and exposes live health', () async {
+    final backend = FakeBackend();
+    final pending = Completer<BackendGateway>();
+    var connections = 0;
+    final model = WorkspaceViewModel(
+      connector: () {
+        connections++;
+        return pending.future;
+      },
+    );
+    addTearDown(model.dispose);
+    final connecting = model.connect();
+    await model.connect();
+    expect(model.connection, BackendStatus.connecting);
+    expect(model.canRequest, isFalse);
+    pending.complete(backend);
+    await connecting;
+    await model.connect();
+    expect(connections, 1);
+    expect(model.health?.runtime, 'Go sidecar');
+    expect(model.connection, BackendStatus.online);
+  });
+
+  test('retries failed connection and clears the previous error', () async {
+    final backend = FakeBackend();
+    var attempts = 0;
+    final model = WorkspaceViewModel(
+      connector: () async {
+        if (++attempts == 1) throw StateError('launch failed');
+        return backend;
+      },
+    );
+    addTearDown(model.dispose);
+    await model.connect();
+    expect(model.connection, BackendStatus.offline);
+    expect(model.error, isA<StateError>());
+    await model.connect();
+    expect(attempts, 2);
+    expect(model.connection, BackendStatus.online);
+    expect(model.error, isNull);
+  });
+
+  test('closes a backend whose health request fails', () async {
+    final backend = FakeBackend(
+      onHealth: () async => throw StateError('health failed'),
+    );
+    final model = WorkspaceViewModel(connector: () async => backend);
+    await model.connect();
+    expect(model.connection, BackendStatus.offline);
+    expect(model.health, isNull);
+    expect(backend.closeCalls, 1);
+    model.dispose();
+    expect(backend.closeCalls, 1);
+  });
+
+  test(
+    'rejects unhealthy status and preserves health failure during cleanup',
+    () async {
+      final backend = FakeBackend(
+        closeError: StateError('cleanup failed'),
+        onHealth: () async => HealthInfo(
+          status: 'starting',
+          frameworkVersion: 'test',
+          protocolVersion: 1,
+          runtime: 'test',
+          architecture: 'test',
+        ),
+      );
+      final model = WorkspaceViewModel(connector: () async => backend);
+      addTearDown(model.dispose);
+      await model.connect();
+      expect(model.connection, BackendStatus.offline);
+      expect(model.error.toString(), contains('not ready'));
+      expect(backend.closeCalls, 1);
+    },
+  );
+
+  test('serializes requests and clears an old result before sending', () async {
+    final pending = Completer<GreetingResult>();
+    var delay = false;
+    final backend = FakeBackend(
+      onGreet: (request, _) async {
+        return delay ? pending.future : greetingFor(request);
+      },
+    );
+    final model = WorkspaceViewModel(connector: () async => backend);
+    addTearDown(model.dispose);
+    await model.greet('offline');
+    expect(backend.greetCalls, 0);
+    await model.connect();
+    await model.greet('First');
+    expect(model.greeting?.message, 'Hello, First!');
+    delay = true;
+    final request = model.greet('Second');
+    await model.greet('Duplicate');
+    expect(model.greeting, isNull);
+    expect(model.requestRunning, isTrue);
+    expect(model.canRequest, isFalse);
+    expect(backend.greetCalls, 2);
+    pending.complete(greetingFor(const GreetingRequest(name: 'Second')));
+    await request;
+    expect(model.greeting?.message, 'Hello, Second!');
+    expect(model.canRequest, isTrue);
+  });
+
+  test('keeps transport connected after a request-level error', () async {
+    final backend = FakeBackend(
+      onGreet: (_, _) async =>
+          throw const RpcException('validation', 'Invalid name'),
+    );
+    final model = WorkspaceViewModel(connector: () async => backend);
+    addTearDown(model.dispose);
+    await model.connect();
+    await model.greet('');
+    expect(model.connection, BackendStatus.online);
+    expect(model.error, isA<RpcException>());
+    expect(model.canRequest, isTrue);
+    expect(backend.closeCalls, 0);
+  });
+
+  test('detaches exited backend and reconnects to a new instance', () async {
+    final exited = FakeBackend(
+      onGreet: (_, _) async => throw const BackendClosedException(),
+    );
+    final replacement = FakeBackend();
+    var connections = 0;
+    final model = WorkspaceViewModel(
+      connector: () async => connections++ == 0 ? exited : replacement,
+    );
+    addTearDown(model.dispose);
+    await model.connect();
+    await model.greet('First');
+    expect(model.connection, BackendStatus.offline);
+    expect(exited.closeCalls, 1);
+    await model.connect();
+    await model.greet('Second');
+    expect(model.greeting?.message, 'Hello, Second!');
+    expect(exited.closeCalls, 1);
+  });
+
+  test('closes a connection that arrives after disposal', () async {
+    final pending = Completer<BackendGateway>();
+    final backend = FakeBackend();
+    final model = WorkspaceViewModel(connector: () => pending.future);
+    final connection = model.connect();
+    model.dispose();
+    pending.complete(backend);
+    await connection;
+    expect(backend.closeCalls, 1);
+    expect(backend.healthCalls, 0);
+    await model.connect();
+  });
+
+  test('closes a connection if disposed while waiting for health', () async {
+    final pending = Completer<HealthInfo>();
+    final backend = FakeBackend(onHealth: () => pending.future);
+    final model = WorkspaceViewModel(connector: () async => backend);
+    final connection = model.connect();
+    await Future<void>.delayed(Duration.zero);
+    expect(backend.healthCalls, 1);
+    model.dispose();
+    pending.complete(healthyBackend);
+    await connection;
+    expect(backend.closeCalls, 1);
+  });
+
+  test(
+    'cancels a pending request and closes exactly once on disposal',
+    () async {
+      final pending = Completer<GreetingResult>();
+      final backend = FakeBackend(onGreet: (_, _) => pending.future);
+      final model = WorkspaceViewModel(connector: () async => backend);
+      await model.connect();
+      final request = model.greet('Pending');
+      model.dispose();
+      expect(backend.lastCancellation?.isCancelled, isTrue);
+      pending.completeError(const BackendClosedException());
+      await request;
+      expect(backend.closeCalls, 1);
+      await model.greet('Disposed');
+    },
+  );
+}

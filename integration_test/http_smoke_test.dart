@@ -38,11 +38,7 @@ void main() {
   testWidgets('platform completes HTTP smoke flow', (tester) async {
     await app.main();
 
-    if (smokeReconnect) {
-      await _retryUntilOnline(tester);
-    } else {
-      await _pumpUntilFound(tester, find.text('Go core online'));
-    }
+    await _retryUntilOnline(tester, retry: smokeReconnect);
     await _callGreeting(tester, smokeClient);
     if (smokeStream) {
       await _verifyStreamingProgress();
@@ -199,7 +195,7 @@ Future<void> _callGreeting(WidgetTester tester, String name) async {
 
 Future<void> _waitForBackendLoss(WidgetTester tester) async {
   final callButton = find.byKey(const Key('call-button'));
-  final unavailable = find.text('Go core unavailable');
+  final unavailable = find.byKey(const Key('retry-button'));
   for (
     var attempt = 0;
     attempt < 150 && unavailable.evaluate().isEmpty;
@@ -213,21 +209,25 @@ Future<void> _waitForBackendLoss(WidgetTester tester) async {
     await tester.pump(const Duration(milliseconds: 200));
   }
   expect(unavailable, findsOneWidget);
-  expect(find.byKey(const Key('retry-button')), findsOneWidget);
+  expect(tester.widget<FilledButton>(callButton).onPressed, isNull);
 }
 
-Future<void> _retryUntilOnline(WidgetTester tester) async {
+Future<void> _retryUntilOnline(WidgetTester tester, {bool retry = true}) async {
   final retryButton = find.byKey(const Key('retry-button'));
-  final online = find.text('Go core online');
-  for (var attempt = 0; attempt < 150 && online.evaluate().isEmpty; attempt++) {
-    if (retryButton.evaluate().isNotEmpty &&
+  final callButton = find.byKey(const Key('call-button'));
+  bool canRequest() =>
+      callButton.evaluate().isNotEmpty &&
+      tester.widget<FilledButton>(callButton).onPressed != null;
+  for (var attempt = 0; attempt < 150 && !canRequest(); attempt++) {
+    if (retry &&
+        retryButton.evaluate().isNotEmpty &&
         tester.widget<OutlinedButton>(retryButton).onPressed != null) {
       await tester.ensureVisible(retryButton);
       await tester.tap(retryButton);
     }
     await tester.pump(const Duration(milliseconds: 200));
   }
-  expect(online, findsOneWidget);
+  expect(canRequest(), isTrue);
 }
 
 Future<void> _pumpUntilFound(WidgetTester tester, Finder finder) async {

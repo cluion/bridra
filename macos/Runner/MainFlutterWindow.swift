@@ -102,6 +102,7 @@ final class BridraResourceBookmarkHandler {
 }
 
 class MainFlutterWindow: NSWindow {
+  private var isAligningWindowControls = false
   private var applicationLifecycleChannel: FlutterMethodChannel?
   private var applicationLifecycleHandler: BridraApplicationLifecycleHandler?
   private var resourceBookmarkChannel: FlutterMethodChannel?
@@ -110,6 +111,12 @@ class MainFlutterWindow: NSWindow {
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
     let windowFrame = self.frame
+    styleMask.insert(.fullSizeContentView)
+    titleVisibility = .hidden
+    titlebarAppearsTransparent = true
+    if #available(macOS 11.0, *) {
+      titlebarSeparatorStyle = .none
+    }
     self.contentViewController = flutterViewController
     self.setFrame(windowFrame, display: true)
 
@@ -134,5 +141,75 @@ class MainFlutterWindow: NSWindow {
     resourceBookmarkChannel = bookmarkChannel
 
     super.awakeFromNib()
+
+    configureWindowControlAlignment()
+  }
+
+  @objc private func configureWindowControlAlignment() {
+    for name in [
+      NSWindow.didBecomeKeyNotification,
+      NSWindow.didUpdateNotification,
+      NSWindow.didResizeNotification,
+      NSWindow.didExitFullScreenNotification,
+    ] {
+      NotificationCenter.default.addObserver(
+        self,
+        selector: #selector(alignWindowControls),
+        name: name,
+        object: self
+      )
+    }
+    // AppKit can reposition the buttons after window notifications have fired.
+    var observed = Set<ObjectIdentifier>()
+    for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+      var current: NSView? = standardWindowButton(type)
+      while let view = current, observed.insert(ObjectIdentifier(view)).inserted {
+        view.postsFrameChangedNotifications = true
+        NotificationCenter.default.addObserver(
+          self,
+          selector: #selector(alignWindowControls),
+          name: NSView.frameDidChangeNotification,
+          object: view
+        )
+        current = view.superview
+      }
+    }
+    alignWindowControls()
+  }
+
+  @objc private func alignWindowControls() {
+    guard !isAligningWindowControls, !styleMask.contains(.fullScreen),
+      let content = contentView else { return }
+    isAligningWindowControls = true
+    defer { isAligningWindowControls = false }
+    let toolbarHeight: CGFloat = 56
+    // Keep native button hit areas inside the titlebar when centering a taller row.
+    var resizedContainers = Set<ObjectIdentifier>()
+    for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+      guard let parent = standardWindowButton(type)?.superview,
+        let container = parent.superview,
+        resizedContainers.insert(ObjectIdentifier(container)).inserted else { continue }
+      var containerFrame = container.frame
+      containerFrame.origin.y = containerFrame.maxY - toolbarHeight
+      containerFrame.size.height = toolbarHeight
+      if containerFrame != container.frame { container.frame = containerFrame }
+      var parentFrame = parent.frame
+      parentFrame.origin.y = container.bounds.minY
+      parentFrame.size.height = toolbarHeight
+      if parentFrame != parent.frame { parent.frame = parentFrame }
+    }
+    // Match the center of WindowToolbar's row using native buttons.
+    let center = NSPoint(
+      x: 0,
+      y: content.isFlipped
+        ? content.bounds.minY + toolbarHeight / 2
+        : content.bounds.maxY - toolbarHeight / 2
+    )
+    for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+      guard let button = standardWindowButton(type), let parent = button.superview else { continue }
+      var origin = button.frame.origin
+      origin.y = parent.convert(center, from: content).y - button.frame.height / 2
+      if origin != button.frame.origin { button.setFrameOrigin(origin) }
+    }
   }
 }

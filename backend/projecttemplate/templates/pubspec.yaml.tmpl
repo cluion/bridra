@@ -9,7 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  {{.BridraFlutterPackage}}: {{quote .BridraFlutterVersion}}{{if .LocalDependencies}}
+{{if or (hasPlatform "windows") (hasPlatform "linux")}}  window_manager: ^0.5.2
+{{end}}  {{.BridraFlutterPackage}}: {{quote .BridraFlutterVersion}}{{if .LocalDependencies}}
 
 dependency_overrides:
   {{.BridraFlutterPackage}}:

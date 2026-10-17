@@ -3,11 +3,13 @@ package projecttemplate
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -377,7 +379,9 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 		t.Fatalf("read generated platform HTTP smoke test: %v", err)
 	}
 	if !strings.Contains(string(smokeTest), "package:starter_app/main.dart") ||
-		!strings.Contains(string(smokeTest), "Go core unavailable") ||
+		!strings.Contains(string(smokeTest), "const Key('retry-button')") ||
+		!strings.Contains(string(smokeTest), "expect(tester.widget<FilledButton>(callButton).onPressed, isNull)") ||
+		!strings.Contains(string(smokeTest), "expect(canRequest(), isTrue)") ||
 		!strings.Contains(string(smokeTest), "RpcStreamProgress<RpcReply>") ||
 		!strings.Contains(string(smokeTest), "RpcFileReference.fromJson") ||
 		!strings.Contains(string(smokeTest), "client.download(reference)") ||
@@ -650,25 +654,142 @@ func TestRenderSelectsPlatformOwnedFilesTargetsAndMetadata(t *testing.T) {
 	if !strings.Contains(string(metadata), `"platforms": ["macos", "web"]`) {
 		t.Fatalf("project metadata = %s", metadata)
 	}
-	mainSource, err := os.ReadFile(filepath.Join(root, "lib", "main.dart"))
+	appSource, err := os.ReadFile(filepath.Join(root, "lib", "app", "starter_app.dart"))
 	if err != nil {
-		t.Fatalf("read main.dart: %v", err)
+		t.Fatalf("read starter_app.dart: %v", err)
 	}
-	if !strings.Contains(string(mainSource), "One interface · 2 selected platforms") {
-		t.Fatalf("main.dart = %s", mainSource)
+	if !strings.Contains(string(appSource), "One interface · 2 selected platforms") {
+		t.Fatalf("starter_app.dart = %s", appSource)
 	}
 }
 
 func TestRenderedFlutterConsumerCompilesOutsideRepository(t *testing.T) {
+	for _, name := range []string{"Starter App", `工作台 "Pro" $HOME`} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			config := testConfig(t)
+			config.DisplayName = name
+			if err := Render(root, config); err != nil {
+				t.Fatalf("render: %v", err)
+			}
+			command := exec.Command("fvm", "flutter", "test")
+			command.Dir = root
+			output, err := command.CombinedOutput()
+			if err != nil {
+				t.Fatalf("generated Flutter consumer: %v\n%s", err, output)
+			}
+		})
+	}
+}
+
+func TestStarterUIMatchesReferenceApplication(t *testing.T) {
 	root := t.TempDir()
-	if err := Render(root, testConfig(t)); err != nil {
+	config := testConfig(t)
+	if err := Render(root, config); err != nil {
 		t.Fatalf("render: %v", err)
 	}
-	command := exec.Command("fvm", "flutter", "test")
-	command.Dir = root
-	output, err := command.CombinedOutput()
+	for _, relative := range []string{
+		"lib/app/starter_app.dart",
+		"lib/ui/theme/app_theme.dart",
+		"lib/ui/layout/app_shell.dart",
+		"lib/ui/layout/window_toolbar.dart",
+		"lib/ui/window/desktop_window.dart",
+		"lib/ui/widgets/section.dart",
+		"lib/ui/widgets/app_toast.dart",
+		"lib/features/workspace/workspace_view_model.dart",
+		"lib/features/workspace/workspace_view.dart",
+		"lib/features/runtime/runtime_view.dart",
+		"lib/features/settings/settings_view.dart",
+		"lib/features/guide/guide_view.dart",
+		"integration_test/http_smoke_test.dart",
+		"macos/Runner/MainFlutterWindow.swift",
+		"macos/RunnerTests/RunnerTests.swift",
+	} {
+		reference, err := os.ReadFile(filepath.Join(repositoryRoot(t), relative))
+		if err != nil {
+			t.Fatalf("read reference %s: %v", relative, err)
+		}
+		want := strings.ReplaceAll(string(reference),
+			`import 'package:bridra_flutter/bridra_flutter.dart';`,
+			"import "+strconv.Quote(config.BridraDartImport)+";")
+		if relative == "lib/app/starter_app.dart" {
+			want = strings.ReplaceAll(want, "this.productName = 'Bridra'",
+				"this.productName = "+strconv.Quote(config.DisplayName))
+		}
+		if relative == "macos/RunnerTests/RunnerTests.swift" {
+			want = strings.ReplaceAll(want, "@testable import bridra", "@testable import "+config.ProjectName)
+		}
+		if relative == "integration_test/http_smoke_test.dart" {
+			want = strings.ReplaceAll(want, "package:bridra/main.dart", "package:"+config.ProjectName+"/main.dart")
+		}
+		actual, err := os.ReadFile(filepath.Join(root, relative))
+		if err != nil {
+			t.Fatalf("read rendered %s: %v", relative, err)
+		}
+		if string(actual) != want {
+			t.Errorf("generated %s drifted from reference UI", relative)
+		}
+	}
+}
+
+func TestRenderSelectsDesktopWindowControlsByPlatform(t *testing.T) {
+	for _, platform := range []string{"windows", "linux", "macos", "android", "ios", "web"} {
+		t.Run(platform, func(t *testing.T) {
+			root := t.TempDir()
+			config := testConfig(t)
+			config.Platforms = []string{platform}
+			if err := Render(root, config); err != nil {
+				t.Fatal(err)
+			}
+			wantControls := platform == "windows" || platform == "linux"
+			for _, relative := range []string{"pubspec.yaml", "lib/ui/window/desktop_window.dart"} {
+				contents := readProjectTemplateTestFile(t, filepath.Join(root, relative))
+				if strings.Contains(string(contents), "window_manager") != wantControls {
+					t.Errorf("%s desktop plugin inclusion does not match %s", relative, platform)
+				}
+			}
+			_, err := os.Stat(filepath.Join(root, "test/desktop_window_test.dart"))
+			if wantControls && err != nil || !wantControls && !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("desktop window regression selection for %s: %v", platform, err)
+			}
+		})
+	}
+}
+
+func TestRenderPreservesApplicationOwnedUI(t *testing.T) {
+	root := t.TempDir()
+	config := testConfig(t)
+	if err := Render(root, config); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	manifest, err := LoadManifest()
 	if err != nil {
-		t.Fatalf("generated Flutter consumer: %v\n%s", err, output)
+		t.Fatal(err)
+	}
+	var owned []string
+	for _, file := range manifest.Files {
+		isUI := strings.HasPrefix(file.Destination, "lib/") && !strings.HasPrefix(file.Destination, "lib/api/")
+		if isUI || strings.HasPrefix(file.Destination, "test/") {
+			if file.Ownership != "application" {
+				t.Fatalf("UI/test file is not application-owned: %s", file.Destination)
+			}
+			owned = append(owned, file.Destination)
+			if err := os.WriteFile(filepath.Join(root, file.Destination), []byte("// custom "+file.Destination+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if len(owned) == 0 {
+		t.Fatal("no application-owned UI/test files were exercised")
+	}
+	if err := Render(root, config); err != nil {
+		t.Fatalf("rerender: %v", err)
+	}
+	for _, relative := range owned {
+		actual, err := os.ReadFile(filepath.Join(root, relative))
+		if err != nil || string(actual) != "// custom "+relative+"\n" {
+			t.Errorf("rerender changed application-owned %s: %v", relative, err)
+		}
 	}
 }
 

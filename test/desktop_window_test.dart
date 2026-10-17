@@ -1,0 +1,203 @@
+import 'package:bridra/bridra_app.dart';
+import 'package:bridra/ui/window/desktop_window.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:window_manager/window_manager.dart';
+
+import 'support/fake_backend.dart';
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  const channel = MethodChannel('window_manager');
+  final calls = <MethodCall>[];
+  var maximized = false;
+  var fullScreen = false;
+  final desktop = TargetPlatformVariant({
+    TargetPlatform.windows,
+    TargetPlatform.linux,
+  });
+
+  setUp(() {
+    calls.clear();
+    maximized = false;
+    fullScreen = false;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          switch (call.method) {
+            case 'isMaximized':
+              return maximized;
+            case 'isFullScreen':
+              return fullScreen;
+            case 'maximize':
+              maximized = true;
+            case 'unmaximize':
+              maximized = false;
+          }
+          return null;
+        });
+  });
+
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null);
+    expect(windowManager.listeners, isEmpty);
+  });
+
+  Future<void> emitEvent(
+    WidgetTester tester,
+    void Function(WindowListener) event,
+  ) async {
+    for (final listener in windowManager.listeners) {
+      event(listener);
+    }
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('initializes custom chrome only on Windows and Linux', (
+    tester,
+  ) async {
+    expect(await initializeDesktopWindow(), isTrue);
+    expect(calls.map((call) => call.method), [
+      'ensureInitialized',
+      'setMinimumSize',
+      'setTitleBarStyle',
+    ]);
+    expect(calls.last.arguments, {
+      'titleBarStyle': 'hidden',
+      'windowButtonVisibility': false,
+    });
+  }, variant: desktop);
+
+  testWidgets(
+    'keeps native macOS and mobile bootstrap unchanged',
+    (tester) async {
+      expect(await initializeDesktopWindow(), isFalse);
+      expect(calls, isEmpty);
+    },
+    variant: TargetPlatformVariant({
+      TargetPlatform.macOS,
+      TargetPlatform.android,
+      TargetPlatform.iOS,
+    }),
+  );
+
+  testWidgets(
+    'window controls send native actions and follow native state',
+    (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(body: DesktopWindowButtons(buttonSize: 44)),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Minimize window'));
+      await tester.tap(find.byTooltip('Maximize window'));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Restore window'), findsOneWidget);
+      await tester.tap(find.byTooltip('Restore window'));
+      await tester.pumpAndSettle();
+      expect(maximized, isFalse);
+      maximized = true;
+      await emitEvent(tester, (listener) => listener.onWindowMaximize());
+      expect(find.byTooltip('Restore window'), findsOneWidget);
+      fullScreen = true;
+      await emitEvent(tester, (listener) => listener.onWindowEnterFullScreen());
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(const Key('window-maximize')))
+            .onPressed,
+        isNull,
+      );
+      await tester.tap(find.byTooltip('Close window'));
+      expect(
+        calls.map((call) => call.method),
+        containsAll(['minimize', 'maximize', 'unmaximize', 'close']),
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      await emitEvent(tester, (listener) => listener.onWindowRestore());
+      expect(tester.takeException(), isNull);
+    },
+    variant: desktop,
+  );
+
+  testWidgets(
+    'keeps all controls available in narrow enlarged desktop layouts',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 320);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final backend = FakeBackend();
+      await tester.pumpWidget(
+        BridraApp(connector: () async => backend, desktopWindowControls: true),
+      );
+      await tester.pumpAndSettle();
+      for (final key in [
+        'sidebar-toggle',
+        'window-minimize',
+        'window-maximize',
+        'window-close',
+      ]) {
+        final button = find.byKey(Key(key));
+        expect(button.hitTestable(), findsOneWidget);
+        expect(tester.getRect(button).right, lessThanOrEqualTo(320));
+      }
+      await tester.tap(find.byKey(const Key('sidebar-toggle')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('navigation-overlay')), findsOneWidget);
+      await tester.ensureVisible(find.byKey(const Key('destination-settings')));
+      await tester.tap(find.byKey(const Key('destination-settings')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('appearance-dark')));
+      await tester.tap(find.byKey(const Key('appearance-dark')));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Close window').hitTestable(), findsOneWidget);
+      expect(
+        find.byKey(const Key('sidebar-toggle')).hitTestable(),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const Key('navigation-back')));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: desktop,
+  );
+
+  testWidgets(
+    'title dragging and double click keep navigation actions separate',
+    (tester) async {
+      await tester.pumpWidget(
+        BridraApp(
+          connector: () async => FakeBackend(),
+          desktopWindowControls: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+      final title = find.byKey(const Key('toolbar-drag-region'));
+      await tester.drag(title, const Offset(40, 0));
+      await tester.pumpAndSettle();
+      expect(calls.map((call) => call.method), contains('startDragging'));
+      calls.clear();
+      await tester.tap(find.byKey(const Key('sidebar-toggle')));
+      await tester.pumpAndSettle();
+      expect(
+        calls.map((call) => call.method),
+        isNot(contains('startDragging')),
+      );
+      await tester.tap(title);
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.tap(title);
+      await tester.pumpAndSettle();
+      expect(calls.map((call) => call.method), contains('maximize'));
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: desktop,
+  );
+}
