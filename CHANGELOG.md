@@ -3,6 +3,20 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
+## [Unreleased]
+
+### Changed
+
+- Combine CI verification and coverage into one race-enabled test pass, select
+  representative checks for ordinary application/CLI changes, and retain complete
+  platform/runtime verification for releases and high-risk shared changes.
+- Split long platform and packaging chains, cache pinned Flutter/Pub/Gradle
+  dependencies, and warm trusted SDK caches through existing weekly maintenance.
+  Preserve required checks, exact-source artifact identity, coverage floors,
+  protected publication, OIDC and provenance/SBOM attestations.
+- Concentrate final-SHA release validation in tag CI and public installation
+  acceptance in one fresh external consumer rather than repeated local rehearsals.
+
 ## [0.22.0] - 2026-10-17
 
 ### Added

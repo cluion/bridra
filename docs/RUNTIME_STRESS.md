@@ -79,6 +79,12 @@ provides PostgreSQL and Redis, so the shared-store contention checks do not
 skip there. A failing Go fuzz corpus is retained as a workflow artifact for
 reproduction.
 
+On `main`, the same weekly/manual workflow also warms Linux/macOS/Windows SDK and
+Pub caches plus the Linux Gradle wrapper. These cache-only jobs use the shared
+pinned-FVM setup and do not run on main pushes. They add bounded maintenance
+runner usage so future PR/tag jobs can restore trusted default-branch caches;
+PR merge-ref caches cannot seed those entries. Cache hits never replace tests.
+
 Scheduled workflows use the latest commit on the default branch and can be
 delayed by GitHub Actions load. A scheduled green run complements the required
 Pull Request `ci-gate`; it does not replace applicable core verification, code

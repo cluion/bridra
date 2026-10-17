@@ -85,27 +85,8 @@ jobs:
       - name: Configure pub.dev OIDC
         uses: dart-lang/setup-dart@v1
 
-      - name: Install FVM
-        run: |
-          curl -fsSL https://fvm.app/install.sh -o /tmp/fvm-install.sh
-          bash /tmp/fvm-install.sh 4.1.2
-          echo "$HOME/fvm/bin" >> "$GITHUB_PATH"
-
-      - name: Install project Flutter SDK
-        run: fvm install
-
-      - name: Configure Flutter SDK environment
-        shell: bash
-        run: |
-          flutter_version="$(fvm api project | jq -r '.project.pinnedVersion.name // empty')"
-          flutter_root="$(fvm api list | jq -r --arg version "$flutter_version" \
-            '[.versions[] | select(.name == $version) | .directory][0] // empty')"
-          if [[ -z "$flutter_root" || ! -x "$flutter_root/bin/cache/dart-sdk/bin/dart" ]]; then
-            echo "Unable to resolve installed Flutter SDK $flutter_version" >&2
-            exit 1
-          fi
-          echo "FLUTTER_ROOT=$flutter_root" >> "$GITHUB_ENV"
-          echo "$flutter_root/bin/cache/dart-sdk/bin" >> "$GITHUB_PATH"
+      - name: Set up pinned Flutter
+        uses: ./.github/actions/setup-flutter
 
       - name: Attest CLI build provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2

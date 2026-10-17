@@ -47,9 +47,11 @@ alone is not publication authorization.
   `framework.FrameworkVersion`, `bridra_flutter`'s version, generated dependency
   defaults, changelogs, and the intended tag aligned. General documentation links
   to `VERSION` or uses placeholders; edit it only when its described behavior changes.
-- Run `make release-check FINAL=1`, `make verify`, `make coverage`, and
-  `bridra upgrade --plan`; confirm all required GitHub Actions jobs and coverage
-  floors pass.
+- Run `make release-check FINAL=1` and review `bridra upgrade --plan`. Require
+  all selected PR checks and the exact-tag release checks, including coverage
+  floors, to pass. Local changes use focused checks; if a complete local
+  rehearsal is needed, run `make verify-coverage` once rather than separate
+  verification and coverage passes.
 - Confirm `LICENSE`, `backend/LICENSE`, and
   `packages/bridra_flutter/LICENSE` are identical MIT license copies, then
   confirm ownership of `bridra_flutter`.
@@ -122,6 +124,25 @@ platform checks, cancels superseded runs for the same PR, and reports the fixed
 policy. After merge, record the actual squash commit SHA for authorization and
 tagging. See [CI.md](CI.md) for scope and required repository settings.
 
+### Validation ownership
+
+Local development checks the changed behavior. PR CI checks the reviewed merge
+result with coverage and affected platform work. The tag workflow owns the full
+validation of the final committed SHA, final Dart dry-run and two reproducible
+CLI builds. Core verification, native targets and release packaging run in
+parallel; protected publication waits for every result.
+
+After squash merge, confirm the final SHA and reviewed source tree before tagging.
+Do not repeat full local suites and generated-consumer rehearsals for candidate,
+squash and tag when only commit identity changed. A changed source tree or failed
+gate requires new relevant verification. Never reuse another SHA's release
+artifacts or treat a PR result as proof of the final package identity.
+
+Before environment approval, inspect the successful exact-tag jobs and immutable
+artifact ID/manifest. Keep the candidate's SHA, version and digests in release
+evidence. A local packaging rehearsal is useful when packaging itself changed;
+it is not a routine second full release pipeline.
+
 Windows maintainers use:
 
 ```powershell
@@ -149,8 +170,9 @@ This produces the following under `build/bridra/cli/<version>/`, using `VERSION`
 - schema-versioned `manifest.json`
 - deterministic `bridra_VERSION_cli.spdx.json`
 
-The source commit and commit timestamp are embedded into each binary. Confirm
-the native archive before publishing:
+The source commit and commit timestamp are embedded into each binary. The tag
+workflow performs the native archive check before requesting publication approval.
+For a local packaging change or failed-gate diagnosis, inspect the native archive:
 
 ```bash
 BRIDRA_VERSION="$(cat VERSION)"
@@ -210,10 +232,13 @@ missing Dart version through pub.dev OIDC and safely skips an already-published
 version on a rerun.
 
 Use `fvm flutter pub publish` for both automated and manual publication. The
-protected publication job has a separate, fresh Flutter SDK cache; the Flutter
-wrapper initializes required SDK artifacts, including `sky_engine`, before
-resolving package dependencies. `fvm install` alone does not prepare all of
-these artifacts. Keep `dart-lang/setup-dart` for pub.dev OIDC authentication.
+protected publication job restores the same OS/version-scoped dependency caches
+through the shared setup action, while retaining a separate job and approval
+boundary. Flutter initializes required SDK artifacts, including `sky_engine`,
+before resolving dependencies. `fvm install` alone does not prepare all of these
+artifacts. The SDK and Dart paths are resolved through FVM; keep
+`dart-lang/setup-dart` for pub.dev OIDC authentication. Credentials/OIDC files
+must never enter dependency caches.
 
 When automation is disabled, publish the package manually before approving the
 protected workflow:
@@ -241,13 +266,24 @@ approval is not an administrative bypass.
 
 ## Post-release verification
 
-Verify installation without a repository checkout. Set `BRIDRA_VERSION` to the
-exact published version approved above:
+Verify public installation in one disposable consumer with fresh Go/Pub caches,
+without repository dependency overrides. Set `BRIDRA_VERSION` to the exact
+published version approved above:
 
 ```bash
+BRIDRA_ACCEPTANCE_DIR="$(mktemp -d)"
+export GOPATH="$BRIDRA_ACCEPTANCE_DIR/go"
+export GOMODCACHE="$BRIDRA_ACCEPTANCE_DIR/go-mod"
+export GOCACHE="$BRIDRA_ACCEPTANCE_DIR/go-build"
+export GOBIN="$BRIDRA_ACCEPTANCE_DIR/bin"
+export PUB_CACHE="$BRIDRA_ACCEPTANCE_DIR/pub"
+export GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org GOWORK=off
 go install "github.com/cluion/bridra/backend/cmd/bridra@v${BRIDRA_VERSION}"
-bridra version --json
-bridra create release_smoke --module example.com/acme/release-smoke
+"$GOBIN/bridra" version --json
+cd "$BRIDRA_ACCEPTANCE_DIR"
+"$GOBIN/bridra" create release_smoke --module example.com/acme/release-smoke
+cd release_smoke
+make verify
 ```
 
 Download the public archives and verify all six checksums. Verify both
@@ -264,9 +300,17 @@ gh attestation verify bridra_VERSION_OS_ARCH.tar.gz \
   --predicate-type https://spdx.dev/Document/v2.3
 ```
 
-Run the generated project's full verification. The release is incomplete until
-the Go module, Dart package, CLI archives, checksums, SBOM, attestations,
-documentation, and external consumer all agree on supported versions.
+Require the public Go module origin and archive manifest to match the approved
+source SHA. Compare the pub.dev archive/digest with that source separately from
+fresh-cache package-index resolution; inspect the consumer's lockfile for the
+intended hosted version. Verify the native public archive's version/SHA and both
+attestations. One generated consumer's full verification is sufficient; do not
+repeat it for local-source, squash-source and public-archive copies of the same
+release. Add an actual previous-version upgrade acceptance when migration or
+adoption behavior changes or an unresolved compatibility risk warrants it.
+
+The release is incomplete until the Go module, Dart package, CLI archives,
+checksums, SBOM, attestations, documentation and that external consumer agree.
 
 After publication, confirm `SECURITY.md` and `SUPPORT.md` still match the
 supported line, verify GitHub installation instructions from a clean

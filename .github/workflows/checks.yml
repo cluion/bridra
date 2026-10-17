@@ -6,43 +6,22 @@ on:
       full:
         type: boolean
         default: false
-      core:
-        type: boolean
-        default: false
-      linux:
-        type: boolean
-        default: false
-      android:
-        type: boolean
-        default: false
-      web:
-        type: boolean
-        default: false
-      macos:
-        type: boolean
-        default: false
-      ios:
-        type: boolean
-        default: false
-      windows:
-        type: boolean
-        default: false
+      plan:
+        type: string
+        default: '{}'
     outputs:
       cli-artifact-id:
         description: Immutable CLI candidate produced by full release verification
-        value: ${{ jobs.linux-android-web.outputs.cli-artifact-id }}
+        value: ${{ jobs.release-package.outputs.cli-artifact-id }}
 
 permissions:
   contents: read
 
 jobs:
-  linux-android-web:
-    if: inputs.full || inputs.core || inputs.linux || inputs.android || inputs.web
-    outputs:
-      cli-artifact-id: ${{ steps.cli_artifacts.outputs.artifact-id }}
+  core:
+    if: inputs.full || fromJSON(inputs.plan).core
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
-
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:17-alpine
@@ -66,17 +45,14 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-
     env:
       BRIDRA_TEST_POSTGRES_DSN: postgres://bridra:bridra@127.0.0.1:5432/bridra_test?sslmode=disable
       BRIDRA_TEST_REDIS_ADDR: 127.0.0.1:6379
-
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
@@ -84,35 +60,14 @@ jobs:
           cache-dependency-path: |
             backend/go.mod
             backend/integration/sqljobstore/go.mod
-
-      - name: Install Linux desktop dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libstdc++-12-dev
-
-      - name: Install FVM
-        run: |
-          curl -fsSL https://fvm.app/install.sh -o /tmp/fvm-install.sh
-          bash /tmp/fvm-install.sh 4.1.2
-          echo "$HOME/fvm/bin" >> "$GITHUB_PATH"
-
-      - name: Install project Flutter SDK
-        run: fvm install
-
+      - name: Set up pinned Flutter
+        uses: ./.github/actions/setup-flutter
       - name: Verify CI helper regressions
-        if: inputs.full
         run: python3 -m unittest discover -s tool -p ci_test.py -v
-
-      - name: Verify framework
-        if: inputs.full || inputs.core
-        run: make verify
-
-      - name: Enforce coverage non-regression floors
-        if: inputs.full || inputs.core
+      - name: Verify framework and coverage in one test pass
         run: |
-          make coverage
+          make verify-coverage
           cat coverage/summary.md >> "$GITHUB_STEP_SUMMARY"
-
       - name: Upload coverage reports
         if: ${{ always() && hashFiles('coverage/go.out') != '' }}
         uses: actions/upload-artifact@v7
@@ -126,30 +81,213 @@ jobs:
             coverage/summary.md
             packages/bridra_flutter/coverage/lcov.info
 
+  linux:
+    if: inputs.full || fromJSON(inputs.plan).linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.mod
+      - name: Install Linux desktop dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libstdc++-12-dev
+      - name: Set up pinned Flutter
+        uses: ./.github/actions/setup-flutter
       - name: Build and smoke-test Linux bundle
-        if: inputs.full || inputs.linux
         run: make linux-smoke
 
+  android-web:
+    if: inputs.full || fromJSON(inputs.plan).android || fromJSON(inputs.plan).web
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.mod
+      - name: Set up pinned Flutter
+        uses: ./.github/actions/setup-flutter
+        with:
+          android: ${{ inputs.full || fromJSON(inputs.plan).android }}
       - name: Build Android release
-        if: inputs.full || inputs.android
+        if: inputs.full || fromJSON(inputs.plan).android
         run: make android-build BACKEND_URL=https://backend.example/rpc BACKEND_TOKEN=ci-token
-
       - name: Build Web release
-        if: inputs.full || inputs.web
+        if: inputs.full || fromJSON(inputs.plan).web
         run: make web-build BACKEND_URL=https://backend.example/rpc BACKEND_TOKEN=ci-token
 
+  android-emulator:
+    if: inputs.full || fromJSON(inputs.plan).android_emulator
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.mod
+      - name: Set up pinned Flutter
+        uses: ./.github/actions/setup-flutter
+        with:
+          android: 'true'
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Exercise Android Emulator HTTP recovery and transfers
+        uses: reactivecircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2.37.0
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7
+          disable-animations: true
+          script: make android-emulator-smoke
+
+  macos:
+    if: inputs.full || fromJSON(inputs.plan).macos
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: |
+            backend/go.mod
+            backend/integration/sqljobstore/go.mod
+      - name: Set up pinned Flutter
+        uses: ./.github/actions/setup-flutter
+      - name: Test macOS application lifecycle
+        run: make macos-native-test
+      - name: Test signed macOS sandbox bookmark handoff
+        run: make macos-sandbox-smoke
+      - name: Build and smoke-test macOS bundle
+        run: make macos-smoke
+
+  ios:
+    if: inputs.full || fromJSON(inputs.plan).ios || fromJSON(inputs.plan).ios_simulator
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.mod
+      - name: Set up pinned Flutter
+        uses: ./.github/actions/setup-flutter
+      - name: Test iOS Simulator watchdog
+        if: inputs.full || fromJSON(inputs.plan).ios_simulator
+        run: make ios-simulator-watchdog-test
+      - name: Exercise iOS Simulator HTTP round trip
+        if: inputs.full || fromJSON(inputs.plan).ios_simulator
+        id: ios_simulator_smoke
+        continue-on-error: true
+        timeout-minutes: 12
+        env:
+          BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR: ${{ runner.temp }}/bridra-ios-simulator-diagnostics/initial
+        run: make ios-simulator-smoke
+      - name: Reset iOS Simulator before one retry
+        if: steps.ios_simulator_smoke.outcome == 'failure'
+        run: |
+          xcrun simctl shutdown all || true
+          xcrun simctl erase all || true
+      - name: Retry iOS Simulator HTTP round trip
+        id: ios_simulator_retry
+        if: steps.ios_simulator_smoke.outcome == 'failure'
+        timeout-minutes: 12
+        env:
+          BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR: ${{ runner.temp }}/bridra-ios-simulator-diagnostics/retry
+        run: make ios-simulator-smoke
+      - name: Upload iOS Simulator failure diagnostics
+        if: ${{ always() && (steps.ios_simulator_smoke.outcome == 'failure' || steps.ios_simulator_retry.outcome == 'failure') }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-simulator-diagnostics-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: ${{ runner.temp }}/bridra-ios-simulator-diagnostics
+      - name: Build unsigned iOS release
+        if: inputs.full || fromJSON(inputs.plan).ios
+        run: make ios-build BACKEND_URL=https://backend.example/rpc BACKEND_TOKEN=ci-token
+
+  windows:
+    if: inputs.full || fromJSON(inputs.plan).windows
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: |
+            backend/go.mod
+            backend/integration/sqljobstore/go.mod
+      - name: Set up pinned Flutter
+        uses: ./.github/actions/setup-flutter
+      - name: Verify framework on Windows
+        run: .\tool\windows.ps1 -Task verify
+      - name: Build and smoke-test Windows bundle
+        run: .\tool\windows.ps1 -Task smoke
+
+  release-package:
+    if: inputs.full
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      cli-artifact-id: ${{ steps.cli_artifacts.outputs.artifact-id }}
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.mod
+      - name: Set up pinned Flutter
+        uses: ./.github/actions/setup-flutter
       - name: Validate final release metadata and Dart package
         id: release_metadata
-        if: inputs.full
         run: |
           version="$(cat VERSION)"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           make release-check FINAL=1 VERSION="$version"
           (cd packages/bridra_flutter && fvm flutter pub publish --dry-run)
           git diff --exit-code
-
       - name: Build and compare reproducible CLI release artifacts
-        if: inputs.full
         env:
           SOURCE_SHA: ${{ github.sha }}
         run: |
@@ -165,9 +303,7 @@ jobs:
             -C "$RUNNER_TEMP/bridra-cli-smoke"
           "$RUNNER_TEMP/bridra-cli-smoke/bridra" version --json > "$RUNNER_TEMP/bridra-cli-version.json"
           python3 -c 'import json, os; from pathlib import Path; v = json.loads((Path(os.environ["RUNNER_TEMP"]) / "bridra-cli-version.json").read_text()); assert v["cliVersion"] == Path("VERSION").read_text().strip(); assert v["commit"] == os.environ["SOURCE_SHA"]'
-
       - name: Upload verified CLI release candidate
-        if: inputs.full
         id: cli_artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -176,162 +312,9 @@ jobs:
           retention-days: 14
           path: build/bridra/cli/${{ steps.release_metadata.outputs.version }}/
 
-  android-emulator:
-    if: inputs.full || inputs.android
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: backend/go.mod
-          cache-dependency-path: backend/go.mod
-
-      - name: Install FVM
-        run: |
-          curl -fsSL https://fvm.app/install.sh -o /tmp/fvm-install.sh
-          bash /tmp/fvm-install.sh 4.1.2
-          echo "$HOME/fvm/bin" >> "$GITHUB_PATH"
-
-      - name: Install project Flutter SDK
-        run: fvm install
-
-      - name: Enable KVM
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-
-      - name: Exercise Android Emulator HTTP recovery and transfers
-        uses: reactivecircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2.37.0
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          profile: pixel_7
-          disable-animations: true
-          script: make android-emulator-smoke
-
-  macos-ios:
-    if: inputs.full || inputs.macos || inputs.ios
-    runs-on: macos-15
-    timeout-minutes: 45
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: backend/go.mod
-          cache-dependency-path: |
-            backend/go.mod
-            backend/integration/sqljobstore/go.mod
-
-      - name: Install FVM
-        run: |
-          curl -fsSL https://fvm.app/install.sh -o /tmp/fvm-install.sh
-          bash /tmp/fvm-install.sh 4.1.2
-          echo "$HOME/fvm/bin" >> "$GITHUB_PATH"
-
-      - name: Install project Flutter SDK
-        run: fvm install
-
-      - name: Test macOS application lifecycle
-        if: inputs.full || inputs.macos
-        run: make macos-native-test
-
-      - name: Test signed macOS sandbox bookmark handoff
-        if: inputs.full || inputs.macos
-        run: make macos-sandbox-smoke
-
-      - name: Build and smoke-test macOS bundle
-        if: inputs.full || inputs.macos
-        run: make macos-smoke
-
-      - name: Test iOS Simulator watchdog
-        if: inputs.full || inputs.ios
-        run: make ios-simulator-watchdog-test
-
-      - name: Exercise iOS Simulator HTTP round trip
-        if: inputs.full || inputs.ios
-        id: ios_simulator_smoke
-        continue-on-error: true
-        timeout-minutes: 12
-        env:
-          BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR: ${{ runner.temp }}/bridra-ios-simulator-diagnostics/initial
-        run: make ios-simulator-smoke
-
-      - name: Reset iOS Simulator before one retry
-        if: steps.ios_simulator_smoke.outcome == 'failure'
-        run: |
-          xcrun simctl shutdown all || true
-          xcrun simctl erase all || true
-
-      - name: Retry iOS Simulator HTTP round trip
-        id: ios_simulator_retry
-        if: steps.ios_simulator_smoke.outcome == 'failure'
-        timeout-minutes: 12
-        env:
-          BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR: ${{ runner.temp }}/bridra-ios-simulator-diagnostics/retry
-        run: make ios-simulator-smoke
-
-      - name: Upload iOS Simulator failure diagnostics
-        if: ${{ always() && (steps.ios_simulator_smoke.outcome == 'failure' || steps.ios_simulator_retry.outcome == 'failure') }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: ios-simulator-diagnostics-${{ github.run_attempt }}
-          if-no-files-found: warn
-          retention-days: 14
-          path: ${{ runner.temp }}/bridra-ios-simulator-diagnostics
-
-      - name: Build unsigned iOS release
-        if: inputs.full || inputs.ios
-        run: make ios-build BACKEND_URL=https://backend.example/rpc BACKEND_TOKEN=ci-token
-
-  windows:
-    if: inputs.full || inputs.windows
-    runs-on: windows-2022
-    timeout-minutes: 30
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: backend/go.mod
-          cache-dependency-path: |
-            backend/go.mod
-            backend/integration/sqljobstore/go.mod
-
-      - name: Install FVM
-        run: choco install fvm --version=4.1.2 --yes
-
-      - name: Install project Flutter SDK
-        run: fvm install
-
-      - name: Verify framework on Windows
-        run: .\tool\windows.ps1 -Task verify
-
-      - name: Build and smoke-test Windows bundle
-        run: .\tool\windows.ps1 -Task smoke
-
   check-results:
     if: ${{ always() }}
-    needs: [linux-android-web, android-emulator, macos-ios, windows]
+    needs: [core, linux, android-web, android-emulator, macos, ios, windows, release-package]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -342,6 +325,6 @@ jobs:
       - name: Require selected verification jobs to succeed
         env:
           CI_FULL: ${{ inputs.full }}
-          CI_PLAN: '{"core":${{ inputs.core }},"linux":${{ inputs.linux }},"android":${{ inputs.android }},"web":${{ inputs.web }},"macos":${{ inputs.macos }},"ios":${{ inputs.ios }},"windows":${{ inputs.windows }}}'
+          CI_PLAN: ${{ inputs.plan }}
           CI_NEEDS: ${{ toJSON(needs) }}
         run: python3 tool/ci.py results --plan "$CI_PLAN" --full "$CI_FULL" --needs "$CI_NEEDS"

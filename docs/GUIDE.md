@@ -279,6 +279,12 @@ framework/tooling surfaces plus the Flutter runtime and combined app/runtime,
 then writes `coverage/summary.md`. CI includes the same table in its job summary
 and retains the raw profiles as a workflow artifact.
 
+When both complete verification and coverage are required, use
+`make verify-coverage` once. It combines the checks with race-enabled Go coverage,
+direct Flutter coverage and one Chrome pass. Do not run both `make verify` and
+`make coverage` as a routine duplicate rehearsal; normal local edits should start
+with the relevant focused checks. See [CI.md](CI.md) for hosted job selection.
+
 Run the slower Runtime resilience suite before changes to Sidecar lifecycle,
 RPC parsing, Queue, Scheduler, or persistent Stores:
 

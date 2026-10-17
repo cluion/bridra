@@ -47,6 +47,7 @@ CLI_RELEASE_OUTPUT ?= $(CURDIR)/build/bridra/cli
 CLI_RELEASE_COMMIT ?= $(shell git describe --always --dirty --abbrev=12 --match '__bridra_no_matching_tag__')
 CLI_RELEASE_DATE ?= $(shell git show -s --format=%cI HEAD)
 COVERAGE_DIR := $(CURDIR)/coverage
+BACKEND_COVERAGE_FLAGS ?=
 RUNTIME_FUZZ_TIME ?= 15s
 RUNTIME_STRESS_CYCLES ?= 50
 RUNTIME_STRESS_REPEATS ?= 5
@@ -56,7 +57,7 @@ RUNTIME_RESOURCE_MAX_FD_GROWTH ?= 4
 RUNTIME_RESOURCE_MAX_RSS_GROWTH_MIB ?= 32
 
 .PHONY: help setup doctor generate schema-check codegen-check dart-codegen-format-test license-check format backend-build backend-server-build backend-serve backend-format backend-test backend-public-api-test backend-sql-store-test backend-sql-job-store-test backend-vet transport-benchmark http-fault-test ios-simulator-watchdog-test \
-	flutter-format flutter-package-test flutter-web-test flutter-test analyze verify coverage backend-coverage flutter-package-coverage flutter-app-coverage coverage-check linux-check linux-run linux-build \
+	flutter-format flutter-package-test flutter-web-test flutter-test analyze verify verify-checks verify-coverage coverage backend-coverage flutter-package-coverage flutter-app-coverage coverage-check linux-check linux-run linux-build \
 	linux-smoke macos-check macos-run macos-build macos-native-test macos-sandbox-smoke macos-smoke windows-run \
 	windows-build windows-smoke windows-verify android-run android-build android-emulator-smoke \
 	ios-run ios-build ios-embedded-core-poc ios-embedded-core-smoke ios-simulator-build ios-simulator-smoke ios-device-smoke web-run web-build remote-release-check \
@@ -70,6 +71,7 @@ help:
 	@echo "make dart-codegen-format-test Verify generated Dart uses the pinned formatter"
 	@echo "make license-check Verify publishable packages carry the root MIT license"
 	@echo "make verify       Run format checks, Go tests, Flutter tests, and analysis"
+	@echo "make verify-coverage Run verification and coverage in one test pass"
 	@echo "make coverage     Generate reports and enforce coverage non-regression floors"
 	@echo "make runtime-fuzz Fuzz Sidecar and HTTP RPC parsing"
 	@echo "make runtime-resources Check Runtime resource growth and orphan processes"
@@ -216,7 +218,7 @@ analyze:
 
 backend-coverage:
 	mkdir -p $(COVERAGE_DIR)
-	cd backend && $(GO) test -covermode=atomic -coverprofile=$(COVERAGE_DIR)/go.out ./...
+	cd backend && $(GO) test $(BACKEND_COVERAGE_FLAGS) -covermode=atomic -coverprofile=$(COVERAGE_DIR)/go.out ./...
 
 flutter-package-coverage: backend-build
 	cd $(BRIDRA_FLUTTER_PACKAGE) && BRIDRA_SIDECAR_PATH=$(SIDECAR) $(FLUTTER) test --coverage
@@ -248,7 +250,14 @@ cli-release:
 ios-simulator-watchdog-test:
 	sh ./tool/ios_simulator_watchdog_test.sh
 
-verify: license-check release-check doctor schema-check codegen-check dart-codegen-format-test backend-format backend-vet backend-public-api-test backend-test backend-sql-store-test flutter-format flutter-package-test flutter-web-test flutter-test ios-simulator-watchdog-test analyze
+verify-checks: license-check release-check doctor schema-check codegen-check dart-codegen-format-test backend-format backend-vet flutter-format ios-simulator-watchdog-test analyze
+
+verify: verify-checks backend-test backend-sql-store-test flutter-package-test flutter-web-test flutter-test
+
+# The coverage run includes every Go test (including external public API tests),
+# both Flutter suites and Chrome. Keep the race detector enabled in that pass.
+verify-coverage: BACKEND_COVERAGE_FLAGS = -race
+verify-coverage: verify-checks backend-sql-store-test coverage
 
 linux-check:
 	@test "$(HOST_OS)" = "Linux" || \
