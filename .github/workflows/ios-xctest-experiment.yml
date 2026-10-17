@@ -63,6 +63,55 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  negative-contract:
+    needs: cold
+    runs-on: macos-15
+    timeout-minutes: 15
+    env:
+      CACHE_NAMESPACE: ios-experiment-${{ github.run_id }}-${{ github.run_attempt }}-xctest-
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        id: go
+        with:
+          go-version-file: backend/go.mod
+          cache: false
+      - name: Locate controlled Go cache
+        id: go-cache
+        run: |
+          echo "GOCACHE=$RUNNER_TEMP/ios-experiment-go-build" >> "$GITHUB_ENV"
+          echo "GOMODCACHE=$RUNNER_TEMP/ios-experiment-go-modules" >> "$GITHUB_ENV"
+          echo "build=$RUNNER_TEMP/ios-experiment-go-build" >> "$GITHUB_OUTPUT"
+          echo "modules=$RUNNER_TEMP/ios-experiment-go-modules" >> "$GITHUB_OUTPUT"
+      - name: Restore isolated Go cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.go-cache.outputs.build }}
+            ${{ steps.go-cache.outputs.modules }}
+          key: ${{ env.CACHE_NAMESPACE }}go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('backend/go.mod', 'backend/go.sum') }}
+          fail-on-cache-miss: true
+      - name: Set up complete pinned Flutter profile
+        uses: ./.github/actions/setup-flutter
+        with:
+          cache-namespace: ${{ env.CACHE_NAMESPACE }}
+          require-cache-hit: 'true'
+      - name: Require intentional Dart assertion failure
+        run: >-
+          python3 tool/ios_xctest.py --expect-failure
+          --output build/ios-experiment/negative-contract
+          --build-directory build/ios-experiment/negative-build
+      - name: Upload failure-propagation evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-negative-contract-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/ios-experiment/negative-contract/
+          if-no-files-found: error
+          retention-days: 7
+
   warm:
     needs: cold
     strategy:

@@ -37,13 +37,16 @@ this additional matrix. Normal Verify remains independent.
 
 1. Two fresh `macos-15` jobs run Flutter and XCTest. SDK/Pub/Go cache namespaces
    include the run ID and variant, ensuring cold misses without deleting shared
-   caches. Each runs the positive flow; XCTest additionally checks Dart failure
-   propagation.
+   caches. Each runs the positive flow.
 2. Two new hosted jobs restore those exact dependency caches. Missing warm caches
    fail the measurement. Native/Xcode build products are not transferred.
 3. Each warm job runs twice. Before replay, only the selected simulator in that
    disposable hosted job is erased. XCTest reuses the source-identified binary;
    the Flutter control reruns its normal command. Local runs never erase devices.
+4. A separate fresh runner restores the XCTest dependency cache and verifies
+   intentional Dart-failure propagation. This keeps failure diagnostics outside
+   performance measurements and avoids reusing a simulator after changing the
+   test entrypoint. Its assertions and timeouts remain identical.
 
 Cold/warm refers to dependency caches; each fresh VM still starts with a cold
 native build and simulator. Replay separately tests recovery after simulator
@@ -51,7 +54,7 @@ reset. Six positive runs give initial evidence, not an established flake rate.
 
 Compare uploaded `benchmark.json`, native `timing.json`, `.xcresult` and cache
 logs. Record job execution minutes including cache/upload cleanup, and report
-negative-contract overhead separately. Durations are not billing estimates.
+negative-contract job overhead separately. Durations are not billing estimates.
 Windows can remain the full-matrix bottleneck after iOS improves.
 
 ## Cache completeness

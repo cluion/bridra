@@ -46,11 +46,6 @@ def main():
             experiment.run(name, command, 720)
             results.append({"attempt": name, "success": True,
                             "reusedXCTestArtifact": args.runner == "xctest" and attempt > 0})
-        if args.runner == "xctest" and args.phase == "cold":
-            experiment.run("negative-contract", [sys.executable, "tool/ios_xctest.py", "--expect-failure",
-                           "--output", str(output / "negative"), "--build-directory",
-                           str(root / "build/ios-experiment/negative-build")], 720)
-            results.append({"attempt": "intentional-dart-failure", "success": True})
         success = True
     finally:
         report = {"success": success, "runner": args.runner, "phase": args.phase,
