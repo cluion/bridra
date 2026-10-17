@@ -29,6 +29,10 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 
 ### Fixed
 
+- Replace Flutter's default entrypoint and counter test when creating a new
+  project, while preserving application-owned files during later rendering.
+- Keep platform smoke checks compatible with the starter's optional runtime
+  status display by waiting for request readiness and reconnect controls.
 - Await secondary-instance termination in the reference application entrypoint,
   matching the generated starter's existing desktop lifecycle.
 

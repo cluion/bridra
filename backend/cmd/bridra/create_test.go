@@ -38,6 +38,15 @@ func TestCreateBuildsAndAtomicallyPublishesProject(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(directory, "flutter-runner.marker"), []byte("ok\n"), 0o644); err != nil {
 				return nil, err
 			}
+			for _, relative := range []string{"lib/main.dart", "test/widget_test.dart"} {
+				path := filepath.Join(directory, filepath.FromSlash(relative))
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					return nil, err
+				}
+				if err := os.WriteFile(path, []byte("Flutter counter bootstrap\n"), 0o644); err != nil {
+					return nil, err
+				}
+			}
 		}
 		return nil, nil
 	})
@@ -93,6 +102,18 @@ func TestCreateBuildsAndAtomicallyPublishesProject(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(destination, "backend", "go.mod")); err != nil {
 		t.Fatalf("published backend: %v", err)
+	}
+	for relative, want := range map[string]string{
+		"lib/main.dart":         "runApp(const StarterApp())",
+		"test/widget_test.dart": "StarterApp(connector:",
+	} {
+		contents, err := os.ReadFile(filepath.Join(destination, filepath.FromSlash(relative)))
+		if err != nil {
+			t.Fatalf("read generated %s: %v", relative, err)
+		}
+		if strings.Contains(string(contents), "Flutter counter bootstrap") || !strings.Contains(string(contents), want) {
+			t.Fatalf("%s did not replace Flutter's bootstrap with the Bridra starter", relative)
+		}
 	}
 	goMod, err := os.ReadFile(filepath.Join(destination, "backend", "go.mod"))
 	if err != nil {

@@ -21,6 +21,7 @@ UI_FILES = {
     "features/guide/guide_view.dart": "guide_view.dart.tmpl",
 }
 TEST_FILES = {
+    "integration_test/http_smoke_test.dart": "http_smoke_test.dart.tmpl",
     "test/bridra_app_test.dart": "widget_test.dart.tmpl",
     "test/workspace_view_model_test.dart": "workspace_view_model_test.dart.tmpl",
     "test/app_theme_test.dart": "app_theme_test.dart.tmpl",

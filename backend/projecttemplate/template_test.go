@@ -697,6 +697,7 @@ func TestStarterUIMatchesReferenceApplication(t *testing.T) {
 		"lib/features/runtime/runtime_view.dart",
 		"lib/features/settings/settings_view.dart",
 		"lib/features/guide/guide_view.dart",
+		"integration_test/http_smoke_test.dart",
 		"macos/Runner/MainFlutterWindow.swift",
 		"macos/RunnerTests/RunnerTests.swift",
 	} {
@@ -713,6 +714,9 @@ func TestStarterUIMatchesReferenceApplication(t *testing.T) {
 		}
 		if relative == "macos/RunnerTests/RunnerTests.swift" {
 			want = strings.ReplaceAll(want, "@testable import bridra", "@testable import "+config.ProjectName)
+		}
+		if relative == "integration_test/http_smoke_test.dart" {
+			want = strings.ReplaceAll(want, "package:bridra/main.dart", "package:"+config.ProjectName+"/main.dart")
 		}
 		actual, err := os.ReadFile(filepath.Join(root, relative))
 		if err != nil {
