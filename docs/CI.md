@@ -34,7 +34,9 @@ reusable workflow's `check-results` validates every expected job, including
 intentional skips. Failures, cancellations, missing results and unexpected skips
 block it. The reusable jobs and their gate consume the same authoritative JSON
 plan, so a missing forwarded plan fails rather than silently disabling checks.
-Full tag mode does not depend on PR selection and requires every job.
+The full tag fallback does not depend on PR selection and requires every job.
+A separate release evidence check may reuse complete PR verification for the
+identical source tree; partial PR selection never satisfies that check.
 Do not use workflow-level `paths` filters for this required workflow.
 
 ## Execution and test reuse
@@ -57,7 +59,8 @@ Do not use workflow-level `paths` filters for this required workflow.
   code generation, formatting and Dart analysis run there once. Windows-only
   plans retain those checks locally. Environment/doctor checks remain native.
 - `release-package`: final metadata, Dart publication dry-run, reproducible
-  six-target CLI artifacts and native archive identity; release runs only.
+  six-target CLI artifacts and native archive identity; release runs only. Its
+  implementation is shared through `release-package.yml` by both tag paths.
 
 The former long Linux chain and combined macOS/iOS chain run independently.
 All selected jobs must pass before the reusable workflow succeeds. More parallel
@@ -138,53 +141,72 @@ and [merge queues](https://docs.github.com/en/repositories/configuring-pull-requ
 
 ## Tag verification and publication
 
-`release.yml` is triggered by `backend/v*.*.*` when public releases are enabled:
+`release.yml` is triggered by `backend/v*.*.*` when public releases are enabled.
+It always matches `VERSION`, requires the exact tag SHA to be reachable from
+`main`, and creates fresh release artifacts for that SHA. It chooses one path:
 
-1. Match `VERSION` and require the exact tag SHA to be reachable from `main`.
-2. Run the shared checks with `full: true`: every platform, real mobile runtime,
-   coverage floor and release-package job is required regardless of PR scope.
-3. In parallel with platform testing, validate final changelogs and the Dart
-   package dry-run. Build the CLI twice from the same source SHA and timestamp,
-   compare the six archives/checksums/manifest/SBOM and run the native Linux CLI.
-4. Upload one immutable candidate. Parallel upload alone does not authorize
-   publication: all other verification jobs and `check-results` must succeed.
-5. Only then request the protected `public-release` environment approval and gain
-   OIDC/publication permissions. Download the same artifact by ID, recheck tag/SHA,
-   digests, sizes and the exact nine-file set, then attest and publish those bytes.
+| Evidence available for this source | Tag work |
+| --- | --- |
+| A matching, complete, successful PR verification record | Reuse platform/coverage verification; run exact-tag release packaging |
+| Partial, missing, expired, mismatched or unverifiable evidence | Run `checks.yml` with `full: true`, including every platform and packaging |
 
-No CLI rebuild occurs in the publication job. PR success is not substituted for
-exact-tag verification. Environment protection, owner authorization, source checks,
-OIDC and provenance/SBOM attestations remain required. Post-release public-registry
-identity and one fresh external-consumer acceptance remain separate gates; see
-[RELEASING.md](RELEASING.md).
+The fixed PR gate records `verification.json` only after every selected check
+passes, and only for a same-repository PR into `main` whose plan includes all
+platforms, both real mobile runtimes and core coverage. The record identifies
+the tested merge SHA, complete Git tree, base/head SHAs, repository ID, workflow,
+run ID and attempt. It is uploaded as `pr-verification-RUN-ATTEMPT` with 14-day
+retention. An unavailable optional evidence upload does not invalidate otherwise
+successful PR checks; the later tag falls back to full verification.
 
-## Run counts and local validation
+`tool/release_verification.py` uses read-only GitHub APIs to require all of:
 
-With one successful PR run per change and no retries/queue activity:
+- The tag is exactly the merge/squash commit of one merged PR into `main`, with
+  both branches in this repository. Branch names and commit titles are not evidence.
+- The latest `verify.yml` run for that PR head is a successful `pull_request` run
+  from the expected repository/workflow, created within the last seven days.
+  A newer failed or running run is never bypassed in favor of an older success.
+- Every required core, platform, emulator/simulator and final gate job in that
+  exact attempt has one successful result. Missing/duplicate jobs, unexpected
+  skips and incomplete API pages are rejected.
+- The run's immutable artifact has the expected name, run/head identity and a
+  matching SHA-256 digest. Only its bounded `verification.json` is read; no PR
+  artifact is executed or used as a release binary.
+- GitHub's commit data independently confirms that the tested merge has the
+  recorded base/head parents and its **entire Git tree equals the tag's tree**.
+  A successful gate step whose name GitHub evaluates with `github.sha` also binds
+  that merge SHA to the actual run, independently of the artifact's claims.
+  Squash commits may have different commit SHAs; every tracked file, dependency,
+  workflow and script must still be identical. The source checkout must be clean.
 
-| Work | PRs | Event-triggered verification/release runs |
-| --- | ---: | ---: |
-| Merge one change | 1 | 1 PR run |
-| Merge and release one change | 1 | 1 PR run + 1 tag run |
-| Merge three changes, then release | 3 | 3 PR runs + 1 tag run |
+The lookup has a 45-second budget with at most 10 seconds per API request.
+Unavailable APIs, insufficient permission, deleted repositories/commits or
+artifacts, old records, fork PRs, merge-group-only evidence, partial plans and
+any other uncertainty select full verification. Existing PR runs without the
+new record also fall back; this is expected during rollout. The decision and
+matching run/tree identity are retained as a release artifact and step summary.
+No workflow-dispatch label or manual boolean can force verification reuse.
 
-Reusable jobs consume runners within these runs. Weekly maintenance is separate.
-Local work should use the smallest relevant checks. A delivery rehearsal needing
-both complete verification and coverage uses `make verify-coverage` once. Do not
-repeat full local suites for candidate, squash and tag when the same source tree
-is already covered and tag CI will validate the final SHA and package identity.
+Both paths use the same read-only `release-package.yml`: final changelogs/version
+checks, Dart publication dry-run, two reproducible builds of all six CLI archives,
+checksums/manifest/SBOM comparison and the native Linux CLI identity smoke test.
+Artifacts embed the actual tag SHA, not the PR's different merge/head SHA.
+The `candidate` gate requires source verification, the selected path's success,
+the other path's intentional skip and a valid immutable candidate artifact ID.
+Failed, cancelled, missing or unexpected results block publication.
 
-For CI changes:
+Only then can `public-release` request the protected environment approval and gain
+OIDC/publication permissions. It downloads the exact candidate by artifact ID,
+rechecks the unchanged tag/SHA, digests, sizes and exact nine-file set, then attests
+and publishes those same bytes without rebuilding. Owner authorization, OIDC,
+provenance/SBOM attestations and post-release public-registry/external-consumer
+acceptance remain required; see [RELEASING.md](RELEASING.md).
 
-```bash
-python3 -m unittest discover -s tool -p ci_test.py -v
-actionlint
-make release-check
-```
+This removes a second complete platform matrix when valid PR evidence exists;
+it does not make a five-minute PR or release a measured guarantee. Reaching that
+target needs a separate measured change to the platform execution/parallelism,
+while retaining tests and coverage. Queue time, cold SDK caches, reproducible
+packaging and environment approval can add time independently.
 
-Changes to the core test execution graph also need one real `make verify-coverage` run.
-Hosted cache hits, Windows/mobile runners, protected-environment behavior and
-elapsed time require GitHub verification after review/push. Local lint does not
-prove them. Do not publish a tag just to test this migration. Initial goals are
-5–10 minutes for ordinary PRs and 12–18 minutes for tag runs; these are unproven
-measurement targets, not guarantees under cold caches, queueing or retries.
+GitHub documents the [workflow run/attempt APIs](https://docs.github.com/en/rest/actions/workflow-runs),
+[job results for an attempt](https://docs.github.com/en/rest/actions/workflow-jobs#list-jobs-for-a-workflow-run-attempt)
+and [artifact identity/digests](https://docs.github.com/en/rest/actions/artifacts).

@@ -28,7 +28,9 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Test CI planning and gate contracts
-        run: python3 -m unittest discover -s tool -p ci_test.py -v
+        run: |
+          python3 -m unittest discover -s tool -p ci_test.py -v
+          python3 -m unittest discover -s tool -p release_verification_test.py -v
       - name: Select checks from both sides of renamed paths
         id: plan
         env:
@@ -58,3 +60,18 @@ jobs:
           CI_PLAN: ${{ needs.changes.outputs.scope }}
           CI_NEEDS: ${{ toJSON(needs) }}
         run: python3 tool/ci.py gate --plan "$CI_PLAN" --needs "$CI_NEEDS"
+      - name: Record complete PR verification evidence for ${{ github.sha }}
+        id: evidence
+        env:
+          CI_PLAN: ${{ needs.changes.outputs.scope }}
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: python3 tool/release_verification.py record --output "$RUNNER_TEMP/verification.json"
+      - name: Upload complete PR verification evidence
+        if: steps.evidence.outputs.eligible == 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/verification.json
+          if-no-files-found: error
+          retention-days: 14
