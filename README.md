@@ -212,8 +212,9 @@ tooling.
 
 PRs use short-lived branches and squash into `main`. CI selects checks by
 changed surface and requires `ci-gate`; there is no routine `main` push run.
-Version tags trigger full release verification and artifact preparation before
-protected publication. See [CI and merge policy](docs/CI.md) for the required
+Version tags require matching complete PR verification or full fallback, plus
+fresh exact-tag artifact preparation before protected publication.
+See [CI and merge policy](docs/CI.md) for the required
 repository protection and workflow run counts.
 
 ## Documentation

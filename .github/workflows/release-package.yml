@@ -1,0 +1,63 @@
+name: Release package
+
+on:
+  workflow_call:
+    outputs:
+      cli-artifact-id:
+        description: Immutable CLI candidate built and checked from the exact tag SHA
+        value: ${{ jobs.package.outputs.cli-artifact-id }}
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      cli-artifact-id: ${{ steps.cli_artifacts.outputs.artifact-id }}
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.mod
+      - name: Set up pinned Flutter
+        uses: ./.github/actions/setup-flutter
+      - name: Validate final release metadata and Dart package
+        id: release_metadata
+        run: |
+          version="$(cat VERSION)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          make release-check FINAL=1 VERSION="$version"
+          (cd packages/bridra_flutter && fvm flutter pub publish --dry-run)
+          git diff --exit-code
+      - name: Build and compare reproducible CLI release artifacts
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          version="$(cat VERSION)"
+          make cli-release CLI_RELEASE_COMMIT="$SOURCE_SHA"
+          make cli-release CLI_RELEASE_COMMIT="$SOURCE_SHA" \
+            CLI_RELEASE_OUTPUT="$RUNNER_TEMP/bridra-cli-repeat"
+          diff -r "build/bridra/cli/$version" "$RUNNER_TEMP/bridra-cli-repeat/$version"
+          python3 tool/ci.py artifacts --directory "build/bridra/cli/$version" \
+            --version "$version" --commit "$SOURCE_SHA"
+          mkdir -p "$RUNNER_TEMP/bridra-cli-smoke"
+          tar -xzf "build/bridra/cli/$version/bridra_${version}_linux_amd64.tar.gz" \
+            -C "$RUNNER_TEMP/bridra-cli-smoke"
+          "$RUNNER_TEMP/bridra-cli-smoke/bridra" version --json > "$RUNNER_TEMP/bridra-cli-version.json"
+          python3 -c 'import json, os; from pathlib import Path; v = json.loads((Path(os.environ["RUNNER_TEMP"]) / "bridra-cli-version.json").read_text()); assert v["cliVersion"] == Path("VERSION").read_text().strip(); assert v["commit"] == os.environ["SOURCE_SHA"]'
+      - name: Upload verified CLI release candidate
+        id: cli_artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: cli-release-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 14
+          path: build/bridra/cli/${{ steps.release_metadata.outputs.version }}/
+
