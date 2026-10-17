@@ -47,7 +47,8 @@ def command(*arguments, timeout=20, check=True):
 def start(path):
     if path.exists():
         raise ValueError("refusing to replace existing Simulator ownership")
-    devices = json.loads(command("list", "devices", "available", "--json").stdout)["devices"]
+    # A fresh hosted runner initializes CoreSimulator on its first query.
+    devices = json.loads(command("list", "devices", "available", "--json", timeout=120).stdout)["devices"]
     candidates = [device for group in devices.values() for device in group
                   if device.get("isAvailable") is True and device.get("name", "").startswith("iPhone")]
     if not candidates:

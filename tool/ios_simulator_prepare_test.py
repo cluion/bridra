@@ -70,7 +70,7 @@ class PreparationTests(unittest.TestCase):
             self.assertEqual(prepare.start(self.path), self.other)
         popen.assert_not_called()
         self.assertFalse(prepare.load(self.path)["owned"])
-        self.command.assert_called_once_with("list", "devices", "available", "--json")
+        self.command.assert_called_once_with("list", "devices", "available", "--json", timeout=120)
 
     def test_start_owned_existing_phone_in_bounded_detached_worker(self):
         self.command.return_value.stdout = self.devices(self.phone(name="iPad"), self.phone())
@@ -84,7 +84,15 @@ class PreparationTests(unittest.TestCase):
         self.assertTrue(kwargs["start_new_session"])
         self.assertEqual(kwargs["stdout"].name, str(self.path.with_suffix(".log")))
         self.assertEqual(prepare.load(self.path)["worker_pid"], 123)
-        self.command.assert_called_once_with("list", "devices", "available", "--json")
+        self.command.assert_called_once_with("list", "devices", "available", "--json", timeout=120)
+
+    def test_cold_discovery_timeout_keeps_ownership_empty_and_starts_no_worker(self):
+        self.command.side_effect = subprocess.TimeoutExpired("simctl list", 120)
+        with patch.object(prepare.subprocess, "Popen") as popen, self.assertRaises(subprocess.TimeoutExpired):
+            prepare.start(self.path)
+        self.command.assert_called_once_with("list", "devices", "available", "--json", timeout=120)
+        self.assertFalse(self.path.exists())
+        popen.assert_not_called()
 
     def test_missing_or_unavailable_phone_does_not_spawn_or_create_a_device(self):
         for devices in ([], [self.phone(isAvailable=False)], [self.phone(name="iPad")]):
