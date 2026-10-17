@@ -104,6 +104,17 @@ class EvidenceTests(unittest.TestCase):
         self.jobs = self.jobs[1:-1]
         with self.assertRaises(ValueError): self.select()
 
+    def test_passing_group_gates_cannot_replace_missing_shard_evidence(self):
+        complete = self.jobs
+        shards = {"checks / " + job for jobs in ci.GROUPS.values() for job in jobs}
+        for missing in ({job} for job in shards):
+            with self.subTest(missing=missing):
+                self.jobs = [job for job in complete if job['name'] not in missing]
+                with self.assertRaises(ValueError): self.select()
+        # Records from the former serial graph are insufficient for this graph.
+        self.jobs = [job for job in complete if job['name'] not in shards]
+        with self.assertRaises(ValueError): self.select()
+
     def test_partial_or_malformed_plan_never_substitutes_for_full_checks(self):
         for scope in ci.SCOPES:
             self.proof['plan'][scope] = False

@@ -123,16 +123,19 @@ class GateTests(unittest.TestCase):
 
 
 class VerificationResultsTests(unittest.TestCase):
-    jobs = ("core", "linux", "android-web", "android-emulator", "macos", "ios", "windows", "release-package")
+    jobs = ("core-static", "core-go", "core-flutter", "core", "linux", "android-web",
+            "android-emulator", "macos", "ios-watchdog", "ios-build", "ios-simulator",
+            "ios", "windows-verify", "windows-bundle", "windows", "release-package")
 
     def test_selected_platform_passes_with_only_intentional_skips(self):
         needs = {key: {"result": "skipped"} for key in self.jobs}
-        needs["windows"]["result"] = "success"
+        for job in ("windows-verify", "windows-bundle", "windows"):
+            needs[job]["result"] = "success"
         ci.check_results(ci.plan(["windows/runner/main.cpp"]), False, needs)
 
     def test_ordinary_ui_change_requires_no_mobile_or_release_job(self):
         needs = {key: {"result": "skipped"} for key in self.jobs}
-        for job in ("core", "linux"):
+        for job in ("core-static", "core-go", "core-flutter", "core", "linux"):
             needs[job]["result"] = "success"
         ci.check_results(ci.plan(["lib/app/starter_app.dart"]), False, needs)
         needs["core"]["result"] = "skipped"
@@ -165,6 +168,64 @@ class VerificationResultsTests(unittest.TestCase):
         needs = {key: {"result": "success"} for key in self.jobs}
         with self.assertRaises(ValueError):
             ci.check_results({}, True, needs)
+
+    def test_unrequested_job_or_unknown_result_never_counts_as_an_intentional_skip(self):
+        needs = {key: {"result": "skipped"} for key in self.jobs}
+        needs["ios-build"]["result"] = "success"
+        with self.assertRaises(ValueError):
+            ci.check_results(ci.plan([]), False, needs)
+        needs["ios-build"]["result"] = "skipped"
+        needs["unknown"] = {"result": "success"}
+        with self.assertRaises(ValueError):
+            ci.check_results(ci.plan([]), False, needs)
+
+
+class ShardGateTests(unittest.TestCase):
+    groups = {"core": ("core-static", "core-go", "core-flutter"),
+              "windows": ("windows-verify", "windows-bundle"),
+              "ios": ("ios-watchdog", "ios-build", "ios-simulator")}
+
+    def test_every_full_shard_failure_cancellation_skip_or_missing_result_blocks(self):
+        for group, jobs in self.groups.items():
+            passing = {key: {"result": "success"} for key in jobs}
+            ci.check_group(group, ci.plan([]), True, passing)
+            for job in jobs:
+                for result in ("failure", "cancelled", "skipped", None):
+                    with self.subTest(group=group, job=job, result=result), self.assertRaises(ValueError):
+                        ci.check_group(group, ci.plan([]), True, {**passing, job: {"result": result}})
+                with self.subTest(group=group, missing=job), self.assertRaises(ValueError):
+                    ci.check_group(group, ci.plan([]), True, {key: value for key, value in passing.items() if key != job})
+
+    def test_ios_build_and_runtime_scopes_have_only_intentional_skips(self):
+        for scope in ("ios", "ios_simulator"):
+            plan = {key: key == scope for key in ci.SCOPES}
+            needs = {job: {"result": "success" if ((job == "ios-build") == (scope == "ios")) else "skipped"}
+                     for job in self.groups["ios"]}
+            ci.check_group("ios", plan, False, needs)
+            all_jobs = {key: {"result": "skipped"} for key in VerificationResultsTests.jobs}
+            all_jobs.update(needs)
+            all_jobs["ios"] = {"result": "success"}
+            ci.check_results(plan, False, all_jobs)
+            for job, result in needs.items():
+                wrong = "skipped" if result["result"] == "success" else "success"
+                with self.subTest(scope=scope, job=job), self.assertRaises(ValueError):
+                    ci.check_group("ios", plan, False, {**needs, job: {"result": wrong}})
+
+    def test_group_cannot_hide_unexpected_jobs_or_a_missing_authoritative_plan(self):
+        for group, jobs in self.groups.items():
+            needs = {job: {"result": "success"} for job in jobs}
+            with self.subTest(group=group), self.assertRaises(ValueError):
+                ci.check_group(group, ci.plan([]), True, {**needs, "unexpected": {"result": "success"}})
+            with self.assertRaises(ValueError):
+                ci.check_group(group, {}, False, needs)
+
+    def test_full_tag_group_cli_requires_all_shards_without_a_pr_plan(self):
+        for group, jobs in self.groups.items():
+            needs = {job: {"result": "success"} for job in jobs}
+            argv = ["ci.py", "group", "--group", group, "--plan", "{}", "--full", "true",
+                    "--needs", json.dumps(needs)]
+            with patch.object(sys, "argv", argv), patch("sys.stdout", new_callable=io.StringIO):
+                ci.main()
 
 
 class SDKEnvironmentTests(unittest.TestCase):
@@ -266,14 +327,17 @@ class SDKEnvironmentTests(unittest.TestCase):
 
 
 class WorkflowWiringTests(unittest.TestCase):
+    def job(self, name):
+        workflow = (Path(__file__).resolve().parent.parent / '.github/workflows/checks.yml').read_text()
+        return re.split(r'\n  [a-z][a-z0-9-]*:\n', workflow.split(f'\n  {name}:\n', 1)[1], 1)[0]
+
     def test_windows_common_checks_delegate_only_to_required_core_work(self):
-        path = Path(__file__).resolve().parent.parent / '.github/workflows/checks.yml'
-        windows = path.read_text().split('\n  windows:\n', 1)[1].split('\n  release-package:\n', 1)[0]
+        windows = self.job('windows-verify')
         self.assertIn('BRIDRA_SHARED_CHECKS_IN_CORE: ${{ inputs.full || fromJSON(inputs.plan).core }}', windows)
         self.assertIn('-SharedChecksInCore:($env:BRIDRA_SHARED_CHECKS_IN_CORE -eq "true")', windows)
         scope = ci.plan(['lib/ui/window/window_controls.dart'])
-        needs = {key: {'result': 'success' if scope.get(key) else 'skipped'}
-                 for key in VerificationResultsTests.jobs}
+        needs = {key: {'result': 'success' if required else 'skipped'}
+                 for key, required in ci.job_requirements(scope, False).items()}
         ci.check_results(scope, False, needs)
         for result in ('skipped', 'failure', 'cancelled'):
             needs['core']['result'] = result
@@ -284,10 +348,56 @@ class WorkflowWiringTests(unittest.TestCase):
         path = Path(__file__).resolve().parent.parent / '.github/workflows/checks.yml'
         workflow = path.read_text().split('\njobs:\n', 1)[1]
         jobs = set(re.findall(r'^  ([a-z][a-z0-9-]*):$', workflow, re.MULTILINE))
-        needs = re.search(r'^    needs: \[([^]]+)\]$', workflow, re.MULTILINE)
+        needs = re.search(r'^    needs: \[([^]]+)\]$', self.job('check-results'), re.MULTILINE)
         self.assertIsNotNone(needs)
         self.assertEqual({name.strip() for name in needs[1].split(',')}, jobs - {'check-results'})
         self.assertEqual(jobs - {'check-results'}, set(VerificationResultsTests.jobs))
+
+    def test_group_gates_run_after_failed_dependencies_and_validate_every_shard(self):
+        for group, expected in ShardGateTests.groups.items():
+            body = self.job(group)
+            self.assertIn('always() && (inputs.full || fromJSON(inputs.plan).', body)
+            needs = re.search(r'^    needs: \[([^]]+)\]$', body, re.MULTILINE)
+            self.assertEqual({name.strip() for name in needs[1].split(',')}, set(expected))
+            self.assertIn(f'ci.py group --group {group} --plan "$CI_PLAN" --full "$CI_FULL" --needs "$CI_NEEDS"', body)
+            self.assertIn('CI_PLAN: ${{ inputs.plan }}', body)
+            self.assertIn('CI_NEEDS: ${{ toJSON(needs) }}', body)
+
+    def test_release_reuse_requires_all_shards_and_group_gates(self):
+        import release_verification
+        expected = {'changes', 'ci-gate', 'checks / check-results'} | {
+            'checks / ' + job for job in VerificationResultsTests.jobs if job != 'release-package'}
+        self.assertEqual(set(release_verification.REQUIRED_JOBS), expected)
+        self.assertEqual(len(release_verification.REQUIRED_JOBS), len(expected))
+
+    def test_ci_preserves_each_suite_and_collects_all_coverage_before_enforcing_floors(self):
+        self.assertIn('run: make verify-checks', self.job('core-static'))
+        self.assertIn('run: make backend-sql-store-test backend-coverage BACKEND_COVERAGE_FLAGS=-race', self.job('core-go'))
+        self.assertIn('run: make flutter-package-coverage flutter-app-coverage flutter-web-test', self.job('core-flutter'))
+        gate = self.job('core')
+        self.assertIn('make coverage-report', gate)
+        self.assertNotIn('make verify-coverage', gate)
+        self.assertNotIn('make coverage-check', gate)
+        self.assertIn('name: core-go-coverage-${{ github.run_attempt }}\n          path: coverage', gate)
+        self.assertIn('name: core-flutter-coverage-${{ github.run_attempt }}\n          path: .', gate)
+        for profile in ('coverage/go.out', 'coverage/lcov.info', 'packages/bridra_flutter/coverage/lcov.info'):
+            self.assertIn(profile, self.job('core-go') + self.job('core-flutter'))
+            self.assertIn(profile, gate)
+        self.assertLess(gate.index('Collect both required Flutter profiles'), gate.index('make coverage-report'))
+
+    def test_simulator_preparation_overlaps_setup_with_one_retry_and_always_cleanup(self):
+        body = self.job('ios-simulator')
+        self.assertLess(body.index('ios_simulator_prepare.py start'), body.index('name: Set up Go'))
+        self.assertIn('ios_simulator_prepare.py ready', body)
+        self.assertIn('ios_simulator_prepare.py reset', body)
+        self.assertEqual(body.count('make ios-simulator-smoke DEVICE="${{ steps.simulator.outputs.device }}"'), 2)
+        self.assertEqual(body.count('timeout-minutes: 12'), 2)
+        self.assertIn('if: always()\n        run: python3 tool/ios_simulator_prepare.py finish', body)
+        self.assertIn('BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR:', body)
+        self.assertNotIn('erase all', body)
+        self.assertNotIn('shutdown all', body)
+        self.assertIn('make ios-simulator-watchdog-test', self.job('ios-watchdog'))
+        self.assertIn('make ios-build BACKEND_URL=', self.job('ios-build'))
 
     def test_pr_requires_its_authoritative_plan_while_full_tag_requires_all_jobs(self):
         empty_jobs = {key: {"result": "skipped"} for key in VerificationResultsTests.jobs}

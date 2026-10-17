@@ -18,7 +18,33 @@ permissions:
   contents: read
 
 jobs:
-  core:
+  core-static:
+    if: inputs.full || fromJSON(inputs.plan).core
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: |
+            backend/go.mod
+            backend/integration/sqljobstore/go.mod
+      - name: Set up pinned Flutter
+        uses: ./.github/actions/setup-flutter
+      - name: Verify CI helper regressions
+        run: |
+          python3 -m unittest discover -s tool -p ci_test.py -v
+          python3 -m unittest discover -s tool -p release_verification_test.py -v
+          python3 -m unittest discover -s tool -p ios_simulator_prepare_test.py -v
+      - name: Run shared static and watchdog checks once
+        run: make verify-checks
+
+  core-go:
     if: inputs.full || fromJSON(inputs.plan).core
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -62,13 +88,86 @@ jobs:
             backend/integration/sqljobstore/go.mod
       - name: Set up pinned Flutter
         uses: ./.github/actions/setup-flutter
-      - name: Verify CI helper regressions
-        run: python3 -m unittest discover -s tool -p ci_test.py -v
-      - name: Verify framework and coverage in one test pass
+      - name: Run SQL and race-enabled Go coverage once
+        run: make backend-sql-store-test backend-coverage BACKEND_COVERAGE_FLAGS=-race
+      - name: Upload Go coverage shard
+        if: ${{ always() && hashFiles('coverage/go.out') != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: core-go-coverage-${{ github.run_attempt }}
+          path: coverage/go.out
+          if-no-files-found: error
+          retention-days: 14
+
+  core-flutter:
+    if: inputs.full || fromJSON(inputs.plan).core
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: |
+            backend/go.mod
+            backend/integration/sqljobstore/go.mod
+      - name: Set up pinned Flutter
+        uses: ./.github/actions/setup-flutter
+      - name: Run both Flutter coverage suites and Chrome once
+        run: make flutter-package-coverage flutter-app-coverage flutter-web-test
+      - name: Upload Flutter coverage shards
+        if: ${{ always() && hashFiles('coverage/lcov.info', 'packages/bridra_flutter/coverage/lcov.info') != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: core-flutter-coverage-${{ github.run_attempt }}
+          path: |
+            coverage/lcov.info
+            packages/bridra_flutter/coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 14
+
+  core:
+    if: ${{ always() && (inputs.full || fromJSON(inputs.plan).core) }}
+    needs: [core-static, core-go, core-flutter]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out verified source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Require every selected core shard
+        env:
+          CI_FULL: ${{ inputs.full }}
+          CI_PLAN: ${{ inputs.plan }}
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: python3 tool/ci.py group --group core --plan "$CI_PLAN" --full "$CI_FULL" --needs "$CI_NEEDS"
+      - name: Set up Go for coverage floors
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: |
+            backend/go.mod
+            backend/integration/sqljobstore/go.mod
+      - name: Collect required Go coverage
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: core-go-coverage-${{ github.run_attempt }}
+          path: coverage
+      - name: Collect both required Flutter profiles
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: core-flutter-coverage-${{ github.run_attempt }}
+          path: .
+      - name: Enforce every original coverage floor without rerunning tests
         run: |
-          make verify-coverage
+          make coverage-report
           cat coverage/summary.md >> "$GITHUB_STEP_SUMMARY"
-      - name: Upload coverage reports
+      - name: Upload combined coverage evidence
         if: ${{ always() && hashFiles('coverage/go.out') != '' }}
         uses: actions/upload-artifact@v7
         with:
@@ -187,10 +286,24 @@ jobs:
       - name: Build and smoke-test macOS bundle
         run: make macos-smoke
 
-  ios:
-    if: inputs.full || fromJSON(inputs.plan).ios || fromJSON(inputs.plan).ios_simulator
+  ios-watchdog:
+    if: inputs.full || fromJSON(inputs.plan).ios_simulator
     runs-on: macos-15
-    timeout-minutes: 35
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Test hosted Simulator preparation and cleanup contracts
+        run: python3 -m unittest discover -s tool -p ios_simulator_prepare_test.py -v
+      - name: Test iOS Simulator watchdog
+        run: make ios-simulator-watchdog-test
+
+  ios-build:
+    if: inputs.full || fromJSON(inputs.plan).ios
+    runs-on: macos-15
+    timeout-minutes: 30
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -205,42 +318,81 @@ jobs:
             backend/integration/sqljobstore/go.mod
       - name: Set up pinned Flutter
         uses: ./.github/actions/setup-flutter
-      - name: Test iOS Simulator watchdog
-        if: inputs.full || fromJSON(inputs.plan).ios_simulator
-        run: make ios-simulator-watchdog-test
+      - name: Build unsigned iOS release
+        run: make ios-build BACKEND_URL=https://backend.example/rpc BACKEND_TOKEN=ci-token
+
+  ios-simulator:
+    if: inputs.full || fromJSON(inputs.plan).ios_simulator
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Start the existing Simulator during toolchain setup
+        id: simulator
+        run: python3 tool/ios_simulator_prepare.py start --state "$RUNNER_TEMP/bridra-ios-preparation/state.json"
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: |
+            backend/go.mod
+            backend/integration/sqljobstore/go.mod
+      - name: Set up pinned Flutter
+        uses: ./.github/actions/setup-flutter
       - name: Exercise iOS Simulator HTTP round trip
-        if: inputs.full || fromJSON(inputs.plan).ios_simulator
         id: ios_simulator_smoke
         continue-on-error: true
         timeout-minutes: 12
         env:
           BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR: ${{ runner.temp }}/bridra-ios-simulator-diagnostics/initial
-        run: make ios-simulator-smoke
+        run: |
+          python3 tool/ios_simulator_prepare.py ready --state "$RUNNER_TEMP/bridra-ios-preparation/state.json"
+          make ios-simulator-smoke DEVICE="${{ steps.simulator.outputs.device }}"
       - name: Reset iOS Simulator before one retry
         if: steps.ios_simulator_smoke.outcome == 'failure'
-        run: |
-          xcrun simctl shutdown all || true
-          xcrun simctl erase all || true
+        run: python3 tool/ios_simulator_prepare.py reset --state "$RUNNER_TEMP/bridra-ios-preparation/state.json"
       - name: Retry iOS Simulator HTTP round trip
         id: ios_simulator_retry
         if: steps.ios_simulator_smoke.outcome == 'failure'
         timeout-minutes: 12
         env:
           BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR: ${{ runner.temp }}/bridra-ios-simulator-diagnostics/retry
-        run: make ios-simulator-smoke
+        run: make ios-simulator-smoke DEVICE="${{ steps.simulator.outputs.device }}"
+      - name: Stop the preparation worker and owned Simulator
+        if: always()
+        run: python3 tool/ios_simulator_prepare.py finish --state "$RUNNER_TEMP/bridra-ios-preparation/state.json"
       - name: Upload iOS Simulator failure diagnostics
-        if: ${{ always() && (steps.ios_simulator_smoke.outcome == 'failure' || steps.ios_simulator_retry.outcome == 'failure') }}
+        if: ${{ always() && (failure() || steps.ios_simulator_smoke.outcome == 'failure' || steps.ios_simulator_retry.outcome == 'failure') }}
         uses: actions/upload-artifact@v7
         with:
           name: ios-simulator-diagnostics-${{ github.run_attempt }}
           if-no-files-found: warn
           retention-days: 14
-          path: ${{ runner.temp }}/bridra-ios-simulator-diagnostics
-      - name: Build unsigned iOS release
-        if: inputs.full || fromJSON(inputs.plan).ios
-        run: make ios-build BACKEND_URL=https://backend.example/rpc BACKEND_TOKEN=ci-token
+          path: |
+            ${{ runner.temp }}/bridra-ios-simulator-diagnostics
+            ${{ runner.temp }}/bridra-ios-preparation
 
-  windows:
+  ios:
+    if: ${{ always() && (inputs.full || fromJSON(inputs.plan).ios || fromJSON(inputs.plan).ios_simulator) }}
+    needs: [ios-watchdog, ios-build, ios-simulator]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out verified source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Require every selected ios shard
+        env:
+          CI_FULL: ${{ inputs.full }}
+          CI_PLAN: ${{ inputs.plan }}
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: python3 tool/ci.py group --group ios --plan "$CI_PLAN" --full "$CI_FULL" --needs "$CI_NEEDS"
+
+  windows-verify:
     if: inputs.full || fromJSON(inputs.plan).windows
     runs-on: windows-2022
     timeout-minutes: 30
@@ -269,6 +421,35 @@ jobs:
           @("### Windows command timings", "", "| Task | Kind | Command | Seconds | Passed |", "| --- | --- | --- | ---: | --- |") |
             Add-Content -Path $env:GITHUB_STEP_SUMMARY
           .\tool\windows.ps1 -Task verify -SharedChecksInCore:($env:BRIDRA_SHARED_CHECKS_IN_CORE -eq "true")
+      - name: Upload Windows command timings
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-verify-timings-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/bridra-windows-timings.jsonl
+          if-no-files-found: warn
+          retention-days: 7
+
+  windows-bundle:
+    if: inputs.full || fromJSON(inputs.plan).windows
+    runs-on: windows-2022
+    timeout-minutes: 30
+    env:
+      BRIDRA_SHARED_CHECKS_IN_CORE: ${{ inputs.full || fromJSON(inputs.plan).core }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: |
+            backend/go.mod
+            backend/integration/sqljobstore/go.mod
+      - name: Set up pinned Flutter
+        uses: ./.github/actions/setup-flutter
       - name: Build and smoke-test Windows bundle
         env:
           BRIDRA_WINDOWS_TIMINGS_PATH: ${{ runner.temp }}/bridra-windows-timings.jsonl
@@ -277,10 +458,27 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: windows-timings-${{ github.run_attempt }}
+          name: windows-bundle-timings-${{ github.run_attempt }}
           path: ${{ runner.temp }}/bridra-windows-timings.jsonl
           if-no-files-found: warn
           retention-days: 7
+
+  windows:
+    if: ${{ always() && (inputs.full || fromJSON(inputs.plan).windows) }}
+    needs: [windows-verify, windows-bundle]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out verified source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Require every selected windows shard
+        env:
+          CI_FULL: ${{ inputs.full }}
+          CI_PLAN: ${{ inputs.plan }}
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: python3 tool/ci.py group --group windows --plan "$CI_PLAN" --full "$CI_FULL" --needs "$CI_NEEDS"
 
   release-package:
     if: inputs.full
@@ -288,7 +486,7 @@ jobs:
 
   check-results:
     if: ${{ always() }}
-    needs: [core, linux, android-web, android-emulator, macos, ios, windows, release-package]
+    needs: [core-static, core-go, core-flutter, core, linux, android-web, android-emulator, macos, ios-watchdog, ios-build, ios-simulator, ios, windows-verify, windows-bundle, windows, release-package]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

@@ -43,8 +43,16 @@ Do not use workflow-level `paths` filters for this required workflow.
 
 `checks.yml` separates these independently runnable jobs:
 
-- `core`: schema/codegen/format/vet/analysis, SQL-store integration and
-  `make verify-coverage`, retaining all eight coverage floors.
+- `core-static`: schema/codegen/format/vet/analysis and watchdog contracts through
+  `make verify-checks`.
+- `core-go`: SQL-store integration and the complete race-enabled Go suite with
+  atomic coverage. PostgreSQL and Redis services remain on this runner.
+- `core-flutter`: both Flutter coverage suites and Chrome, sharing one backend
+  build on this runner.
+- `core`: require all three core shards, download their three coverage profiles
+  from this run/attempt and enforce all eight original floors with
+  `make coverage-report`. Missing profiles or below-floor results block the gate;
+  collecting coverage does not rerun tests.
 - `linux`: native bundle build and Sidecar smoke.
 - `android-web`: selected Android/Web release builds; these short builds share
   one runner to avoid an extra SDK setup for each target.
@@ -52,27 +60,38 @@ Do not use workflow-level `paths` filters for this required workflow.
 - `macos`: native lifecycle, signed sandbox handoff and bundle smoke. XCTest
   hosts run serially because the application enforces a single instance;
   parallel hosts can exit before connecting to XCTest. Other jobs remain parallel.
-- `ios`: unsigned release build and, when selected, bounded real simulator smoke
-  with the existing single retry and failure diagnostics.
-- `windows`: native Go vet/tests, SQL-store tests, both Flutter suites and bundle
-  smoke. When the authoritative plan also requires `core`, common metadata,
+- `ios-watchdog`, `ios-simulator`, `ios-build`: native watchdog contracts, bounded
+  real Simulator smoke and the unsigned release build run independently.
+  `ios` requires each selected shard, allowing only plan-authorized skips.
+- `windows-verify`, `windows-bundle`: native Go vet/tests, SQL-store tests and both
+  Flutter suites run separately from bundle build/smoke. `windows` requires both.
+  When the authoritative plan also requires `core`, common metadata,
   code generation, formatting and Dart analysis run there once. Windows-only
   plans retain those checks locally. Environment/doctor checks remain native.
 - `release-package`: final metadata, Dart publication dry-run, reproducible
   six-target CLI artifacts and native archive identity; release runs only. Its
   implementation is shared through `release-package.yml` by both tag paths.
 
-The former long Linux chain and combined macOS/iOS chain run independently.
-All selected jobs must pass before the reusable workflow succeeds. More parallel
-jobs can use more runner minutes even when wall time falls; keep the smaller
-Android/Web builds together and measure both waiting time and runner usage.
+Each shard has its own checkout and build outputs. The `core`, `ios` and `windows`
+group gates run even after a dependency fails. Both these gates and the final
+`check-results` independently reject missing, failed, cancelled or unexpectedly
+skipped shards. Source-equivalent release verification also requires every shard,
+not just the group gates.
+
+This graph adds eight jobs to a complete PR plan compared with the serial graph:
+five Linux jobs, two macOS jobs and one Windows job, including the group gates.
+It adds four Flutter setup/cache restores. Keep the smaller Android/Web builds
+together to bound that overhead. Shorter critical paths can still cost more
+runner time, and account concurrency limits can increase queueing. Measure wall
+time, queueing, retries and per-OS runner time before claiming a five-minute result.
 
 `make verify-coverage` runs the common static checks, race-enabled Go tests with
 an atomic coverage profile, SQL integration, both Flutter suites with coverage,
 and Chrome exactly once each. External-package public API tests are included in
 the complete Go test pass. It does not run `make verify` and then rerun tests with
 `make coverage`. Existing developer `make verify`, standalone `make coverage`
-and Windows PowerShell entrypoints remain available.
+and Windows PowerShell entrypoints remain available. CI runs the same Make
+components on separate runners; only the final coverage report is collected.
 
 Windows verification runs the complete Go suite once, including public API tests.
 `tool/windows.ps1 -Task verify` remains a complete standalone check; only CI's
@@ -80,8 +99,22 @@ explicit `-SharedChecksInCore` mode delegates common checks to the selected,
 required core job. No Windows tests or native build checks are delegated.
 `BRIDRA_WINDOWS_TIMINGS_PATH` opts into JSON-lines timing for checked Go/FVM/gofmt
 commands and the whole task, including failed commands. CI appends the timings to
-its step summary and uploads `windows-timings` evidence even on failure. Command
-and task totals overlap; do not sum them together as runner usage.
+its step summary and uploads `windows-verify-timings-ATTEMPT` and
+`windows-bundle-timings-ATTEMPT` even on failure. Command and task totals overlap;
+do not sum them together as runner usage.
+
+On ephemeral GitHub-hosted runners, `tool/ios_simulator_prepare.py` starts one
+existing available iPhone Simulator before SDK setup. Readiness is checked inside
+the initial smoke's existing retry boundary; a successful preparation is not
+transport acceptance. No device is created. One failed attempt may reset only
+that selected device before the single retry. An `always()` step terminates the
+owned preparation process group and shuts down a device booted/reset by this
+helper, including SDK setup failures. A borrowed, already-booted device is left
+running unless the retry resets it. Cleanup failures block the job. The helper
+rejects local/self-hosted runners and state paths outside `RUNNER_TEMP`; its unit
+tests mock native commands and never operate on the developer's Simulators.
+The host/path restriction uses GitHub's documented
+[`RUNNER_ENVIRONMENT` and `RUNNER_TEMP` variables](https://docs.github.com/en/actions/reference/workflows-and-actions/variables).
 
 The iOS watchdog starts its background attach query only after a Simulator launch
 is requested. Slow log queries cannot block the foreground deadline checks.
@@ -201,11 +234,10 @@ and publishes those same bytes without rebuilding. Owner authorization, OIDC,
 provenance/SBOM attestations and post-release public-registry/external-consumer
 acceptance remain required; see [RELEASING.md](RELEASING.md).
 
-This removes a second complete platform matrix when valid PR evidence exists;
-it does not make a five-minute PR or release a measured guarantee. Reaching that
-target needs a separate measured change to the platform execution/parallelism,
-while retaining tests and coverage. Queue time, cold SDK caches, reproducible
-packaging and environment approval can add time independently.
+This removes a second complete platform matrix when valid PR evidence exists.
+The parallel graph above targets shorter warm-cache PR waits, but a five-minute
+PR or release remains unmeasured until hosted comparisons pass. Queue time, cold
+SDK caches, reproducible packaging and environment approval add time independently.
 
 GitHub documents the [workflow run/attempt APIs](https://docs.github.com/en/rest/actions/workflow-runs),
 [job results for an attempt](https://docs.github.com/en/rest/actions/workflow-jobs#list-jobs-for-a-workflow-run-attempt)

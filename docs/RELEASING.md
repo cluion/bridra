@@ -220,9 +220,11 @@ git push origin "backend/v${BRIDRA_VERSION}"
 The GitHub workflow requires the exact tag SHA to be reachable from `main` and
 its version to match `VERSION`. It looks up the merged PR's latest successful
 complete Verify run and independently compares its tested Git tree with the tag.
-Every required platform/core/gate result, run attempt, repository/workflow and
-artifact digest must match. If evidence is absent or cannot be confirmed, it runs
-all shared cross-platform checks against the tagged SHA. It does not require a
+Every required platform/core shard and group/final gate result, run attempt,
+repository/workflow and artifact digest must match. Core still collects all three
+coverage profiles and enforces all eight floors. A passing group gate cannot
+substitute for a missing shard result. If evidence is absent or cannot be
+confirmed, it runs all shared cross-platform checks against the tagged SHA. It does not require a
 `main` push Verify run. A later merge to `main` does not change the approved source.
 See [CI.md](CI.md) for exact reuse and fallback conditions.
 

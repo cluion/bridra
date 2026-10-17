@@ -13,6 +13,11 @@ import subprocess
 SCOPES = ("core", "linux", "android", "web", "macos", "ios", "windows",
           "android_emulator", "ios_simulator")
 PLATFORMS = ("linux", "android", "web", "macos", "ios", "windows")
+GROUPS = {
+    "core": ("core-static", "core-go", "core-flutter"),
+    "ios": ("ios-watchdog", "ios-simulator", "ios-build"),
+    "windows": ("windows-verify", "windows-bundle"),
+}
 TARGETS = [(system, arch) for system in ("darwin", "linux", "windows")
            for arch in ("amd64", "arm64")]
 
@@ -152,7 +157,7 @@ def check_gate(scope, needs):
         raise ValueError(f"required checks did not succeed: {result}")
 
 
-def check_results(scope, full, needs):
+def job_requirements(scope, full):
     validate_plan(scope)
     expected = {
         "core": full or scope["core"],
@@ -164,12 +169,32 @@ def check_results(scope, full, needs):
         "windows": full or scope["windows"],
         "release-package": full,
     }
+    for group, jobs in GROUPS.items():
+        expected.update({job: expected[group] for job in jobs})
+    expected["ios-build"] = full or scope["ios"]
+    expected["ios-watchdog"] = expected["ios-simulator"] = full or scope["ios_simulator"]
+    return expected
+
+
+VERIFICATION_JOBS = tuple(job_requirements({key: False for key in SCOPES}, False))
+
+
+def check_required_results(expected, needs):
     if set(needs) != set(expected):
         raise ValueError("missing verification job result")
     for job, required in expected.items():
         result = needs[job].get("result")
         if result != ("success" if required else "skipped"):
             raise ValueError(f"unexpected verification job result: {job}={result}")
+
+
+def check_results(scope, full, needs):
+    check_required_results(job_requirements(scope, full), needs)
+
+
+def check_group(group, scope, full, needs):
+    expected = job_requirements(scope, full)
+    check_required_results({job: expected[job] for job in GROUPS[group]}, needs)
 
 
 def verify_artifacts(directory, version, commit):
@@ -237,6 +262,11 @@ def main():
     results.add_argument("--plan", required=True)
     results.add_argument("--full", required=True, choices=("true", "false"))
     results.add_argument("--needs", required=True)
+    group = commands.add_parser("group")
+    group.add_argument("--group", choices=tuple(GROUPS), required=True)
+    group.add_argument("--plan", required=True)
+    group.add_argument("--full", required=True, choices=("true", "false"))
+    group.add_argument("--needs", required=True)
     artifacts = commands.add_parser("artifacts")
     artifacts.add_argument("--directory", required=True)
     artifacts.add_argument("--version", required=True)
@@ -257,13 +287,16 @@ def main():
         elif args.command == "gate":
             check_gate(json.loads(args.plan), json.loads(args.needs))
             print("All applicable PR checks passed.")
-        elif args.command == "results":
+        elif args.command in ("results", "group"):
             scope = json.loads(args.plan)
             full = args.full == "true"
             # Tag callers intentionally omit a PR plan; full mode still requires every job.
             if full and scope == {}:
                 scope = {key: False for key in SCOPES}
-            check_results(scope, full, json.loads(args.needs))
+            if args.command == "group":
+                check_group(args.group, scope, full, json.loads(args.needs))
+            else:
+                check_results(scope, full, json.loads(args.needs))
             print("Every selected verification job succeeded.")
         elif args.command == "artifacts":
             verify_artifacts(args.directory, args.version, args.commit)

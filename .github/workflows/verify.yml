@@ -31,6 +31,7 @@ jobs:
         run: |
           python3 -m unittest discover -s tool -p ci_test.py -v
           python3 -m unittest discover -s tool -p release_verification_test.py -v
+          python3 -m unittest discover -s tool -p ios_simulator_prepare_test.py -v
       - name: Select checks from both sides of renamed paths
         id: plan
         env:

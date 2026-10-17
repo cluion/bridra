@@ -16,9 +16,9 @@ import ci
 
 
 WORKFLOW = ".github/workflows/verify.yml"
-REQUIRED_JOBS = ("changes", "checks / core", "checks / linux", "checks / android-web",
-                 "checks / android-emulator", "checks / macos", "checks / ios",
-                 "checks / windows", "checks / check-results", "ci-gate")
+REQUIRED_JOBS = (("changes",) + tuple("checks / " + job for job in ci.VERIFICATION_JOBS
+                                    if job != "release-package")
+                 + ("checks / check-results", "ci-gate"))
 MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 MAX_PROOF_BYTES = 64 * 1024
 
