@@ -28,6 +28,7 @@ class CheckPlanTests(unittest.TestCase):
 
     def test_platform_tools_select_their_platform(self):
         for path, platform in (("tool/windows.ps1", "windows"),
+                               ("tool/windows.test.ps1", "windows"),
                                ("tool/macos_smoke.sh", "macos"),
                                ("tool/ios_embedded_core_harness/main.swift", "ios"),
                                ("tool/gomobile/go.mod", "ios")):
@@ -265,6 +266,20 @@ class SDKEnvironmentTests(unittest.TestCase):
 
 
 class WorkflowWiringTests(unittest.TestCase):
+    def test_windows_common_checks_delegate_only_to_required_core_work(self):
+        path = Path(__file__).resolve().parent.parent / '.github/workflows/checks.yml'
+        windows = path.read_text().split('\n  windows:\n', 1)[1].split('\n  release-package:\n', 1)[0]
+        self.assertIn('BRIDRA_SHARED_CHECKS_IN_CORE: ${{ inputs.full || fromJSON(inputs.plan).core }}', windows)
+        self.assertIn('-SharedChecksInCore:($env:BRIDRA_SHARED_CHECKS_IN_CORE -eq "true")', windows)
+        scope = ci.plan(['lib/ui/window/window_controls.dart'])
+        needs = {key: {'result': 'success' if scope.get(key) else 'skipped'}
+                 for key in VerificationResultsTests.jobs}
+        ci.check_results(scope, False, needs)
+        for result in ('skipped', 'failure', 'cancelled'):
+            needs['core']['result'] = result
+            with self.assertRaises(ValueError):
+                ci.check_results(scope, False, needs)
+
     def test_reusable_gate_depends_on_every_verification_and_packaging_job(self):
         path = Path(__file__).resolve().parent.parent / '.github/workflows/checks.yml'
         workflow = path.read_text().split('\njobs:\n', 1)[1]

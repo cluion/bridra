@@ -13,11 +13,52 @@ param(
     )]
     [string]$Task = "run",
     [string]$Version,
-    [switch]$Final
+    [switch]$Final,
+    [switch]$SharedChecksInCore
 )
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
+
+function Write-CommandTiming {
+    param(
+        [string]$Kind,
+        [string]$Name,
+        [string[]]$Arguments,
+        [double]$Seconds,
+        [object]$ExitCode,
+        [bool]$Succeeded
+    )
+
+    if (-not $env:BRIDRA_WINDOWS_TIMINGS_PATH) {
+        return
+    }
+    $record = [ordered]@{
+        kind = $Kind
+        task = $Task
+        sharedChecksInCore = [bool]$SharedChecksInCore
+        command = $Name
+        arguments = @($Arguments)
+        directory = (Get-Location).Path
+        seconds = [Math]::Round($Seconds, 3)
+        exitCode = $ExitCode
+        success = $Succeeded
+    }
+    $path = $env:BRIDRA_WINDOWS_TIMINGS_PATH
+    if (-not [IO.Path]::IsPathRooted($path)) {
+        $path = Join-Path (Get-Location).Path $path
+    }
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path) | Out-Null
+    [IO.File]::AppendAllText($path, ($record | ConvertTo-Json -Compress) + "`n",
+        [Text.UTF8Encoding]::new($false))
+    $label = (@($Name) + $Arguments) -join " "
+    Write-Host ("[timing] {0}: {1:N3}s, success={2}" -f $label, $Seconds, $Succeeded)
+    if ($env:GITHUB_STEP_SUMMARY) {
+        $row = '| {0} | {1} | `{2}` | {3:N3} | {4} |' -f `
+            $Task, $Kind, $label, $Seconds, $Succeeded
+        Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $row
+    }
+}
 
 function Invoke-Checked {
     param(
@@ -27,9 +68,21 @@ function Invoke-Checked {
         [string[]]$Arguments
     )
 
-    & $FilePath @Arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "$FilePath failed with exit code $LASTEXITCODE"
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    $exitCode = $null
+    $succeeded = $false
+    try {
+        & $FilePath @Arguments
+        $exitCode = $LASTEXITCODE
+        if ($exitCode -ne 0) {
+            throw "$FilePath failed with exit code $exitCode"
+        }
+        $succeeded = $true
+    }
+    finally {
+        $timer.Stop()
+        Write-CommandTiming -Kind "command" -Name $FilePath -Arguments $Arguments `
+            -Seconds $timer.Elapsed.TotalSeconds -ExitCode $exitCode -Succeeded $succeeded
     }
 }
 
@@ -238,23 +291,25 @@ function Verify-Project {
     New-Item -ItemType Directory -Force `
         -Path (Split-Path -Parent $server) | Out-Null
 
-    Test-LicenseCopies
-    Invoke-ReleaseCommand -Action "check"
+    if (-not $SharedChecksInCore) {
+        Test-LicenseCopies
+        Invoke-ReleaseCommand -Action "check"
+    }
     Test-BridraEnvironment
-    Generate-Contract -Check
+    if (-not $SharedChecksInCore) {
+        Generate-Contract -Check
+    }
 
     Push-Location (Join-Path $ProjectRoot "backend")
     try {
-        $unformatted = & gofmt -l .
-        if ($LASTEXITCODE -ne 0) {
-            throw "gofmt failed with exit code $LASTEXITCODE"
-        }
-        if ($unformatted) {
-            throw "Go files need formatting:`n$($unformatted -join "`n")"
+        if (-not $SharedChecksInCore) {
+            $unformatted = Invoke-Checked -FilePath "gofmt" -Arguments @("-l", ".")
+            if ($unformatted) {
+                throw "Go files need formatting:`n$($unformatted -join "`n")"
+            }
         }
         Invoke-Checked -FilePath "go" -Arguments @("vet", "./...")
-        Invoke-Checked -FilePath "go" `
-            -Arguments @("test", "./framework", "-run", "^TestPublic")
+        # Public API tests are included in the complete native Go test pass.
         Invoke-Checked -FilePath "go" -Arguments @("test", "./...")
 
         Push-Location (Join-Path $ProjectRoot "backend/integration/sqljobstore")
@@ -283,16 +338,18 @@ function Verify-Project {
 
     Push-Location $ProjectRoot
     try {
-        Invoke-Checked -FilePath "fvm" -Arguments @(
-            "dart",
-            "format",
-            "--output=none",
-            "--set-exit-if-changed",
-            "lib",
-            "test",
-            "packages/bridra_flutter/lib",
-            "packages/bridra_flutter/test"
-        )
+        if (-not $SharedChecksInCore) {
+            Invoke-Checked -FilePath "fvm" -Arguments @(
+                "dart",
+                "format",
+                "--output=none",
+                "--set-exit-if-changed",
+                "lib",
+                "test",
+                "packages/bridra_flutter/lib",
+                "packages/bridra_flutter/test"
+            )
+        }
         $previousSidecar = $env:BRIDRA_SIDECAR_PATH
         $previousServer = $env:BRIDRA_SERVER_PATH
         try {
@@ -316,54 +373,69 @@ function Verify-Project {
             finally {
                 $env:BRIDRA_SIDECAR_PATH = $previousPackageSidecar
             }
-            Invoke-Checked -FilePath "fvm" `
-                -Arguments @("flutter", "analyze")
+            if (-not $SharedChecksInCore) {
+                Invoke-Checked -FilePath "fvm" `
+                    -Arguments @("flutter", "analyze")
+            }
         }
         finally {
             Pop-Location
         }
-        Invoke-Checked -FilePath "fvm" `
-            -Arguments @("flutter", "analyze")
+        if (-not $SharedChecksInCore) {
+            Invoke-Checked -FilePath "fvm" `
+                -Arguments @("flutter", "analyze")
+        }
     }
     finally {
         Pop-Location
     }
 }
 
-switch ($Task) {
-    "run" {
-        Push-Location $ProjectRoot
-        try {
-            Invoke-Checked -FilePath "fvm" `
-                -Arguments @("flutter", "run", "-d", "windows")
+$taskTimer = [Diagnostics.Stopwatch]::StartNew()
+$taskSucceeded = $false
+try {
+    switch ($Task) {
+        "run" {
+            Push-Location $ProjectRoot
+            try {
+                Invoke-Checked -FilePath "fvm" `
+                    -Arguments @("flutter", "run", "-d", "windows")
+            }
+            finally {
+                Pop-Location
+            }
         }
-        finally {
-            Pop-Location
+        "build" {
+            Build-WindowsBundle
+        }
+        "smoke" {
+            Build-WindowsBundle
+            Test-WindowsBundle
+        }
+        "verify" {
+            Verify-Project
+        }
+        "generate" {
+            Generate-Contract
+        }
+        "doctor" {
+            Test-BridraEnvironment
+        }
+        "release-prepare" {
+            Invoke-ReleaseCommand -Action "prepare"
+        }
+        "release-check" {
+            Invoke-ReleaseCommand -Action "check"
+        }
+        "cli-release" {
+            Build-CLIRelease
         }
     }
-    "build" {
-        Build-WindowsBundle
-    }
-    "smoke" {
-        Build-WindowsBundle
-        Test-WindowsBundle
-    }
-    "verify" {
-        Verify-Project
-    }
-    "generate" {
-        Generate-Contract
-    }
-    "doctor" {
-        Test-BridraEnvironment
-    }
-    "release-prepare" {
-        Invoke-ReleaseCommand -Action "prepare"
-    }
-    "release-check" {
-        Invoke-ReleaseCommand -Action "check"
-    }
-    "cli-release" {
-        Build-CLIRelease
-    }
+    $taskSucceeded = $true
+}
+finally {
+    $taskTimer.Stop()
+    $taskExitCode = if ($taskSucceeded) { 0 } else { 1 }
+    Write-CommandTiming -Kind "task" -Name $Task -Seconds $taskTimer.Elapsed.TotalSeconds `
+        -ExitCode $taskExitCode -Succeeded $taskSucceeded
 }

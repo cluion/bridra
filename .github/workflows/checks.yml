@@ -244,6 +244,8 @@ jobs:
     if: inputs.full || fromJSON(inputs.plan).windows
     runs-on: windows-2022
     timeout-minutes: 30
+    env:
+      BRIDRA_SHARED_CHECKS_IN_CORE: ${{ inputs.full || fromJSON(inputs.plan).core }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -258,10 +260,27 @@ jobs:
             backend/integration/sqljobstore/go.mod
       - name: Set up pinned Flutter
         uses: ./.github/actions/setup-flutter
+      - name: Test Windows verification contracts
+        run: .\tool\windows.test.ps1
       - name: Verify framework on Windows
-        run: .\tool\windows.ps1 -Task verify
+        env:
+          BRIDRA_WINDOWS_TIMINGS_PATH: ${{ runner.temp }}/bridra-windows-timings.jsonl
+        run: |
+          @("### Windows command timings", "", "| Task | Kind | Command | Seconds | Passed |", "| --- | --- | --- | ---: | --- |") |
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          .\tool\windows.ps1 -Task verify -SharedChecksInCore:($env:BRIDRA_SHARED_CHECKS_IN_CORE -eq "true")
       - name: Build and smoke-test Windows bundle
+        env:
+          BRIDRA_WINDOWS_TIMINGS_PATH: ${{ runner.temp }}/bridra-windows-timings.jsonl
         run: .\tool\windows.ps1 -Task smoke
+      - name: Upload Windows command timings
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-timings-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/bridra-windows-timings.jsonl
+          if-no-files-found: warn
+          retention-days: 7
 
   release-package:
     if: inputs.full

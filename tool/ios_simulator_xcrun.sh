@@ -16,12 +16,14 @@ esac
 # Flutter 3.44 starts the Simulator log reader asynchronously. A short launch
 # barrier prevents Runner from publishing its one-shot VM service URL before
 # that reader has connected. See flutter/flutter#181771.
-if [ "${1:-}" = "simctl" ] && [ "${2:-}" = "launch" ] && [ "$launch_delay_seconds" -gt 0 ]; then
+if [ "${1:-}" = "simctl" ] && [ "${2:-}" = "launch" ]; then
   if [ -n "$launch_marker" ]; then
     : >"$launch_marker"
   fi
-  echo "Delaying iOS Simulator launch by ${launch_delay_seconds}s for Flutter log reader readiness."
-  sleep "$launch_delay_seconds"
+  if [ "$launch_delay_seconds" -gt 0 ]; then
+    echo "Delaying iOS Simulator launch by ${launch_delay_seconds}s for Flutter log reader readiness."
+    sleep "$launch_delay_seconds"
+  fi
 fi
 
 exec "$real_xcrun" "$@"

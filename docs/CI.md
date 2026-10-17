@@ -52,7 +52,10 @@ Do not use workflow-level `paths` filters for this required workflow.
   parallel hosts can exit before connecting to XCTest. Other jobs remain parallel.
 - `ios`: unsigned release build and, when selected, bounded real simulator smoke
   with the existing single retry and failure diagnostics.
-- `windows`: Windows verification and native bundle smoke.
+- `windows`: native Go vet/tests, SQL-store tests, both Flutter suites and bundle
+  smoke. When the authoritative plan also requires `core`, common metadata,
+  code generation, formatting and Dart analysis run there once. Windows-only
+  plans retain those checks locally. Environment/doctor checks remain native.
 - `release-package`: final metadata, Dart publication dry-run, reproducible
   six-target CLI artifacts and native archive identity; release runs only.
 
@@ -67,6 +70,25 @@ and Chrome exactly once each. External-package public API tests are included in
 the complete Go test pass. It does not run `make verify` and then rerun tests with
 `make coverage`. Existing developer `make verify`, standalone `make coverage`
 and Windows PowerShell entrypoints remain available.
+
+Windows verification runs the complete Go suite once, including public API tests.
+`tool/windows.ps1 -Task verify` remains a complete standalone check; only CI's
+explicit `-SharedChecksInCore` mode delegates common checks to the selected,
+required core job. No Windows tests or native build checks are delegated.
+`BRIDRA_WINDOWS_TIMINGS_PATH` opts into JSON-lines timing for checked Go/FVM/gofmt
+commands and the whole task, including failed commands. CI appends the timings to
+its step summary and uploads `windows-timings` evidence even on failure. Command
+and task totals overlap; do not sum them together as runner usage.
+
+The iOS watchdog starts its background attach query only after a Simulator launch
+is requested. Slow log queries cannot block the foreground deadline checks.
+Total, no-output and post-VM-service attach deadlines use elapsed wall-clock
+timestamps, including work between sleeps. The launch barrier, first-RPC guard,
+all transport receipts and the existing retry remain required. Cleanup terminates
+owned probe/Flutter child processes; failure log collection has a bounded 10s
+budget (configurable with `BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_TIMEOUT_SECONDS`)
+and retains partial output when that budget expires. Starter projects
+use the same watchdog and cleanup behavior.
 
 ## SDK and dependency caches
 
@@ -160,7 +182,7 @@ actionlint
 make release-check
 ```
 
-Changes to the test entrypoint also need one real `make verify-coverage` run.
+Changes to the core test execution graph also need one real `make verify-coverage` run.
 Hosted cache hits, Windows/mobile runners, protected-environment behavior and
 elapsed time require GitHub verification after review/push. Local lint does not
 prove them. Do not publish a tag just to test this migration. Initial goals are
