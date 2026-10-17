@@ -12,6 +12,50 @@ import (
 	"testing"
 )
 
+func TestUpgrade022StarterRemainsOptional(t *testing.T) {
+	for _, platform := range []string{"android", "ios", "linux", "macos", "windows", "web"} {
+		for _, version := range []string{"0.21.0", "0.22.0"} {
+			t.Run(platform+"/"+version, func(t *testing.T) {
+				root := makeUpgradeProjectRoot(t, upgradeMetadataForPlatforms(t, version, 8, []string{platform}))
+				before := releaseTestSnapshot(t, root)
+				needsDependencies := version == "0.21.0"
+				command := testUpgradeCommand()
+				command.system.run = func(context.Context, upgradeProcess) error {
+					t.Fatal("read-only plan ran a process")
+					return nil
+				}
+				var stdout bytes.Buffer
+				err := command.run([]string{"--plan", "--to", "0.22.0", "--json", "--root", root}, &stdout, &bytes.Buffer{})
+				if needsDependencies && !errors.Is(err, errUpgradeRequired) || !needsDependencies && err != nil {
+					t.Fatalf("upgrade error = %v", err)
+				}
+				var report upgradeReport
+				if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+					t.Fatal(err)
+				}
+				if !report.PlanAvailable || !report.ReadOnly || report.ApplyAvailable != needsDependencies ||
+					report.Project.TemplateVersion != 8 || report.Target.TemplateVersion != 9 ||
+					report.Target.ProjectMetadataVersion != 3 || report.SchemaVersion != 5 ||
+					report.Project.ProtocolVersion != 3 || report.Target.TemplateProtocolVersion != 1 ||
+					!hasUpgradeDiagnostic(report, "template_update_available") {
+					t.Fatalf("report = %#v", report)
+				}
+				if needsDependencies {
+					if report.Status != upgradeMigrationRequired || len(report.Steps) != 1 ||
+						!report.Steps[0].Automatic || report.Steps[0].ID != "framework-0.21.0-to-0.22.0" {
+						t.Fatalf("dependency plan = %#v", report)
+					}
+				} else if report.Status != upgradeCurrent || len(report.Steps) != 0 {
+					t.Fatalf("current framework plan = %#v", report)
+				}
+				if releaseTestSnapshot(t, root) != before {
+					t.Fatal("read-only plan modified application files")
+				}
+			})
+		}
+	}
+}
+
 func TestUpgradeRequirementsFollowProjectPlatforms(t *testing.T) {
 	for _, test := range []struct {
 		name, from, to string

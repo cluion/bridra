@@ -3,7 +3,7 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
-## [Unreleased]
+## [0.22.0] - 2026-10-17
 
 ### Added
 
@@ -38,6 +38,22 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
   status display by waiting for request readiness and reconnect controls.
 - Await secondary-instance termination in the reference application entrypoint,
   matching the generated starter's existing desktop lifecycle.
+
+### Compatibility
+
+- Project Template advances from `8` to `9` to identify the modular starter and
+  desktop window adapters. Existing applications may keep Template `8` and their
+  own UI. The registered `0.21.0` to `0.22.0` dependency transition is automatic;
+  it does not rewrite application-owned UI, runners or the adopted template baseline.
+- Public Go/Dart runtime APIs, RPC payloads, protocol baseline `1`, project metadata
+  schema `3`, and CLI upgrade-report schema `5` remain unchanged. Earlier missing
+  mandatory adoption still blocks automatic upgrades.
+
+### Support
+
+- The latest `0.22.x` release receives best-effort security fixes until the next
+  minor line is published. The `0.21.x` line is no longer supported after this
+  release is published.
 
 ## [0.21.0] - 2026-10-13
 

@@ -186,6 +186,12 @@ var registeredUpgradeReleases = []upgradeRelease{
 		TemplateVersion:         8,
 		TemplateProtocolVersion: 1,
 	},
+	{
+		FrameworkVersion:        "0.22.0",
+		ProjectMetadataVersion:  3,
+		TemplateVersion:         9,
+		TemplateProtocolVersion: 1,
+	},
 }
 
 var registeredFrameworkMigrations = []frameworkMigration{
@@ -373,6 +379,13 @@ var registeredFrameworkMigrations = []frameworkMigration{
 		From:        "0.20.0",
 		To:          "0.21.0",
 		Description: "Update the Go and Flutter framework dependencies without rewriting application-owned files or changing the adopted template baseline or RPC protocol. Review CLI upgrade-report schema 5 separately if automation consumes its JSON output.",
+		Automatic:   true,
+	},
+	{
+		ID:          "framework-0.21.0-to-0.22.0",
+		From:        "0.21.0",
+		To:          "0.22.0",
+		Description: "Update the Go and Flutter framework dependencies. Template 9's modular starter and native window controls are optional application-owned improvements; preserve existing UI, runners and the adopted template baseline unless explicitly adopting them.",
 		Automatic:   true,
 	},
 }
