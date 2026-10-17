@@ -79,6 +79,10 @@ and its exact SDK/Dart paths are resolved through FVM rather than assuming a
 project symlink exists.
 
 Only SDK versions, Pub hosted/git packages and Gradle dependencies are cached.
+SDK keys identify complete host profiles, and each writer pre-caches the entire
+profile before saving. macOS/iOS therefore cannot save different SDK artifact
+sets under the same immutable key. See the optional
+[XCTest comparison](IOS_XCTEST_EXPERIMENT.md) for controlled cold/warm measurements.
 Credentials, OIDC files, repository checkouts, test outcomes and release candidates
 are not dependency-cache entries. Go's existing setup-action cache remains enabled.
 

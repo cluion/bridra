@@ -200,7 +200,9 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version-file: backend/go.mod
-          cache-dependency-path: backend/go.mod
+          cache-dependency-path: |
+            backend/go.mod
+            backend/integration/sqljobstore/go.mod
       - name: Set up pinned Flutter
         uses: ./.github/actions/setup-flutter
       - name: Test iOS Simulator watchdog

@@ -174,6 +174,7 @@ class SDKEnvironmentTests(unittest.TestCase):
         (self.root / ".fvmrc").write_text('{"flutter":"3.44.6"}')
         self.environment = {name: str(self.root / name) for name in
                             ("RUNNER_TOOL_CACHE", "GITHUB_ENV", "GITHUB_OUTPUT", "GITHUB_PATH")}
+        self.environment["RUNNER_OS"] = "Linux"
 
     def test_cache_paths_export_only_dependency_locations(self):
         ci.cache_environment(self.root, self.environment)
@@ -184,6 +185,25 @@ class SDKEnvironmentTests(unittest.TestCase):
         env = Path(self.environment["GITHUB_ENV"]).read_text()
         self.assertIn("FVM_CACHE_PATH=", env)
         self.assertIn("PUB_CACHE=", env)
+
+    def test_sdk_cache_profile_requires_all_artifacts_for_each_host(self):
+        for host, profile, flags in (
+                ("Linux", "linux-android-web", "--linux --android --web"),
+                ("macOS", "macos-ios", "--macos --ios"),
+                ("Windows", "windows", "--windows")):
+            with self.subTest(host=host):
+                self.environment["RUNNER_OS"] = host
+                Path(self.environment["GITHUB_OUTPUT"]).unlink(missing_ok=True)
+                ci.cache_environment(self.root, self.environment)
+                output = Path(self.environment["GITHUB_OUTPUT"]).read_text()
+                self.assertIn(f"profile={profile}\n", output)
+                self.assertIn(f"precache_flags={flags}\n", output)
+
+    def test_unknown_host_fails_before_exporting_a_cache_profile(self):
+        self.environment["RUNNER_OS"] = "unknown"
+        with self.assertRaises(KeyError):
+            ci.cache_environment(self.root, self.environment)
+        self.assertFalse(Path(self.environment["GITHUB_ENV"]).exists())
 
     def test_floating_or_injected_sdk_versions_fail_before_export(self):
         for version in ("stable", "3.44.6\nother=value", None):

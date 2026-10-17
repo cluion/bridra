@@ -1,0 +1,114 @@
+name: iOS XCTest experiment
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-xctest-experiment-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cold:
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'benchmark-ios'
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [flutter, xctest]
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      CACHE_NAMESPACE: ios-experiment-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.runner }}-
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Verify XCTest result and receipt contracts
+        run: python3 -m unittest discover -s tool -p ios_xctest_test.py -v
+      - uses: actions/setup-go@v7
+        id: go
+        with:
+          go-version-file: backend/go.mod
+          cache: false
+      - name: Locate controlled Go cache
+        id: go-cache
+        run: |
+          echo "GOCACHE=$RUNNER_TEMP/ios-experiment-go-build" >> "$GITHUB_ENV"
+          echo "GOMODCACHE=$RUNNER_TEMP/ios-experiment-go-modules" >> "$GITHUB_ENV"
+          echo "build=$RUNNER_TEMP/ios-experiment-go-build" >> "$GITHUB_OUTPUT"
+          echo "modules=$RUNNER_TEMP/ios-experiment-go-modules" >> "$GITHUB_OUTPUT"
+      - name: Restore isolated Go cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.go-cache.outputs.build }}
+            ${{ steps.go-cache.outputs.modules }}
+          key: ${{ env.CACHE_NAMESPACE }}go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('backend/go.mod', 'backend/go.sum') }}
+      - name: Set up complete pinned Flutter profile
+        uses: ./.github/actions/setup-flutter
+        with:
+          cache-namespace: ${{ env.CACHE_NAMESPACE }}
+      - name: Measure cold dependencies
+        run: python3 tool/ios_benchmark.py --runner '${{ matrix.runner }}' --phase cold
+      - name: Upload benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-cold-${{ matrix.runner }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/ios-experiment/cold/
+          if-no-files-found: error
+          retention-days: 7
+
+  warm:
+    needs: cold
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [flutter, xctest]
+    runs-on: macos-15
+    timeout-minutes: 35
+    env:
+      CACHE_NAMESPACE: ios-experiment-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.runner }}-
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        id: go
+        with:
+          go-version-file: backend/go.mod
+          cache: false
+      - name: Locate controlled Go cache
+        id: go-cache
+        run: |
+          echo "GOCACHE=$RUNNER_TEMP/ios-experiment-go-build" >> "$GITHUB_ENV"
+          echo "GOMODCACHE=$RUNNER_TEMP/ios-experiment-go-modules" >> "$GITHUB_ENV"
+          echo "build=$RUNNER_TEMP/ios-experiment-go-build" >> "$GITHUB_OUTPUT"
+          echo "modules=$RUNNER_TEMP/ios-experiment-go-modules" >> "$GITHUB_OUTPUT"
+      - name: Restore isolated Go cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.go-cache.outputs.build }}
+            ${{ steps.go-cache.outputs.modules }}
+          key: ${{ env.CACHE_NAMESPACE }}go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('backend/go.mod', 'backend/go.sum') }}
+          fail-on-cache-miss: true
+      - name: Set up complete pinned Flutter profile
+        uses: ./.github/actions/setup-flutter
+        with:
+          cache-namespace: ${{ env.CACHE_NAMESPACE }}
+          require-cache-hit: 'true'
+      - name: Measure warm dependencies and replay
+        run: python3 tool/ios_benchmark.py --runner '${{ matrix.runner }}' --phase warm --reset-replay
+      - name: Upload benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-warm-${{ matrix.runner }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/ios-experiment/warm/
+          if-no-files-found: error
+          retention-days: 7

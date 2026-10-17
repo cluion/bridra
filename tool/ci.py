@@ -84,6 +84,12 @@ def pinned_flutter(root):
 
 def cache_environment(root, environment):
     version = pinned_flutter(root)
+    profiles = {
+        "Linux": ("linux-android-web", "--linux --android --web"),
+        "macOS": ("macos-ios", "--macos --ios"),
+        "Windows": ("windows", "--windows"),
+    }
+    profile, flags = profiles[environment["RUNNER_OS"]]
     cache = Path(environment["RUNNER_TOOL_CACHE"])
     values = {"FVM_CACHE_PATH": (cache / "bridra-fvm").as_posix(),
               "PUB_CACHE": (cache / "bridra-pub").as_posix()}
@@ -92,6 +98,7 @@ def cache_environment(root, environment):
             output.write(f"{key}={value}\n")
     with open(environment["GITHUB_OUTPUT"], "a") as output:
         output.write(f'version={version}\nfvm={values["FVM_CACHE_PATH"]}\npub={values["PUB_CACHE"]}\n')
+        output.write(f'profile={profile}\nprecache_flags={flags}\n')
 
 
 def flutter_environment(root, environment):

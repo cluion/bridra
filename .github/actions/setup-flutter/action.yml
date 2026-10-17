@@ -1,6 +1,12 @@
 name: Set up pinned Flutter
 description: Install FVM and restore SDK and dependency caches without caching credentials
 inputs:
+  cache-namespace:
+    description: Optional isolated cache prefix for controlled cold/warm experiments
+    default: ''
+  require-cache-hit:
+    description: Fail controlled warm measurements when dependency caches were evicted
+    default: 'false'
   android:
     description: Restore Gradle dependencies for Android work
     default: 'false'
@@ -19,7 +25,8 @@ runs:
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ steps.paths.outputs.fvm }}/versions
-        key: flutter-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}
+        key: ${{ inputs.cache-namespace }}flutter-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-${{ steps.paths.outputs.profile }}
+        fail-on-cache-miss: ${{ inputs.require-cache-hit }}
 
     - name: Restore Pub dependencies
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -28,9 +35,10 @@ runs:
           ${{ steps.paths.outputs.pub }}/hosted
           ${{ steps.paths.outputs.pub }}/hosted-hashes
           ${{ steps.paths.outputs.pub }}/git
-        key: pub-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-${{ hashFiles('pubspec.lock', 'packages/bridra_flutter/pubspec.yaml') }}
+        key: ${{ inputs.cache-namespace }}pub-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-${{ hashFiles('pubspec.lock', 'packages/bridra_flutter/pubspec.yaml') }}
         restore-keys: |
-          pub-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-
+          ${{ inputs.cache-namespace }}pub-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-
+        fail-on-cache-miss: ${{ inputs.require-cache-hit }}
 
     - name: Restore Gradle dependencies
       if: inputs.android == 'true'
@@ -70,3 +78,11 @@ runs:
         bridra_python=python3
         if [[ "$RUNNER_OS" == "Windows" ]]; then bridra_python=python; fi
         "$bridra_python" tool/ci.py flutter-env
+
+    - name: Complete the SDK cache profile
+      shell: bash
+      env:
+        BRIDRA_ARTIFACT_FLAGS: ${{ steps.paths.outputs.precache_flags }}
+      run: |
+        read -r -a artifact_flags <<< "$BRIDRA_ARTIFACT_FLAGS"
+        fvm flutter precache "${artifact_flags[@]}"
