@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.22.0 - 2026-10-17
+
+- Align package metadata with Bridra 0.22.0 and optional Project Template `9`.
+  Public Dart runtime APIs and RPC payloads are unchanged; the new starter and
+  desktop window controls belong to generated applications, not this package.
+- Existing application UI, native runners, protocol and adopted template baseline
+  are preserved when updating dependencies. See the framework upgrade guide for
+  optional starter adoption.
+
 ## 0.21.0 - 2026-10-13
 
 - Align package metadata with Bridra 0.21.0. The public Dart runtime API and RPC
