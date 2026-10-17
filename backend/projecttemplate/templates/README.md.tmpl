@@ -34,6 +34,19 @@ follows device changes; explicit appearance and sidebar choices last for the
 current process.
 Add application-owned persistence or routing when needed.
 
+{{if or (hasPlatform "windows") (hasPlatform "linux")}}Windows/Linux use the same toolbar for minimize, maximize/restore and close,
+without a separate native title row. Drag the product/page title area to move the
+window, or double-click it to maximize/restore. Resize edges and keyboard-focusable
+window buttons remain available. The application-owned adapter lives in
+`lib/ui/window/desktop_window.dart` and uses `window_manager`; its initialization
+is called from `main.dart`. The minimum native window size is 320 by 240 logical
+pixels.
+
+{{end}}{{if hasPlatform "windows"}}Flutter's Windows native plugins require symbolic-link support. Enable Windows
+Developer Mode, or use an elevated development session, before resolving and
+building native plugin dependencies.
+
+{{end}}
 Copy confirmations appear as a floating toast below the toolbar and dismiss
 automatically after three seconds. Feature views can use
 `AppToastHost.show(context, message)` for the same nonblocking feedback; repeated

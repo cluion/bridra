@@ -2,6 +2,7 @@ import 'package:bridra_flutter/bridra_flutter.dart';
 import 'package:flutter/material.dart';
 
 import 'bridra_app.dart';
+import 'ui/window/desktop_window.dart';
 
 Future<void> main([List<String> arguments = const []]) async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,7 +17,8 @@ Future<void> main([List<String> arguments = const []]) async {
     }
     instance.activations.listen(_handleActivation);
   }
-  runApp(const BridraApp());
+  final desktopWindowControls = await initializeDesktopWindow();
+  runApp(BridraApp(desktopWindowControls: desktopWindowControls));
 }
 
 void _handleActivation(DesktopActivation activation) {

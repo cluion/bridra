@@ -41,6 +41,7 @@ lib/ui/layout/window_toolbar.dart
 lib/ui/theme/app_theme.dart
 lib/ui/widgets/app_toast.dart
 lib/ui/widgets/section.dart
+lib/ui/window/desktop_window.dart
 macos/Runner/MainFlutterWindow.swift
 macos/RunnerTests/RunnerTests.swift
 pubspec.yaml
@@ -48,6 +49,7 @@ schema/bridra.baseline.json
 schema/bridra.json
 test/app_theme_test.dart
 test/app_toast_test.dart
+test/desktop_window_test.dart
 test/support/fake_backend.dart
 test/widget_test.dart
 test/workspace_view_model_test.dart

@@ -34,6 +34,7 @@ class AppShell extends StatefulWidget {
     required this.sidebarCollapsed,
     required this.onSidebarCollapsedChanged,
     required this.child,
+    this.desktopWindowControls = false,
   });
 
   final String productName;
@@ -44,6 +45,7 @@ class AppShell extends StatefulWidget {
   final bool? sidebarCollapsed;
   final ValueChanged<bool> onSidebarCollapsedChanged;
   final Widget child;
+  final bool desktopWindowControls;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -102,6 +104,7 @@ class _AppShellState extends State<AppShell> {
                 child: Column(
                   children: [
                     WindowToolbar(
+                      desktopWindowControls: widget.desktopWindowControls,
                       productName: widget.productName,
                       pageTitle: widget.destination.label,
                       onBack: widget.onBack == null

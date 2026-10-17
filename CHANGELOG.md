@@ -7,6 +7,9 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 
 ### Added
 
+- An application-owned Windows/Linux title bar with keyboard-accessible window
+  controls, title drag and double-click regions, resize handles and native state
+  updates. Generated projects select its desktop dependency by platform.
 - An optional modular Flutter starter with application composition, shared
   theme/layout, and feature views backed by observable presentation state.
   Workspace, Runtime, Guide and Settings support adaptive, collapsible sidebar/bar navigation,

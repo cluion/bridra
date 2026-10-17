@@ -3,6 +3,7 @@ package projecttemplate
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -690,6 +691,7 @@ func TestStarterUIMatchesReferenceApplication(t *testing.T) {
 		"lib/ui/theme/app_theme.dart",
 		"lib/ui/layout/app_shell.dart",
 		"lib/ui/layout/window_toolbar.dart",
+		"lib/ui/window/desktop_window.dart",
 		"lib/ui/widgets/section.dart",
 		"lib/ui/widgets/app_toast.dart",
 		"lib/features/workspace/workspace_view_model.dart",
@@ -725,6 +727,30 @@ func TestStarterUIMatchesReferenceApplication(t *testing.T) {
 		if string(actual) != want {
 			t.Errorf("generated %s drifted from reference UI", relative)
 		}
+	}
+}
+
+func TestRenderSelectsDesktopWindowControlsByPlatform(t *testing.T) {
+	for _, platform := range []string{"windows", "linux", "macos", "android", "ios", "web"} {
+		t.Run(platform, func(t *testing.T) {
+			root := t.TempDir()
+			config := testConfig(t)
+			config.Platforms = []string{platform}
+			if err := Render(root, config); err != nil {
+				t.Fatal(err)
+			}
+			wantControls := platform == "windows" || platform == "linux"
+			for _, relative := range []string{"pubspec.yaml", "lib/ui/window/desktop_window.dart"} {
+				contents := readProjectTemplateTestFile(t, filepath.Join(root, relative))
+				if strings.Contains(string(contents), "window_manager") != wantControls {
+					t.Errorf("%s desktop plugin inclusion does not match %s", relative, platform)
+				}
+			}
+			_, err := os.Stat(filepath.Join(root, "test/desktop_window_test.dart"))
+			if wantControls && err != nil || !wantControls && !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("desktop window regression selection for %s: %v", platform, err)
+			}
+		})
 	}
 }
 

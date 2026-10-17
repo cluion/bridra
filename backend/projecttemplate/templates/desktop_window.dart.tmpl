@@ -1,0 +1,206 @@
+{{if or (hasPlatform "windows") (hasPlatform "linux")}}import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:window_manager/window_manager.dart';
+
+bool get supportsCustomWindowChrome =>
+    !kIsWeb &&
+    (defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.linux);
+
+Future<bool> initializeDesktopWindow() async {
+  if (!supportsCustomWindowChrome) return false;
+  await windowManager.ensureInitialized();
+  await windowManager.setMinimumSize(const Size(320, 240));
+  await windowManager.setTitleBarStyle(
+    TitleBarStyle.hidden,
+    windowButtonVisibility: false,
+  );
+  return true;
+}
+
+class DesktopWindowFrame extends StatelessWidget {
+  const DesktopWindowFrame({
+    super.key,
+    required this.enabled,
+    required this.child,
+  });
+
+  final bool enabled;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => enabled && supportsCustomWindowChrome
+      ? VirtualWindowFrame(child: child)
+      : child;
+}
+
+class WindowDragRegion extends StatelessWidget {
+  const WindowDragRegion({
+    super.key,
+    required this.enabled,
+    required this.child,
+  });
+
+  final bool enabled;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => enabled && supportsCustomWindowChrome
+      ? DragToMoveArea(child: child)
+      : child;
+}
+
+class DesktopWindowButtons extends StatefulWidget {
+  const DesktopWindowButtons({super.key, required this.buttonSize});
+
+  final double buttonSize;
+
+  @override
+  State<DesktopWindowButtons> createState() => _DesktopWindowButtonsState();
+}
+
+class _DesktopWindowButtonsState extends State<DesktopWindowButtons>
+    with WindowListener {
+  var _maximized = false;
+  var _fullScreen = false;
+  var _revision = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    windowManager.addListener(this);
+    unawaited(_refresh());
+  }
+
+  Future<void> _refresh() async {
+    final revision = ++_revision;
+    final state = await Future.wait([
+      windowManager.isMaximized(),
+      windowManager.isFullScreen(),
+    ]);
+    if (!mounted || revision != _revision) return;
+    setState(() {
+      _maximized = state[0];
+      _fullScreen = state[1];
+    });
+  }
+
+  Future<void> _toggleMaximized() async {
+    if (await windowManager.isMaximized()) {
+      await windowManager.unmaximize();
+    } else {
+      await windowManager.maximize();
+    }
+    await _refresh();
+  }
+
+  @override
+  void dispose() {
+    windowManager.removeListener(this);
+    super.dispose();
+  }
+
+  @override
+  void onWindowMaximize() => unawaited(_refresh());
+
+  @override
+  void onWindowUnmaximize() => unawaited(_refresh());
+
+  @override
+  void onWindowRestore() => unawaited(_refresh());
+
+  @override
+  void onWindowEnterFullScreen() => unawaited(_refresh());
+
+  @override
+  void onWindowLeaveFullScreen() => unawaited(_refresh());
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    Widget button(
+      String key,
+      String label,
+      IconData icon,
+      VoidCallback? action,
+    ) => IconButton(
+      key: Key(key),
+      tooltip: label,
+      onPressed: action,
+      padding: EdgeInsets.zero,
+      style: IconButton.styleFrom(
+        minimumSize: Size(widget.buttonSize, 44),
+        maximumSize: Size(widget.buttonSize, 44),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        hoverColor: key == 'window-close'
+            ? colors.error.withValues(alpha: 0.14)
+            : colors.onSurface.withValues(alpha: 0.08),
+      ),
+      icon: Icon(icon, size: 18, semanticLabel: label),
+    );
+    return Semantics(
+      container: true,
+      label: 'Window controls',
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          button(
+            'window-minimize',
+            'Minimize window',
+            Icons.remove_rounded,
+            () => unawaited(windowManager.minimize()),
+          ),
+          button(
+            'window-maximize',
+            _maximized ? 'Restore window' : 'Maximize window',
+            _maximized ? Icons.filter_none_rounded : Icons.crop_square_rounded,
+            _fullScreen ? null : () => unawaited(_toggleMaximized()),
+          ),
+          button(
+            'window-close',
+            'Close window',
+            Icons.close_rounded,
+            () => unawaited(windowManager.close()),
+          ),
+        ],
+      ),
+    );
+  }
+}
+{{else}}import 'package:flutter/widgets.dart';
+
+bool get supportsCustomWindowChrome => false;
+
+Future<bool> initializeDesktopWindow() async => false;
+
+class DesktopWindowFrame extends StatelessWidget {
+  const DesktopWindowFrame({super.key, required this.enabled, required this.child});
+
+  final bool enabled;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => child;
+}
+
+class WindowDragRegion extends StatelessWidget {
+  const WindowDragRegion({super.key, required this.enabled, required this.child});
+
+  final bool enabled;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => child;
+}
+
+class DesktopWindowButtons extends StatelessWidget {
+  const DesktopWindowButtons({super.key, required this.buttonSize});
+
+  final double buttonSize;
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
+}
+{{end}}

@@ -104,7 +104,7 @@ func TestCreateBuildsAndAtomicallyPublishesProject(t *testing.T) {
 		t.Fatalf("published backend: %v", err)
 	}
 	for relative, want := range map[string]string{
-		"lib/main.dart":         "runApp(const StarterApp())",
+		"lib/main.dart":         "runApp(StarterApp(",
 		"test/widget_test.dart": "StarterApp(connector:",
 	} {
 		contents, err := os.ReadFile(filepath.Join(destination, filepath.FromSlash(relative)))

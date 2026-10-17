@@ -12,6 +12,7 @@ UI_FILES = {
     "ui/theme/app_theme.dart": "app_theme.dart.tmpl",
     "ui/layout/app_shell.dart": "app_shell.dart.tmpl",
     "ui/layout/window_toolbar.dart": "window_toolbar.dart.tmpl",
+    "ui/window/desktop_window.dart": "desktop_window.dart.tmpl",
     "ui/widgets/section.dart": "section.dart.tmpl",
     "ui/widgets/app_toast.dart": "app_toast.dart.tmpl",
     "features/workspace/workspace_view_model.dart": "workspace_view_model.dart.tmpl",
@@ -26,8 +27,45 @@ TEST_FILES = {
     "test/workspace_view_model_test.dart": "workspace_view_model_test.dart.tmpl",
     "test/app_theme_test.dart": "app_theme_test.dart.tmpl",
     "test/app_toast_test.dart": "app_toast_test.dart.tmpl",
+    "test/desktop_window_test.dart": "desktop_window_test.dart.tmpl",
     "test/support/fake_backend.dart": "fake_backend.dart.tmpl",
 }
+
+DESKTOP_WINDOW_STUB = """import 'package:flutter/widgets.dart';
+
+bool get supportsCustomWindowChrome => false;
+
+Future<bool> initializeDesktopWindow() async => false;
+
+class DesktopWindowFrame extends StatelessWidget {
+  const DesktopWindowFrame({super.key, required this.enabled, required this.child});
+
+  final bool enabled;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => child;
+}
+
+class WindowDragRegion extends StatelessWidget {
+  const WindowDragRegion({super.key, required this.enabled, required this.child});
+
+  final bool enabled;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => child;
+}
+
+class DesktopWindowButtons extends StatelessWidget {
+  const DesktopWindowButtons({super.key, required this.buttonSize});
+
+  final double buttonSize;
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
+}
+"""
 
 
 def runtime_import(source):
@@ -46,6 +84,12 @@ def ui_template(relative):
             raise ValueError("Update the app configuration mappings after changing defaults")
         source = source.replace(product, "this.productName = {{dartString .DisplayName}}")
         source = source.replace(platforms, "'One interface · {{.PlatformSummary}}'")
+    if relative == "ui/window/desktop_window.dart":
+        # Non-desktop consumers keep the same UI interface without a desktop plugin.
+        source = (
+            '{{if or (hasPlatform "windows") (hasPlatform "linux")}}'
+            + source + "{{else}}" + DESKTOP_WINDOW_STUB + "{{end}}"
+        )
     return source
 
 
