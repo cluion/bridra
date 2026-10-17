@@ -303,10 +303,12 @@ macos-build: macos-check
 
 macos-native-test: macos-check
 	$(FLUTTER) build macos --debug --config-only
+	# The application is single-instance; parallel XCTest hosts can exit as secondaries.
 	xcodebuild test \
 		-workspace macos/Runner.xcworkspace \
 		-scheme Runner \
 		-configuration Debug \
+		-parallel-testing-enabled NO \
 		-destination 'platform=macOS'
 
 macos-sandbox-smoke: macos-check

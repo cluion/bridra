@@ -47,7 +47,9 @@ Do not use workflow-level `paths` filters for this required workflow.
 - `android-web`: selected Android/Web release builds; these short builds share
   one runner to avoid an extra SDK setup for each target.
 - `android-emulator`: real HTTP recovery, streaming and resumable transfers.
-- `macos`: native lifecycle, signed sandbox handoff and bundle smoke.
+- `macos`: native lifecycle, signed sandbox handoff and bundle smoke. XCTest
+  hosts run serially because the application enforces a single instance;
+  parallel hosts can exit before connecting to XCTest. Other jobs remain parallel.
 - `ios`: unsigned release build and, when selected, bounded real simulator smoke
   with the existing single retry and failure diagnostics.
 - `windows`: Windows verification and native bundle smoke.
