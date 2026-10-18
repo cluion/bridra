@@ -411,6 +411,15 @@ class WorkflowWiringTests(unittest.TestCase):
         source = (Path(__file__).resolve().parent / 'windows.ps1').read_text()
         self.assertEqual(source.count('@("test", "./...")'), 2)
 
+    def test_windows_verify_owns_its_complete_compiler_cache_profile(self):
+        verify = self.job('windows-verify')
+        bundle = self.job('windows-bundle')
+        self.assertIn('            tool/windows.ps1\n', verify)
+        self.assertNotIn('            tool/windows.ps1\n', bundle)
+        for dependency in ('backend/go.mod', 'backend/integration/sqljobstore/go.mod'):
+            self.assertIn(dependency, verify)
+            self.assertIn(dependency, bundle)
+
     def test_windows_common_checks_delegate_only_to_required_core_work(self):
         windows = self.job('windows-verify')
         self.assertIn('BRIDRA_SHARED_CHECKS_IN_CORE: ${{ inputs.full || fromJSON(inputs.plan).core }}', windows)

@@ -255,6 +255,7 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 	}
 	for _, target := range []string{"darwin", "linux", "windows"} {
 		t.Run("sidecar-"+target, func(t *testing.T) {
+			t.Parallel()
 			command := exec.Command("go", "test", "-exec=true", "./cmd/sidecar")
 			command.Dir = filepath.Join(root, "backend")
 			command.Env = append(
@@ -669,6 +670,7 @@ func TestRenderedFlutterConsumerCompilesOutsideRepository(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"Starter App", `工作台 "Pro" $HOME`} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			root := t.TempDir()
 			config := testConfig(t)
 			config.DisplayName = name

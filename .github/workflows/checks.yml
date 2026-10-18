@@ -418,6 +418,7 @@ jobs:
           cache-dependency-path: |
             backend/go.mod
             backend/integration/sqljobstore/go.mod
+            tool/windows.ps1
       - name: Set up pinned Flutter
         uses: ./.github/actions/setup-flutter
       - name: Test Windows verification contracts

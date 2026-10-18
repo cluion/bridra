@@ -190,6 +190,15 @@ sets under the same immutable key. See the optional
 Credentials, OIDC files, repository checkouts, test outcomes and release candidates
 are not dependency-cache entries. Go's existing setup-action cache remains enabled.
 
+Windows verification includes `tool/windows.ps1` in its Go cache fingerprint,
+separating its complete generated-consumer/cross-compile profile from the bundle
+job's smaller compilation workload. The first run for a new profile is cold;
+later verification restores the cache written by that same workload rather than
+an immutable entry first written by the bundle job. Verification still executes
+every original command. Independent generated-consumer name/target subtests run
+in parallel, with separate scratch projects or read-only source and Go's normal
+compiler-cache coordination; no test case or target is filtered out.
+
 PR merge-ref caches cannot seed a later main/tag run. The existing weekly/manual
 Runtime Stress workflow therefore has a default-branch-only `cache-warm` matrix
 for Linux/macOS/Windows. It warms SDK platform artifacts, Pub resolution and the
