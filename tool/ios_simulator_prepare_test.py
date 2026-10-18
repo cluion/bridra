@@ -480,6 +480,15 @@ class PreparationTests(unittest.TestCase):
         with patch.object(prepare.os, "killpg", side_effect=ProcessLookupError):
             self.assertTrue(prepare.wait_group(123, 5))
 
+    def test_permission_error_waits_for_confirmed_disappearance_without_claiming_success(self):
+        with patch.object(prepare.os, "killpg", side_effect=[PermissionError, ProcessLookupError]), \
+                patch.object(prepare.time, "sleep") as sleep:
+            self.assertTrue(prepare.wait_group(123, 5))
+        sleep.assert_called_once_with(0.1)
+        with patch.object(prepare.os, "killpg", side_effect=PermissionError), \
+                patch.object(prepare.time, "monotonic", side_effect=[0, 5]):
+            self.assertFalse(prepare.wait_group(123, 5))
+
 
 @unittest.skipUnless(sys.platform == "darwin", "hosted macOS process-lifecycle contract")
 class MockNativeCLIContracts(unittest.TestCase):

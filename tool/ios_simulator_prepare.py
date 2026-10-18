@@ -136,6 +136,10 @@ def wait_group(pid, seconds):
             os.killpg(pid, 0)
         except ProcessLookupError:
             return True
+        except PermissionError:
+            # A group can briefly become unqueryable during hosted teardown.
+            # Keep waiting; only ESRCH proves it is gone, never EPERM.
+            pass
         if time.monotonic() >= until:
             return False
         time.sleep(0.1)
