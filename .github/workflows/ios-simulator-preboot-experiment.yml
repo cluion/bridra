@@ -93,13 +93,13 @@ jobs:
         continue-on-error: true
         timeout-minutes: 12
         env:
-          DEVICE: ${{ steps.early.outputs.device || steps.deferred.outputs.device }}
           BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR: ${{ runner.temp }}/bridra-ios-simulator-diagnostics/initial
         run: |
           TIMEFORMAT='Simulator readiness seconds: %3R'
           time python3 tool/ios_simulator_prepare.py ready --state "$RUNNER_TEMP/bridra-ios-preparation/state.json"
+          bridra_simulator_device="$(python3 tool/ios_simulator_prepare.py device --state "$RUNNER_TEMP/bridra-ios-preparation/state.json")"
           TIMEFORMAT='Simulator smoke seconds: %3R'
-          time make ios-simulator-smoke DEVICE="$DEVICE"
+          time make ios-simulator-smoke DEVICE="$bridra_simulator_device"
       - name: Reset iOS Simulator before one retry
         if: steps.ios_simulator_smoke.outcome == 'failure'
         run: python3 tool/ios_simulator_prepare.py reset --state "$RUNNER_TEMP/bridra-ios-preparation/state.json"
@@ -108,11 +108,13 @@ jobs:
         if: steps.ios_simulator_smoke.outcome == 'failure'
         timeout-minutes: 12
         env:
-          DEVICE: ${{ steps.early.outputs.device || steps.deferred.outputs.device }}
           BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR: ${{ runner.temp }}/bridra-ios-simulator-diagnostics/retry
         run: |
+          TIMEFORMAT='Simulator retry readiness seconds: %3R'
+          time python3 tool/ios_simulator_prepare.py ready --state "$RUNNER_TEMP/bridra-ios-preparation/state.json"
+          bridra_simulator_device="$(python3 tool/ios_simulator_prepare.py device --state "$RUNNER_TEMP/bridra-ios-preparation/state.json")"
           TIMEFORMAT='Simulator retry seconds: %3R'
-          time make ios-simulator-smoke DEVICE="$DEVICE"
+          time make ios-simulator-smoke DEVICE="$bridra_simulator_device"
       - name: Stop the preparation worker and owned Simulator
         if: always()
         run: python3 tool/ios_simulator_prepare.py finish --state "$RUNNER_TEMP/bridra-ios-preparation/state.json"

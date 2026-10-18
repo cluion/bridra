@@ -350,7 +350,8 @@ jobs:
           BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR: ${{ runner.temp }}/bridra-ios-simulator-diagnostics/initial
         run: |
           python3 tool/ios_simulator_prepare.py ready --state "$RUNNER_TEMP/bridra-ios-preparation/state.json"
-          make ios-simulator-smoke DEVICE="${{ steps.simulator.outputs.device }}"
+          bridra_simulator_device="$(python3 tool/ios_simulator_prepare.py device --state "$RUNNER_TEMP/bridra-ios-preparation/state.json")"
+          make ios-simulator-smoke DEVICE="$bridra_simulator_device"
       - name: Reset iOS Simulator before one retry
         if: steps.ios_simulator_smoke.outcome == 'failure'
         run: python3 tool/ios_simulator_prepare.py reset --state "$RUNNER_TEMP/bridra-ios-preparation/state.json"
@@ -360,7 +361,10 @@ jobs:
         timeout-minutes: 12
         env:
           BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR: ${{ runner.temp }}/bridra-ios-simulator-diagnostics/retry
-        run: make ios-simulator-smoke DEVICE="${{ steps.simulator.outputs.device }}"
+        run: |
+          python3 tool/ios_simulator_prepare.py ready --state "$RUNNER_TEMP/bridra-ios-preparation/state.json"
+          bridra_simulator_device="$(python3 tool/ios_simulator_prepare.py device --state "$RUNNER_TEMP/bridra-ios-preparation/state.json")"
+          make ios-simulator-smoke DEVICE="$bridra_simulator_device"
       - name: Stop the preparation worker and owned Simulator
         if: always()
         run: python3 tool/ios_simulator_prepare.py finish --state "$RUNNER_TEMP/bridra-ios-preparation/state.json"

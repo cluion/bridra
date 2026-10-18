@@ -103,16 +103,34 @@ its step summary and uploads `windows-verify-timings-ATTEMPT` and
 `windows-bundle-timings-ATTEMPT` even on failure. Command and task totals overlap;
 do not sum them together as runner usage.
 
-On ephemeral GitHub-hosted runners, `tool/ios_simulator_prepare.py` starts one
-existing available iPhone Simulator before SDK setup. Readiness is checked inside
-the initial smoke's existing retry boundary; a successful preparation is not
-transport acceptance. No device is created. One failed attempt may reset only
-that selected device before the single retry. An `always()` step terminates the
-owned preparation process group and shuts down a device booted/reset by this
+On ephemeral GitHub-hosted runners, `tool/ios_simulator_prepare.py` optionally
+starts one existing available iPhone Simulator before SDK setup. Its initial
+discovery probe has a 20-second limit. Only that optional probe's timeout defers
+selection to smoke; unexpected discovery errors still fail. Strict discovery
+(120 seconds), boot/readiness and the complete transport assertions run within
+the existing twelve-minute smoke boundary, including on the single retry.
+
+Readiness joins the background boot worker within a bounded 120-second wait,
+checks that its result matches the selected UUID and worker PID, and requires
+its owned process group to stop before any fallback boot. A successful background
+boot uses `bootstatus` without `-b`; a completed failed boot may use a serial
+`bootstatus -b` fallback. Readiness itself retains its 180-second command limit.
+A borrowed, already-booted device is checked without requesting another boot.
+No preparation result replaces the real transport assertions.
+
+Both attempts read the validated selection from state after readiness, so a
+deferred selection cannot leave a stale or empty `DEVICE`. No device is created.
+One failed attempt may reset only that selected device before the single retry.
+If discovery failed before selection, reset erases nothing and retry performs
+strict discovery again. Reset claims cleanup ownership before mutating a device,
+including when erase later fails. An `always()` step terminates the owned
+preparation process group and shuts down a device booted/reset by this
 helper, including SDK setup failures. A borrowed, already-booted device is left
-running unless the retry resets it. Cleanup failures block the job. The helper
-rejects local/self-hosted runners and state paths outside `RUNNER_TEMP`; its unit
-tests mock native commands and never operate on the developer's Simulators.
+running unless the retry resets it. A live group whose ownership cannot be
+verified blocks readiness/reset without signaling unrelated processes. Cleanup
+failures block the job. The helper rejects local/self-hosted runners and state
+paths outside `RUNNER_TEMP`. Tests use mocked native commands, including isolated
+fake `xcrun` processes, and never operate on the developer's Simulators.
 The host/path restriction uses GitHub's documented
 [`RUNNER_ENVIRONMENT` and `RUNNER_TEMP` variables](https://docs.github.com/en/actions/reference/workflows-and-actions/variables).
 

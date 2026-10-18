@@ -33,20 +33,35 @@ Simulator. No claim about cold dependency performance follows from this trial.
 Every sample executes the original `make ios-simulator-smoke` HTTP, streaming,
 download and resumable upload flow. The original assertions and all ten backend
 receipts, launch/attach/first-RPC guards and elapsed-time watchdogs remain in
-force. Readiness stays inside the initial twelve-minute smoke boundary. Failure
-permits exactly one targeted reset and one twelve-minute retry. Reset and cleanup
-use the existing hosted-only ownership helper; no device is created and no
-global erase or shutdown is performed. Cleanup runs even after setup failure.
+force. Strict discovery and readiness stay inside each twelve-minute smoke
+boundary. Failure permits exactly one targeted reset and one twelve-minute retry.
+Reset and cleanup use the existing hosted-only ownership helper; no device is
+created and no global erase or shutdown is performed. A failed discovery before selection erases
+nothing; retry discovers a device strictly. Cleanup runs even after setup failure.
 
-The preparation command has the same discovery and boot limits in both variants.
+The optional preparation probe has a 20-second discovery limit in both variants.
+Its timeout defers strict 120-second discovery to smoke; it cannot count as
+acceptance. Other discovery errors remain failures. Readiness waits for the
+background boot result (at most 120 seconds), verifies UUID/PID identity and joins
+its owned group before any fallback boot. Successful background boot is checked
+with `bootstatus` without `-b`; any required fallback boot is serial. Its command
+limit remains 180 seconds. Both attempts obtain the actual device from validated
+state after readiness. This prevents deferred selection from using empty outputs
+and prevents readiness from racing the detached boot worker.
+
 The only workflow treatment is its position relative to toolchain setup. Required
 watchdog tests and unsigned release builds remain in normal Verify; this extra
 matrix measures Simulator smoke, not the entire CI or publication workflow.
+Compare only samples from the same source SHA: historical results before the
+initialization fix used different optional-discovery and worker-joining behavior.
 
 ## Evidence and interpretation
 
 Each job uploads `context.json`, preparation state/worker logs and any failure
-diagnostics. Download raw job logs and attempt-scoped job API data. Verify the
+diagnostics. Record optional-probe deferral separately: a timed-out probe did not
+perform early boot, so it cannot demonstrate an early-boot timing benefit. Confirm
+the actual treatment ran before interpreting a preboot comparison.
+Download raw job logs and attempt-scoped job API data. Verify the
 recorded head, tested merge/tree, runner image, architecture and Go/Flutter
 versions before pairing samples. Require the ten authentic receipts and successful
 owned cleanup; a failed first attempt must be reported even if its retry passes.
