@@ -119,6 +119,15 @@ installer. Download, checksum, extraction or version failures block setup.
 Other Windows architectures retain the existing Chocolatey path; the x64 ZIP
 layout is not assumed for ARM64's different standalone packaging.
 
+On a Unix SDK cache miss, the hosted-only `seed-flutter` helper clones only the
+exact `.fvmrc` release tag from the official Flutter repository, with depth one.
+It requires the exact checked-out tag and an executable `bin/flutter`, then
+atomically moves the staged source into the FVM versions cache. Existing entries
+are retained for FVM's checks; partial clones are never published as cache entries.
+The original `fvm install`, SDK initialization, Pub resolution and full platform
+precache still run. This avoids downloading Flutter's entire Git history on cold
+ephemeral runners; it does not restore compiled application or test results.
+
 On ephemeral GitHub-hosted runners, `tool/ios_ci_prepare.py` starts three
 independent prerequisites after the pinned Go setup: `make macos-check`,
 `make backend-server-build`, and strict Simulator discovery/readiness. They run

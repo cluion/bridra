@@ -304,6 +304,72 @@ class SDKEnvironmentTests(unittest.TestCase):
         self.assertIn('fvm flutter precache "${artifact_flags[@]}"', action)
         self.assertIn("fail-on-cache-miss: ${{ inputs.require-cache-hit }}", action)
 
+    def seed_environment(self):
+        return {**self.environment, "GITHUB_ACTIONS": "true", "RUNNER_ENVIRONMENT": "github-hosted",
+                "FVM_CACHE_PATH": str(Path(self.environment["RUNNER_TOOL_CACHE"]) / "bridra-fvm")}
+
+    def seed_clone(self, command, **options):
+        self.assertEqual(command[:-1], ['git', 'clone', '--depth=1', '--single-branch', '--branch',
+                                       '3.44.6', 'https://github.com/flutter/flutter.git'])
+        self.assertTrue(options['check'])
+        self.assertEqual(options['timeout'], 180)
+        executable = Path(command[-1]) / 'bin/flutter'
+        executable.parent.mkdir(parents=True)
+        executable.write_text('#!/bin/sh\nexit 0\n')
+        executable.chmod(0o755)
+
+    def test_cold_sdk_seed_uses_exact_official_tag_before_fvm_initialization(self):
+        environment = self.seed_environment()
+        with patch('ci.subprocess.run', side_effect=self.seed_clone), \
+                patch('ci.subprocess.check_output', return_value='3.44.6\n') as tag:
+            ci.seed_flutter(self.root, environment)
+        destination = Path(environment['FVM_CACHE_PATH']) / 'versions/3.44.6'
+        self.assertTrue((destination / 'bin/flutter').is_file())
+        self.assertEqual(tag.call_args.args[0][-4:], ['describe', '--tags', '--exact-match', 'HEAD'])
+        self.assertEqual(list(destination.parent.iterdir()), [destination])
+        action = (Path(__file__).resolve().parent.parent / '.github/actions/setup-flutter/action.yml').read_text()
+        self.assertIn('if [[ "$RUNNER_OS" != "Windows" ]]; then python3 tool/ci.py seed-flutter; fi', action)
+        self.assertLess(action.index('ci.py seed-flutter'), action.index('fvm install\n'))
+
+    def test_seed_retains_existing_sdk_including_invalid_entry_for_fvm_to_reject(self):
+        environment = self.seed_environment()
+        destination = Path(environment['FVM_CACHE_PATH']) / 'versions/3.44.6'
+        destination.mkdir(parents=True)
+        marker = destination / 'existing'
+        marker.write_text('preserve')
+        with patch('ci.subprocess.run') as clone:
+            ci.seed_flutter(self.root, environment)
+        clone.assert_not_called()
+        self.assertEqual(marker.read_text(), 'preserve')
+
+    def test_seed_rejects_local_self_hosted_windows_and_unexpected_cache_before_mutation(self):
+        environment = self.seed_environment()
+        for overrides in ({'GITHUB_ACTIONS': 'false'}, {'RUNNER_ENVIRONMENT': 'self-hosted'},
+                          {'RUNNER_OS': 'Windows'}, {'FVM_CACHE_PATH': str(self.root / 'other')},
+                          {'FVM_CACHE_PATH': 'relative'}):
+            with self.subTest(overrides=overrides), patch('ci.subprocess.run') as clone, \
+                    self.assertRaises(ValueError):
+                ci.seed_flutter(self.root, {**environment, **overrides})
+            clone.assert_not_called()
+        self.assertFalse(Path(environment['FVM_CACHE_PATH']).exists())
+
+    def test_wrong_tag_nonexecutable_and_failed_clone_never_publish_partial_sdk(self):
+        environment = self.seed_environment()
+        destination = Path(environment['FVM_CACHE_PATH']) / 'versions/3.44.6'
+        def nonexecutable(command, **options):
+            self.seed_clone(command, **options)
+            (Path(command[-1]) / 'bin/flutter').chmod(0o644)
+        for clone, tag in ((self.seed_clone, '3.44.5'), (nonexecutable, '3.44.6'),
+                           (subprocess.CalledProcessError(1, 'git'), '3.44.6'),
+                           (subprocess.TimeoutExpired('git', 180), '3.44.6')):
+            with self.subTest(clone=clone, tag=tag), \
+                    patch('ci.subprocess.run', side_effect=clone), \
+                    patch('ci.subprocess.check_output', return_value=tag), \
+                    self.assertRaises((ValueError, subprocess.CalledProcessError, subprocess.TimeoutExpired)):
+                ci.seed_flutter(self.root, environment)
+            self.assertFalse(destination.exists())
+            self.assertEqual(list(destination.parent.iterdir()), [])
+
     def android_fixture(self, source='val ndkVersion: String = "28.2.13676358"'):
         sdk = self.root / 'android SDK'
         sdk.mkdir(exist_ok=True)

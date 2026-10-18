@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import tempfile
 
 from ci_fvm import VERSION as FVM_VERSION
 
@@ -125,6 +126,37 @@ def windows_environment(environment):
     with open(environment["GITHUB_ENV"], "a") as output:
         for name, directory in locations.items():
             output.write(f"{name}={directory.as_posix()}\n")
+
+
+def seed_flutter(root, environment):
+    if (environment.get("GITHUB_ACTIONS") != "true"
+            or environment.get("RUNNER_ENVIRONMENT") != "github-hosted"
+            or environment.get("RUNNER_OS") not in ("Linux", "macOS")):
+        raise ValueError("Flutter source seeding requires an ephemeral hosted Unix runner")
+    version = pinned_flutter(root)
+    cache = Path(environment["FVM_CACHE_PATH"])
+    expected = Path(environment["RUNNER_TOOL_CACHE"]) / "bridra-fvm"
+    if not cache.is_absolute() or cache.resolve() != expected.resolve():
+        raise ValueError("unexpected Flutter cache location")
+    versions = cache / "versions"
+    destination = versions / version
+    if destination.exists() or destination.is_symlink():
+        print("Existing Flutter cache retained; FVM will validate and initialize it.", flush=True)
+        return
+    versions.mkdir(parents=True, exist_ok=True)
+    # CI needs this exact release, not Flutter's complete repository history.
+    # Stage beside the destination so failed clones never become cache entries.
+    with tempfile.TemporaryDirectory(prefix=".bridra-flutter-seed-", dir=versions) as scratch:
+        source = Path(scratch) / "sdk"
+        subprocess.run(["git", "clone", "--depth=1", "--single-branch", "--branch", version,
+                        "https://github.com/flutter/flutter.git", str(source)], check=True, timeout=180)
+        tag = subprocess.check_output(["git", "-C", str(source), "describe", "--tags",
+                                       "--exact-match", "HEAD"], text=True, timeout=15).strip()
+        executable = source / "bin/flutter"
+        if tag != version or not executable.is_file() or not os.access(executable, os.X_OK):
+            raise ValueError("seeded Flutter source does not match the exact pinned release")
+        source.rename(destination)
+    print(f"Seeded exact Flutter {version} source; FVM initialization and precaching still required.", flush=True)
 
 
 def android_native_environment(environment):
@@ -310,7 +342,7 @@ def main():
     artifacts.add_argument("--directory", required=True)
     artifacts.add_argument("--version", required=True)
     artifacts.add_argument("--commit", required=True)
-    for name in ("cache-env", "flutter-env", "gradle-wrapper", "windows-env", "android-native-env"):
+    for name in ("cache-env", "flutter-env", "gradle-wrapper", "windows-env", "android-native-env", "seed-flutter"):
         setup = commands.add_parser(name)
         setup.add_argument("--root", default=".")
     args = parser.parse_args()
@@ -348,6 +380,8 @@ def main():
             windows_environment(os.environ)
         elif args.command == "android-native-env":
             android_native_environment(os.environ)
+        elif args.command == "seed-flutter":
+            seed_flutter(args.root, os.environ)
         else:
             prepare_gradle_wrapper(args.root, os.environ)
     except (ValueError, KeyError, OSError, subprocess.CalledProcessError) as error:

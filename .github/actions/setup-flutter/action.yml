@@ -72,6 +72,7 @@ runs:
     - name: Install and initialize pinned Flutter
       shell: bash
       run: |
+        if [[ "$RUNNER_OS" != "Windows" ]]; then python3 tool/ci.py seed-flutter; fi
         fvm install
         fvm flutter --version
         fvm flutter pub get
