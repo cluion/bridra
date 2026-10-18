@@ -612,6 +612,13 @@ else:
 
 
 class NativeCommandTests(unittest.TestCase):
+    def test_owned_child_reaping_does_not_replace_esrch_group_extinction_proof(self):
+        reap = Mock(return_value=0)
+        with patch.object(prepare.os, "killpg", side_effect=[PermissionError(), None, ProcessLookupError()]), \
+                patch.object(prepare.time, "sleep"):
+            self.assertTrue(prepare.wait_group(123, 5, reap=reap))
+        self.assertEqual(reap.call_count, 3)
+
     def test_native_commands_have_a_finite_default_timeout(self):
         with patch.object(prepare.subprocess, "run") as run:
             prepare.command("list", "devices", "available", "--json")

@@ -147,6 +147,17 @@ selection still uses `tool/ios_simulator_prepare.py`: 120-second discovery and
 180-second readiness bounds, one existing available iPhone and no device creation.
 A borrowed booted device is checked without requesting another boot.
 
+The initial step uses one foreground `prepare` controller after SDK setup. It
+retains the child `Popen` handle and checks that child's liveness while waiting,
+avoiding a separate Python controller and repeated `ps` processes during startup.
+The source/PID/token/command-line and process-group checks still precede group
+signals. Teardown reaps its own terminated leader while waiting for the group;
+only ESRCH proves extinction, and EPERM still cannot authorize success. The
+original `begin`/`ready` modes and independent `always()` cleanup remain available
+for an interrupted controller. Its complete command wall time is reported as
+`Bridra iOS preparation process seconds`; it must be measured separately from the
+three overlapping stage durations.
+
 The Simulator timing trial uses the standard `macos-15` ARM image with installed
 Xcode 16.4, its existing iOS 18.5 runtime and iPhone 16 Pro.
 `BRIDRA_IOS_SIMULATOR_RUNTIME` and `BRIDRA_IOS_SIMULATOR_NAME` constrain discovery;
@@ -197,7 +208,7 @@ Each prerequisite has a recorded exit code and monotonic duration; Xcode/backend
 commands have 180-second limits and the combined native initialization command has
 a 330-second limit. Native command start markers precede captured command output,
 so a stalled command can be identified before its output is flushed; elapsed
-markers alone never prove successful process teardown. The foreground smoke joins the worker within 360 seconds,
+markers alone never prove successful process teardown. The foreground preparation joins the worker within 360 seconds,
 inside its original twelve-minute boundary, and requires every result to pass.
 Preparation evidence binds the worker PID/token, checked-out source and selected
 Xcode directory. The wrapper verifies the selected UUID and SHA-256 of the actual

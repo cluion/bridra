@@ -73,7 +73,7 @@ class ConcurrentPreparationTests(unittest.TestCase):
         return value
 
     def test_every_cli_rejects_local_or_self_hosted_use_before_work(self):
-        for operation in ("begin", "ready", "verify", "reset", "finish", "_work"):
+        for operation in ("prepare", "begin", "ready", "verify", "reset", "finish", "_work"):
             with self.subTest(operation=operation), patch.dict(os.environ, {}, clear=True), \
                     patch.object(sys, "argv", ["prepare", operation, "--state", str(self.path)]), \
                     patch.object(prepare.subprocess, "Popen") as popen:
@@ -160,6 +160,72 @@ class ConcurrentPreparationTests(unittest.TestCase):
             prepare.ready(self.path)
         stop.assert_called_once_with(self.path, prepare.load(self.path))
         run.assert_not_called()
+
+    def test_direct_child_wait_uses_owned_popen_liveness_without_polling_ps(self):
+        state = self.state()
+        worker = Mock(pid=state["pid"])
+        def complete():
+            self.result()
+            return None
+        worker.poll.side_effect = complete
+        with patch.object(prepare, "matching") as matching, patch.object(prepare, "stop") as stop, \
+                patch.object(prepare.time, "sleep"):
+            prepare.ready(self.path, worker=worker)
+        worker.poll.assert_called_once()
+        matching.assert_not_called()
+        stop.assert_called_once_with(self.path, state, worker=worker)
+
+    def test_direct_child_exit_without_result_cannot_be_prepared_success(self):
+        state = self.state()
+        for status in (0, 7, -9):
+            worker = Mock(pid=state["pid"])
+            worker.poll.return_value = status
+            with self.subTest(status=status), patch.object(prepare, "stop") as stop, \
+                    patch.object(prepare, "matching") as matching, self.assertRaises(ValueError):
+                prepare.ready(self.path, worker=worker)
+            matching.assert_not_called()
+            stop.assert_called_once_with(self.path, state, worker=worker)
+
+    def test_direct_child_identity_mismatch_never_reaps_or_signals_another_process(self):
+        state = self.state()
+        worker = Mock(pid=456)
+        for operation in (lambda: prepare.ready(self.path, worker=worker),
+                          lambda: prepare.stop(self.path, state, worker=worker)):
+            with patch.object(prepare.os, "killpg") as kill, self.assertRaises(ValueError):
+                operation()
+            kill.assert_not_called()
+            worker.poll.assert_not_called()
+
+    def test_direct_child_teardown_reaps_owned_leader_and_retains_term_kill_bounds(self):
+        state = self.state()
+        worker = Mock(pid=state["pid"])
+        with patch.object(prepare, "matching", return_value=True), \
+                patch.object(prepare.os, "getpgid", return_value=state["pid"]), \
+                patch.object(prepare.simulator, "wait_group", side_effect=[False, True]) as wait, \
+                patch.object(prepare.os, "killpg") as kill:
+            prepare.stop(self.path, state, worker=worker)
+        worker.poll.assert_called_once()
+        self.assertEqual(wait.call_args_list,
+                         [call(state["pid"], 5, reap=worker.poll), call(state["pid"], 2, reap=worker.poll)])
+        self.assertEqual(kill.call_args_list,
+                         [call(state["pid"], signal.SIGTERM), call(state["pid"], signal.SIGKILL)])
+
+    def test_direct_child_wait_retains_the_same_readiness_deadline_and_cleanup(self):
+        state = self.state()
+        worker = Mock(pid=state["pid"])
+        with patch.object(prepare.time, "monotonic", side_effect=[0, 360]), \
+                patch.object(prepare, "stop") as stop, self.assertRaises(TimeoutError):
+            prepare.ready(self.path, worker=worker)
+        stop.assert_called_once_with(self.path, state, worker=worker)
+
+    def test_direct_child_reference_does_not_authorize_signalling_an_unverified_live_group(self):
+        state = self.state()
+        worker = Mock(pid=state["pid"])
+        with patch.object(prepare, "matching", return_value=False), \
+                patch.object(prepare.simulator, "wait_group", return_value=False), \
+                patch.object(prepare.os, "killpg") as kill, self.assertRaises(ValueError):
+            prepare.stop(self.path, state, worker=worker)
+        kill.assert_not_called()
 
     def test_readiness_timeout_still_stops_owned_group(self):
         self.state()
@@ -272,6 +338,70 @@ if sys.argv[2] == "list":
         calls = (self.root / "native-calls").read_text()
         self.assertEqual(calls.count("simctl bootstatus "), 1)
         self.assertIn("simctl shutdown 11111111-2222-3333-4444-555555555555", calls)
+
+    def test_combined_controller_uses_one_ps_identity_check_and_reaps_its_owned_group(self):
+        actual_ps = shutil.which("ps")
+        (self.bin / "ps").unlink()
+        self.executable("ps", f'''import os, pathlib, sys
+with (pathlib.Path.cwd() / "ps-calls").open("a") as out:
+    out.write("check\\n")
+os.execv({actual_ps!r}, [{actual_ps!r}, *sys.argv[1:]])
+''')
+        result = self.cli("prepare")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.root / "ps-calls").read_text().splitlines(), ["check"])
+        pid = json.loads(self.path.read_text())["pid"]
+        with self.assertRaises(ProcessLookupError):
+            os.killpg(pid, 0)
+        self.assertEqual(self.cli("verify", "--device", "11111111-2222-3333-4444-555555555555").returncode, 0)
+        self.assertEqual(self.cli("finish").returncode, 0)
+
+    def test_external_cleanup_stops_a_combined_controller_worker_and_blocks_false_success(self):
+        self.environment["FAKE_HANG"] = "1"
+        controller = subprocess.Popen([sys.executable, str(self.root / "tool/ios_ci_prepare.py"), "prepare",
+                                       "--state", str(self.path)], cwd=self.root, env=self.environment,
+                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            until = time.monotonic() + 5
+            while not (self.root / "macos-check.started").exists() or not self.path.with_name("simulator.json").exists():
+                if time.monotonic() >= until:
+                    self.fail("combined fake preparation did not start")
+                time.sleep(0.05)
+            result = self.cli("finish")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            output, error = controller.communicate(timeout=5)
+            self.assertNotEqual(controller.returncode, 0, output + error)
+            pid = json.loads(self.path.read_text())["pid"]
+            with self.assertRaises(ProcessLookupError):
+                os.killpg(pid, 0)
+        finally:
+            if controller.poll() is None:
+                controller.kill()
+                controller.communicate(timeout=5)
+
+    def test_cancelled_combined_controller_leaves_a_verifiable_worker_for_always_cleanup(self):
+        self.environment["FAKE_HANG"] = "1"
+        controller = subprocess.Popen([sys.executable, str(self.root / "tool/ios_ci_prepare.py"), "prepare",
+                                       "--state", str(self.path)], cwd=self.root, env=self.environment,
+                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            until = time.monotonic() + 5
+            while not (self.root / "macos-check.started").exists() or not self.path.with_name("simulator.json").exists():
+                if time.monotonic() >= until:
+                    self.fail("combined fake preparation did not start")
+                time.sleep(0.05)
+            controller.terminate()
+            controller.communicate(timeout=5)
+            self.assertNotEqual(controller.returncode, 0)
+            result = self.cli("finish")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            pid = json.loads(self.path.read_text())["pid"]
+            with self.assertRaises(ProcessLookupError):
+                os.killpg(pid, 0)
+        finally:
+            if controller.poll() is None:
+                controller.kill()
+                controller.communicate(timeout=5)
 
     def test_setup_cancellation_stops_live_group_before_native_cleanup(self):
         self.environment["FAKE_HANG"] = "1"

@@ -694,10 +694,11 @@ class WorkflowWiringTests(unittest.TestCase):
 
     def test_simulator_prerequisites_run_after_sdk_with_one_retry_and_always_cleanup(self):
         body = self.job('ios-simulator')
-        self.assertLess(body.index('name: Set up Go'), body.index('ios_ci_prepare.py begin'))
-        self.assertLess(body.index('name: Set up pinned Flutter'), body.index('ios_ci_prepare.py begin'))
-        self.assertLess(body.index('ios_ci_prepare.py begin'), body.index('ios_ci_prepare.py ready'))
-        self.assertIn('ios_ci_prepare.py ready', body)
+        self.assertLess(body.index('name: Set up Go'), body.index('ios_ci_prepare.py prepare'))
+        self.assertLess(body.index('name: Set up pinned Flutter'), body.index('ios_ci_prepare.py prepare'))
+        self.assertNotIn('ios_ci_prepare.py begin', body)
+        self.assertNotIn('ios_ci_prepare.py ready', body)
+        self.assertIn("TIMEFORMAT='Bridra iOS preparation process seconds: %3R'", body)
         self.assertIn('ios_simulator_prepare.py ready', body)
         self.assertIn('ios_ci_prepare.py reset', body)
         self.assertEqual(body.count('bash tool/ios_ci_smoke.sh "$bridra_simulator_device"'), 2)
@@ -719,7 +720,7 @@ class WorkflowWiringTests(unittest.TestCase):
     def test_simulator_trials_bounded_build_scheduling_on_verified_arm_toolchain(self):
         body = self.job('ios-simulator')
         self.assertIn('runs-on: macos-15\n', body)
-        self.assertLess(body.index('name: Set up pinned Flutter'), body.index('ios_ci_prepare.py begin'))
+        self.assertLess(body.index('name: Set up pinned Flutter'), body.index('ios_ci_prepare.py prepare'))
         self.assertIn('DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer', body)
         self.assertIn('BRIDRA_IOS_SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-18-5', body)
         self.assertIn('BRIDRA_IOS_SIMULATOR_NAME: iPhone 16 Pro', body)

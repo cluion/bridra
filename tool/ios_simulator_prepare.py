@@ -143,9 +143,13 @@ def stop_worker(path, state):
             raise ValueError("preparation leader exited with a live process group")
 
 
-def wait_group(pid, seconds):
+def wait_group(pid, seconds, *, reap=None):
     until = time.monotonic() + seconds
     while True:
+        if reap is not None:
+            # A retained Popen owner must reap its terminated leader; a zombie
+            # can otherwise keep the process group visible during teardown.
+            reap()
         try:
             os.killpg(pid, 0)
         except ProcessLookupError:

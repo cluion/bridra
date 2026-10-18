@@ -57,6 +57,7 @@ def begin(path):
             cwd=ROOT, stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
     simulator.save(path, {"schema": 1, "pid": process.pid, "token": token, "source": source})
     print("Preparing independent Xcode, Go backend and existing Simulator prerequisites.", flush=True)
+    return process
 
 
 def commands(path):
@@ -110,22 +111,32 @@ def matching(path, state):
     return process.returncode == 0 and expected in process.stdout
 
 
-def stop(path, state):
+def stop(path, state, worker=None):
     pid = state["pid"]
+    if worker is not None and worker.pid != pid:
+        raise ValueError("preparation child does not match its recorded owner")
+
+    def wait(seconds):
+        if worker is not None:
+            return simulator.wait_group(pid, seconds, reap=worker.poll)
+        return simulator.wait_group(pid, seconds)
+
+    if worker is not None:
+        worker.poll()
     if not matching(path, state):
-        if not simulator.wait_group(pid, 2):
+        if not wait(2):
             raise ValueError("cannot verify a live iOS prerequisite process group")
         return
     try:
         if os.getpgid(pid) != pid:
             raise ValueError("iOS prerequisite worker lost its owned process group")
         os.killpg(pid, signal.SIGTERM)
-        if not simulator.wait_group(pid, 5):
+        if not wait(5):
             os.killpg(pid, signal.SIGKILL)
-            if not simulator.wait_group(pid, 2):
+            if not wait(2):
                 raise ValueError("iOS prerequisite process group did not stop")
     except ProcessLookupError:
-        if not simulator.wait_group(pid, 2):
+        if not wait(2):
             raise ValueError("iOS prerequisite leader exited with live children")
 
 
@@ -151,18 +162,24 @@ def result(path, require_success=True):
     return value
 
 
-def ready(path):
+def ready(path, worker=None):
     state = load(path)
+    if worker is not None and worker.pid != state["pid"]:
+        raise ValueError("preparation child does not match its recorded owner")
     deadline = time.monotonic() + 360
     try:
         while not path.with_suffix(".result.json").exists():
             if time.monotonic() >= deadline:
                 raise TimeoutError("iOS prerequisites exceeded readiness bound")
-            if not matching(path, state) and not path.with_suffix(".result.json").exists():
+            alive = worker.poll() is None if worker is not None else matching(path, state)
+            if not alive and not path.with_suffix(".result.json").exists():
                 raise ValueError("iOS prerequisite worker exited without a result")
             time.sleep(0.5)
     finally:
-        stop(path, state)
+        if worker is not None:
+            stop(path, state, worker=worker)
+        else:
+            stop(path, state)
         for stage in STAGES:
             log = path.with_name(stage + ".log")
             if log.exists():
@@ -176,6 +193,14 @@ def ready(path):
             raise subprocess.CalledProcessError(row["exit"], stage)
 
 
+def prepare(path):
+    worker = begin(path)
+    try:
+        ready(path, worker=worker)
+    finally:
+        worker.poll()
+
+
 def finish(path, reset=False):
     if path.exists():
         stop(path, load(path))
@@ -187,13 +212,15 @@ def finish(path, reset=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("begin", "ready", "verify", "reset", "finish", "_work"))
+    parser.add_argument("command", choices=("prepare", "begin", "ready", "verify", "reset", "finish", "_work"))
     parser.add_argument("--state", required=True)
     parser.add_argument("--token")
     parser.add_argument("--device")
     args = parser.parse_args()
     path = simulator.state_path(args.state, os.environ)
-    if args.command == "begin":
+    if args.command == "prepare":
+        prepare(path)
+    elif args.command == "begin":
         begin(path)
     elif args.command == "_work":
         work(path, args.token)

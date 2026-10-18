@@ -394,8 +394,6 @@ jobs:
           vm_stat
       - name: Set up pinned Flutter
         uses: ./.github/actions/setup-flutter
-      - name: Start independent iOS prerequisites after SDK setup
-        run: python3 tool/ios_ci_prepare.py begin --state "$RUNNER_TEMP/bridra-ios-preparation/pipeline.json"
       - name: Exercise iOS Simulator HTTP round trip
         id: ios_simulator_smoke
         continue-on-error: true
@@ -403,7 +401,8 @@ jobs:
         env:
           BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR: ${{ runner.temp }}/bridra-ios-simulator-diagnostics/initial
         run: |
-          python3 tool/ios_ci_prepare.py ready --state "$RUNNER_TEMP/bridra-ios-preparation/pipeline.json"
+          TIMEFORMAT='Bridra iOS preparation process seconds: %3R'
+          time python3 tool/ios_ci_prepare.py prepare --state "$RUNNER_TEMP/bridra-ios-preparation/pipeline.json"
           sysctl vm.swapusage
           vm_stat
           bridra_simulator_device="$(python3 tool/ios_simulator_prepare.py device --state "$RUNNER_TEMP/bridra-ios-preparation/simulator.json")"
