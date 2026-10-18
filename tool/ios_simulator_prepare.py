@@ -40,8 +40,13 @@ def load(path):
 
 
 def command(*arguments, timeout=20, check=True):
-    return subprocess.run(["xcrun", "simctl", *arguments], check=check,
-                          timeout=timeout, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    started = time.monotonic()
+    print(f"Simulator command starting (limit {timeout}s): {' '.join(arguments)}", file=sys.stderr, flush=True)
+    try:
+        return subprocess.run(["xcrun", "simctl", *arguments], check=check,
+                              timeout=timeout, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    finally:
+        print(f"Simulator command elapsed: {time.monotonic() - started:.3f}s", file=sys.stderr, flush=True)
 
 
 def discover(path, timeout=120):

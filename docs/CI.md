@@ -159,7 +159,9 @@ is not a latency guarantee.
 
 Each prerequisite has a recorded exit code and monotonic duration; Xcode/backend
 commands have 180-second limits and the combined native initialization command has
-a 330-second limit. The foreground smoke joins the worker within 360 seconds,
+a 330-second limit. Native command start markers precede captured command output,
+so a stalled command can be identified before its output is flushed; elapsed
+markers alone never prove successful process teardown. The foreground smoke joins the worker within 360 seconds,
 inside its original twelve-minute boundary, and requires every result to pass.
 Preparation evidence binds the worker PID/token, checked-out source and selected
 Xcode directory. The wrapper verifies the selected UUID and SHA-256 of the actual

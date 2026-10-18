@@ -21,6 +21,7 @@ timed_stage() {
   shift
   local status=0
   local TIMEFORMAT="Bridra iOS $stage seconds: %3R"
+  echo "Bridra iOS $stage starting."
   time "$@" || status=$?
   echo "Bridra iOS $stage exit: $status"
   return "$status"
