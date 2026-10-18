@@ -298,6 +298,8 @@ jobs:
           persist-credentials: false
       - name: Test hosted Simulator preparation and cleanup contracts
         run: python3 -m unittest discover -s tool -p ios_simulator_prepare_test.py -v
+      - name: Test concurrent iOS prerequisites and cleanup
+        run: python3 -m unittest discover -s tool -p ios_ci_prepare_test.py -v
       - name: Test iOS CI timing and failure propagation
         run: python3 -m unittest discover -s tool -p ios_ci_smoke_test.py -v
       - name: Test iOS Simulator watchdog
@@ -333,9 +335,6 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Start the existing Simulator during toolchain setup
-        id: simulator
-        run: python3 tool/ios_simulator_prepare.py start --state "$RUNNER_TEMP/bridra-ios-preparation/state.json"
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
@@ -343,6 +342,8 @@ jobs:
           cache-dependency-path: |
             backend/go.mod
             backend/integration/sqljobstore/go.mod
+      - name: Start independent iOS prerequisites during Flutter setup
+        run: python3 tool/ios_ci_prepare.py begin --state "$RUNNER_TEMP/bridra-ios-preparation/pipeline.json"
       - name: Set up pinned Flutter
         uses: ./.github/actions/setup-flutter
       - name: Exercise iOS Simulator HTTP round trip
@@ -352,12 +353,12 @@ jobs:
         env:
           BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR: ${{ runner.temp }}/bridra-ios-simulator-diagnostics/initial
         run: |
-          python3 tool/ios_simulator_prepare.py ready --state "$RUNNER_TEMP/bridra-ios-preparation/state.json"
-          bridra_simulator_device="$(python3 tool/ios_simulator_prepare.py device --state "$RUNNER_TEMP/bridra-ios-preparation/state.json")"
-          bash tool/ios_ci_smoke.sh "$bridra_simulator_device"
+          python3 tool/ios_ci_prepare.py ready --state "$RUNNER_TEMP/bridra-ios-preparation/pipeline.json"
+          bridra_simulator_device="$(python3 tool/ios_simulator_prepare.py device --state "$RUNNER_TEMP/bridra-ios-preparation/simulator.json")"
+          bash tool/ios_ci_smoke.sh "$bridra_simulator_device" "$RUNNER_TEMP/bridra-ios-preparation/pipeline.json"
       - name: Reset iOS Simulator before one retry
         if: steps.ios_simulator_smoke.outcome == 'failure'
-        run: python3 tool/ios_simulator_prepare.py reset --state "$RUNNER_TEMP/bridra-ios-preparation/state.json"
+        run: python3 tool/ios_ci_prepare.py reset --state "$RUNNER_TEMP/bridra-ios-preparation/pipeline.json"
       - name: Retry iOS Simulator HTTP round trip
         id: ios_simulator_retry
         if: steps.ios_simulator_smoke.outcome == 'failure'
@@ -365,12 +366,12 @@ jobs:
         env:
           BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR: ${{ runner.temp }}/bridra-ios-simulator-diagnostics/retry
         run: |
-          python3 tool/ios_simulator_prepare.py ready --state "$RUNNER_TEMP/bridra-ios-preparation/state.json"
-          bridra_simulator_device="$(python3 tool/ios_simulator_prepare.py device --state "$RUNNER_TEMP/bridra-ios-preparation/state.json")"
+          python3 tool/ios_simulator_prepare.py ready --state "$RUNNER_TEMP/bridra-ios-preparation/simulator.json"
+          bridra_simulator_device="$(python3 tool/ios_simulator_prepare.py device --state "$RUNNER_TEMP/bridra-ios-preparation/simulator.json")"
           bash tool/ios_ci_smoke.sh "$bridra_simulator_device"
       - name: Stop the preparation worker and owned Simulator
         if: always()
-        run: python3 tool/ios_simulator_prepare.py finish --state "$RUNNER_TEMP/bridra-ios-preparation/state.json"
+        run: python3 tool/ios_ci_prepare.py finish --state "$RUNNER_TEMP/bridra-ios-preparation/pipeline.json"
       - name: Upload iOS Simulator failure diagnostics
         if: ${{ always() && (failure() || steps.ios_simulator_smoke.outcome == 'failure' || steps.ios_simulator_retry.outcome == 'failure') }}
         uses: actions/upload-artifact@v7

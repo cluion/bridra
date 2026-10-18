@@ -22,6 +22,12 @@ if [[ "$*" == macos-check ]]; then exit "${XCODE_STATUS:-0}"; fi
 if [[ "$*" == backend-server-build ]]; then exit "${BUILD_STATUS:-0}"; fi
 exit 99
 ''')
+        self.write_executable(binary / 'python3', '''#!/bin/bash
+echo verify >> "$CALLS"
+[[ "$2" == verify && "$3" == --state && "$4" == "$EXPECTED_ROOT/prepared.json" ]] || exit 98
+[[ "$5" == --device && "$6" == "$EXPECTED_DEVICE" ]] || exit 97
+exit "${PREPARATION_STATUS:-0}"
+''')
         self.write_executable(self.root / 'tool/ios_simulator_smoke.sh', '''#!/bin/bash
 echo smoke >> "$CALLS"
 [[ "$BRIDRA_IOS_SIMULATOR_DEVICE" == "$EXPECTED_DEVICE" ]] || exit 90
@@ -85,10 +91,23 @@ exit "${SMOKE_STATUS:-0}"
                 self.assertEqual(self.calls(), [])
 
     def test_missing_invalid_or_extra_devices_fail_before_native_commands(self):
-        for devices in [(), ('invalid',), (self.device, self.device), ('x\nother',)]:
+        for devices in [(), ('invalid',), (self.device, self.device, self.device), ('x\nother',)]:
             with self.subTest(devices=devices):
                 self.assertNotEqual(self.run_script(*devices).returncode, 0)
                 self.assertEqual(self.calls(), [])
+
+    def test_prepared_path_is_verified_and_does_not_repeat_prerequisites(self):
+        result = self.run_script(self.device, str(self.root / 'prepared.json'))
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertEqual(self.calls(), ['verify', 'smoke'])
+
+    def test_failed_or_invalid_preparation_never_launches_smoke(self):
+        for state, status in [(str(self.root / 'prepared.json'), '65'), ('invalid', '0')]:
+            self.environment['PREPARATION_STATUS'] = status
+            (self.root / 'calls').unlink(missing_ok=True)
+            result = self.run_script(self.device, state)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(self.calls(), ['verify'])
 
     def test_custom_port_and_diagnostics_are_preserved(self):
         self.environment['BRIDRA_IOS_SIMULATOR_PORT'] = self.environment['EXPECTED_PORT'] = '19080'

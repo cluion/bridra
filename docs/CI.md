@@ -117,35 +117,36 @@ installer. Download, checksum, extraction or version failures block setup.
 Other Windows architectures retain the existing Chocolatey path; the x64 ZIP
 layout is not assumed for ARM64's different standalone packaging.
 
-On ephemeral GitHub-hosted runners, `tool/ios_simulator_prepare.py` optionally
-starts one existing available iPhone Simulator before SDK setup. Its initial
-discovery probe has a 20-second limit. Only that optional probe's timeout defers
-selection to smoke; unexpected discovery errors still fail. Strict discovery
-(120 seconds), boot/readiness and the complete transport assertions run within
-the existing twelve-minute smoke boundary, including on the single retry.
+On ephemeral GitHub-hosted runners, `tool/ios_ci_prepare.py` starts three
+independent prerequisites after the pinned Go setup: `make macos-check`,
+`make backend-server-build`, and strict Simulator discovery/readiness. They run
+concurrently in one owned process group while Flutter setup proceeds. Native
+selection still uses `tool/ios_simulator_prepare.py`: 120-second discovery and
+180-second readiness bounds, one existing available iPhone and no device creation.
+A borrowed booted device is checked without requesting another boot.
 
-Readiness joins the background boot worker within a bounded 120-second wait,
-checks that its result matches the selected UUID and worker PID, and requires
-its owned process group to stop before any fallback boot. A successful background
-boot uses `bootstatus` without `-b`; a completed failed boot may use a serial
-`bootstatus -b` fallback. Readiness itself retains its 180-second command limit.
-A borrowed, already-booted device is checked without requesting another boot.
-No preparation result replaces the real transport assertions.
+Each prerequisite has a recorded exit code and monotonic duration; Xcode/backend
+commands have 180-second limits and the combined native initialization command has
+a 330-second limit. The foreground smoke joins the worker within 360 seconds,
+inside its original twelve-minute boundary, and requires every result to pass.
+Preparation evidence binds the worker PID/token, checked-out source and selected
+Xcode directory. The wrapper verifies the selected UUID and SHA-256 of the actual
+executable backend before consuming its prepared prerequisites. Nothing is cached
+across jobs and no preparation result replaces transport assertions.
 
-Both attempts read the validated selection from state after readiness, so a
-deferred selection cannot leave a stale or empty `DEVICE`. No device is created.
-One failed attempt may reset only that selected device before the single retry.
-If discovery failed before selection, reset erases nothing and retry performs
-strict discovery again. Reset claims cleanup ownership before mutating a device,
-including when erase later fails. An `always()` step terminates the owned
-preparation process group and shuts down a device booted/reset by this
-helper, including SDK setup failures. A borrowed, already-booted device is left
-running unless the retry resets it. A live group whose ownership cannot be
-verified blocks readiness/reset without signaling unrelated processes. Cleanup
-failures block the job. The helper rejects local/self-hosted runners and state
-paths outside `RUNNER_TEMP`. Tests use mocked native commands, including isolated
-fake `xcrun` processes, and never operate on the developer's Simulators.
-The host/path restriction uses GitHub's documented
+A failed first attempt still permits exactly one targeted reset and twelve-minute
+retry. Reset stops the owned preparation group before touching the selected
+device; missing selection erases nothing. Retry repeats strict readiness and the
+original foreground Xcode/backend checks. An `always()` step stops the preparation
+group and shuts down only the owned device, including setup failures. Process
+identity is checked before signals; an unverifiable live group blocks device
+mutation. A bounded retained group leader allows cleanup to stop descendants even
+if a prerequisite command timed out. Cleanup failures block the job.
+
+The helpers reject local/self-hosted runners and state outside `RUNNER_TEMP`.
+Tests use mocks and isolated fake native commands, including real owned-group
+cancellation tests, without operating on developer Simulators. The host/path
+restriction uses GitHub's documented
 [`RUNNER_ENVIRONMENT` and `RUNNER_TEMP` variables](https://docs.github.com/en/actions/reference/workflows-and-actions/variables).
 
 The iOS watchdog starts its background attach query only after a Simulator launch
@@ -159,16 +160,17 @@ and retains partial output when that budget expires. Starter projects
 use the same watchdog and cleanup behavior.
 
 CI runs `tool/ios_ci_smoke.sh` after readiness and validated device selection.
-It executes the same `macos-check`, `backend-server-build` and original Simulator
-smoke script as `make ios-simulator-smoke`, once each, in the foreground. Each
-stage prints `Bridra iOS STAGE seconds: ...` and its exit code, including failure;
-an unsuccessful prerequisite stops later stages and reaches the existing retry
-and always-cleanup steps. The wrapper rejects local/self-hosted execution.
-The Flutter invocation adds `--verbose` to expose tool-reported build, install
-and launch phases; test assertions, launch barrier and watchdogs are unchanged.
-These stage durations come from the shell's command timer, so buffered Flutter
-output timestamps cannot be mistaken for build-start timestamps. The existing
-opt-in preboot experiment uses the same wrapper in both variants and attempts.
+Its optional preparation-state argument requires the successful source-bound
+results instead of executing the same prerequisites again. Without that argument
+(retry and the separate preboot experiment), it runs the original foreground
+`macos-check` and `backend-server-build` before the unchanged native smoke.
+Prerequisite durations come from monotonic worker timers; native smoke retains
+its shell timer. Both print `Bridra iOS STAGE seconds: ...` and exit codes.
+The Flutter invocation adds `--verbose` to expose tool-reported phases; assertions,
+launch barrier and watchdogs are unchanged. Buffered log timestamps cannot be
+mistaken for internal build-start times. The optional preboot experiment retains
+its prior 20-second optional discovery probe and serial prerequisite control;
+results from its earlier implementation are not measurements of the new pipeline.
 
 ## SDK and dependency caches
 
