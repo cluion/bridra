@@ -128,6 +128,14 @@ The original `fvm install`, SDK initialization, Pub resolution and full platform
 precache still run. This avoids downloading Flutter's entire Git history on cold
 ephemeral runners; it does not restore compiled application or test results.
 
+SDK and Pub caches are saved only after installation, resolution and platform
+precaching succeed; NDK/CMake caches are saved after `sdkmanager` succeeds.
+Separate pinned restore/save actions preserve these validated dependencies even
+if a later native test fails. A failed setup stage does not save that stage's cache. Gradle
+remains a post-build cache. Cache writes do not replace any native assertion or
+release gate. Controlled warm measurements require exact cache matches, including
+Pub/Gradle, rather than accepting a prefix fallback as fully warm.
+
 On ephemeral GitHub-hosted runners, `tool/ios_ci_prepare.py` starts three
 independent prerequisites after pinned Go and Flutter SDK setup: `make macos-check`,
 `make backend-server-build`, and strict Simulator discovery/readiness. They run

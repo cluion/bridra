@@ -22,14 +22,16 @@ runs:
         "$bridra_python" tool/ci.py cache-env
 
     - name: Restore pinned Flutter SDK
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      id: sdk-cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ steps.paths.outputs.fvm }}/versions
         key: ${{ inputs.cache-namespace }}flutter-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-${{ steps.paths.outputs.profile }}
         fail-on-cache-miss: ${{ inputs.require-cache-hit }}
 
     - name: Restore Pub dependencies
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      id: pub-cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: |
           ${{ steps.paths.outputs.pub }}/hosted
@@ -41,6 +43,7 @@ runs:
         fail-on-cache-miss: ${{ inputs.require-cache-hit }}
 
     - name: Restore Gradle dependencies
+      id: gradle-cache
       if: inputs.android == 'true'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
@@ -50,6 +53,27 @@ runs:
         key: gradle-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('android/**/*.gradle.kts', 'android/gradle.properties', 'android/gradle/wrapper/gradle-wrapper.properties', 'pubspec.lock') }}
         restore-keys: |
           gradle-v1-${{ runner.os }}-${{ runner.arch }}-
+
+    - name: Record and validate dependency cache matches
+      shell: bash
+      env:
+        SDK_CACHE_HIT: ${{ steps.sdk-cache.outputs.cache-hit }}
+        PUB_CACHE_HIT: ${{ steps.pub-cache.outputs.cache-hit }}
+        GRADLE_CACHE_HIT: ${{ steps.gradle-cache.outputs.cache-hit }}
+        REQUIRE_WARM: ${{ inputs.require-cache-hit }}
+        ANDROID_ENABLED: ${{ inputs.android }}
+      run: |
+        echo "Bridra exact dependency cache matches: SDK=$SDK_CACHE_HIT Pub=$PUB_CACHE_HIT Gradle=$GRADLE_CACHE_HIT"
+        if [[ "$REQUIRE_WARM" == true ]]; then
+          if [[ "$SDK_CACHE_HIT" != true || "$PUB_CACHE_HIT" != true ]]; then
+            echo 'Controlled warm measurement requires exact SDK and Pub cache matches.' >&2
+            exit 1
+          fi
+          if [[ "$ANDROID_ENABLED" == true && "$GRADLE_CACHE_HIT" != true ]]; then
+            echo 'Controlled warm measurement requires an exact Gradle cache match.' >&2
+            exit 1
+          fi
+        fi
 
     - name: Install FVM on Unix
       if: runner.os != 'Windows'
@@ -93,6 +117,23 @@ runs:
         read -r -a artifact_flags <<< "$BRIDRA_ARTIFACT_FLAGS"
         fvm flutter precache "${artifact_flags[@]}"
 
+    - name: Save verified Flutter SDK
+      if: steps.sdk-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.paths.outputs.fvm }}/versions
+        key: ${{ steps.sdk-cache.outputs.cache-primary-key }}
+
+    - name: Save resolved Pub dependencies
+      if: steps.pub-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ${{ steps.paths.outputs.pub }}/hosted
+          ${{ steps.paths.outputs.pub }}/hosted-hashes
+          ${{ steps.paths.outputs.pub }}/git
+        key: ${{ steps.pub-cache.outputs.cache-primary-key }}
+
     - name: Resolve pinned Android native tools
       if: inputs.android == 'true'
       id: android-native
@@ -101,7 +142,8 @@ runs:
 
     - name: Restore Android NDK and CMake
       if: inputs.android == 'true'
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      id: android-tools-cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: |
           ${{ steps.android-native.outputs.ndk_path }}
@@ -114,5 +156,21 @@ runs:
       shell: bash
       env:
         BRIDRA_ANDROID_SDKMANAGER: ${{ steps.android-native.outputs.sdkmanager_path }}
+        REQUIRE_WARM: ${{ inputs.require-cache-hit }}
+        ANDROID_TOOLS_CACHE_HIT: ${{ steps.android-tools-cache.outputs.cache-hit }}
       run: |
+        echo "Bridra exact Android native cache match: $ANDROID_TOOLS_CACHE_HIT"
+        if [[ "$REQUIRE_WARM" == true && "$ANDROID_TOOLS_CACHE_HIT" != true ]]; then
+          echo 'Controlled warm measurement requires an exact Android native cache match.' >&2
+          exit 1
+        fi
         "$BRIDRA_ANDROID_SDKMANAGER" --install 'ndk;${{ steps.android-native.outputs.ndk }}' 'cmake;${{ steps.android-native.outputs.cmake }}'
+
+    - name: Save verified Android native tools
+      if: inputs.android == 'true' && steps.android-tools-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ${{ steps.android-native.outputs.ndk_path }}
+          ${{ steps.android-native.outputs.cmake_path }}
+        key: ${{ steps.android-tools-cache.outputs.cache-primary-key }}

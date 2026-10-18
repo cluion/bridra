@@ -422,7 +422,7 @@ class SDKEnvironmentTests(unittest.TestCase):
         ci.android_native_environment(environment)
         values = dict(line.split('=', 1) for line in Path(environment['GITHUB_OUTPUT']).read_text().splitlines())
         action = (Path(__file__).resolve().parent.parent / '.github/actions/setup-flutter/action.yml').read_text()
-        command = action.split('    - name: Complete the Android native tool cache profile', 1)[1].split('      run: |\n', 1)[1]
+        command = action.split('    - name: Complete the Android native tool cache profile', 1)[1].split('\n    - name:', 1)[0].split('      run: |\n', 1)[1]
         command = command.replace('${{ steps.android-native.outputs.ndk }}', values['ndk'])
         command = command.replace('${{ steps.android-native.outputs.cmake }}', values['cmake'])
         calls = self.root / 'calls.json'
@@ -431,6 +431,54 @@ class SDKEnvironmentTests(unittest.TestCase):
                                       'BRIDRA_ANDROID_SDKMANAGER': values['sdkmanager_path']}, timeout=5)
         self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
         self.assertEqual(json.loads(calls.read_text()), ['--install', 'ndk;' + values['ndk'], 'cmake;' + values['cmake']])
+
+    def test_dependency_saves_follow_completed_profiles_without_waiting_for_native_tests(self):
+        action = (Path(__file__).resolve().parent.parent / '.github/actions/setup-flutter/action.yml').read_text()
+        self.assertEqual(action.count('uses: actions/cache/restore@'), 3)
+        self.assertEqual(action.count('uses: actions/cache/save@'), 3)
+        self.assertIn('uses: actions/cache@', action.split('    - name: Restore Gradle dependencies', 1)[1].split('\n    - name:', 1)[0])
+        for prerequisite, name, identifier in (
+                ('Complete the SDK cache profile', 'Save verified Flutter SDK', 'sdk-cache'),
+                ('Complete the SDK cache profile', 'Save resolved Pub dependencies', 'pub-cache'),
+                ('Complete the Android native tool cache profile', 'Save verified Android native tools', 'android-tools-cache')):
+            with self.subTest(name=name):
+                self.assertLess(action.index('    - name: ' + prerequisite), action.index('    - name: ' + name))
+                block = action.split('    - name: ' + name, 1)[1].split('\n    - name:', 1)[0]
+                self.assertIn(f"steps.{identifier}.outputs.cache-hit != 'true'", block)
+                self.assertIn('${{ steps.' + identifier + '.outputs.cache-primary-key }}', block)
+                self.assertNotIn('always()', block)
+        self.assertLess(action.index('fvm flutter pub get'), action.index('Save resolved Pub dependencies'))
+
+    def test_controlled_warm_cache_guard_rejects_prefix_and_missing_hits(self):
+        action = (Path(__file__).resolve().parent.parent / '.github/actions/setup-flutter/action.yml').read_text()
+        block = action.split('    - name: Record and validate dependency cache matches', 1)[1].split('\n    - name:', 1)[0]
+        command = block.split('      run: |\n', 1)[1]
+        exact = {'SDK_CACHE_HIT': 'true', 'PUB_CACHE_HIT': 'true', 'GRADLE_CACHE_HIT': 'true',
+                 'REQUIRE_WARM': 'true', 'ANDROID_ENABLED': 'true'}
+        cases = [({}, True), ({'SDK_CACHE_HIT': ''}, False), ({'PUB_CACHE_HIT': 'false'}, False),
+                 ({'GRADLE_CACHE_HIT': 'false'}, False),
+                 ({'ANDROID_ENABLED': 'false', 'GRADLE_CACHE_HIT': ''}, True),
+                 ({'REQUIRE_WARM': 'false', 'SDK_CACHE_HIT': '', 'PUB_CACHE_HIT': ''}, True)]
+        for overrides, passed in cases:
+            with self.subTest(overrides=overrides):
+                result = subprocess.run(['/bin/bash', '-e', '-c', command], capture_output=True, text=True,
+                                        env={**os.environ, **exact, **overrides}, timeout=5)
+                self.assertEqual(result.returncode == 0, passed, result.stdout + result.stderr)
+
+    def test_controlled_android_warm_miss_stops_before_sdkmanager(self):
+        action = (Path(__file__).resolve().parent.parent / '.github/actions/setup-flutter/action.yml').read_text()
+        block = action.split('    - name: Complete the Android native tool cache profile', 1)[1].split('\n    - name:', 1)[0]
+        command = block.split('      run: |\n', 1)[1]
+        manager = self.root / 'manager'
+        calls = self.root / 'manager-called'
+        manager.write_text(f'#!/bin/sh\ntouch "{calls}"\n')
+        manager.chmod(0o755)
+        result = subprocess.run(['/bin/bash', '-e', '-c', command], capture_output=True, text=True,
+                                env={**os.environ, 'REQUIRE_WARM': 'true', 'ANDROID_TOOLS_CACHE_HIT': 'false',
+                                     'BRIDRA_ANDROID_SDKMANAGER': str(manager)}, timeout=5)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('exact Android native cache match', result.stderr)
+        self.assertFalse(calls.exists())
 
     def test_missing_sdkmanager_blocks_profile_export_instead_of_relying_on_path(self):
         environment = self.android_fixture()
