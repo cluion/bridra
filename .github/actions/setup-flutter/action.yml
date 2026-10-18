@@ -91,3 +91,24 @@ runs:
       run: |
         read -r -a artifact_flags <<< "$BRIDRA_ARTIFACT_FLAGS"
         fvm flutter precache "${artifact_flags[@]}"
+
+    - name: Resolve pinned Android native tools
+      if: inputs.android == 'true'
+      id: android-native
+      shell: bash
+      run: python3 tool/ci.py android-native-env
+
+    - name: Restore Android NDK and CMake
+      if: inputs.android == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ${{ steps.android-native.outputs.ndk_path }}
+          ${{ steps.android-native.outputs.cmake_path }}
+        key: ${{ inputs.cache-namespace }}android-native-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-${{ steps.android-native.outputs.ndk }}-${{ steps.android-native.outputs.cmake }}
+        fail-on-cache-miss: ${{ inputs.require-cache-hit }}
+
+    - name: Complete the Android native tool cache profile
+      if: inputs.android == 'true'
+      shell: bash
+      run: sdkmanager --install 'ndk;${{ steps.android-native.outputs.ndk }}' 'cmake;${{ steps.android-native.outputs.cmake }}'

@@ -204,6 +204,15 @@ sets under the same immutable key. See the optional
 Credentials, OIDC files, repository checkouts, test outcomes and release candidates
 are not dependency-cache entries. Go's existing setup-action cache remains enabled.
 
+Android jobs also cache the exact Flutter-selected NDK and the CMake version in
+`tool/ci.py`, under a separate SDK/architecture/tool-version key. Only those two
+component directories are included, not every preinstalled NDK. The NDK version
+is read from the pinned Flutter SDK; `sdkmanager` installs/verifies both tools on
+every run before saving, so a first writer cannot freeze a partial profile.
+Normal release/debug builds and the real Emulator HTTP flow still run. The
+existing default-branch warm-up populates this same profile. First population
+and later restored measurements must be reported separately.
+
 Windows verification includes `tool/windows.ps1` in its Go cache fingerprint,
 separating its complete generated-consumer/cross-compile profile from the bundle
 job's smaller compilation workload. The first run for a new profile is cold;

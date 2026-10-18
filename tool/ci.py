@@ -12,6 +12,7 @@ import subprocess
 from ci_fvm import VERSION as FVM_VERSION
 
 
+ANDROID_CMAKE_VERSION = "3.22.1"
 SCOPES = ("core", "linux", "android", "web", "macos", "ios", "windows",
           "android_emulator", "ios_simulator")
 PLATFORMS = ("linux", "android", "web", "macos", "ios", "windows")
@@ -123,6 +124,21 @@ def windows_environment(environment):
     with open(environment["GITHUB_ENV"], "a") as output:
         for name, directory in locations.items():
             output.write(f"{name}={directory.as_posix()}\n")
+
+
+def android_native_environment(environment):
+    sdk = Path(environment.get("ANDROID_HOME") or environment["ANDROID_SDK_ROOT"])
+    extension = Path(environment["FLUTTER_ROOT"]) / "packages/flutter_tools/gradle/src/main/kotlin/FlutterExtension.kt"
+    match = re.search(r'\bval\s+ndkVersion\s*:\s*String\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"',
+                      extension.read_text())
+    if not match or not sdk.is_dir() or not sdk.is_absolute():
+        raise ValueError("expected the pinned Flutter NDK and an installed Android SDK")
+    values = {"ndk": match[1], "cmake": ANDROID_CMAKE_VERSION,
+              "ndk_path": (sdk / "ndk" / match[1]).as_posix(),
+              "cmake_path": (sdk / "cmake" / ANDROID_CMAKE_VERSION).as_posix()}
+    with open(environment["GITHUB_OUTPUT"], "a") as output:
+        for name, value in values.items():
+            output.write(f"{name}={value}\n")
 
 
 def flutter_environment(root, environment):
@@ -290,7 +306,7 @@ def main():
     artifacts.add_argument("--directory", required=True)
     artifacts.add_argument("--version", required=True)
     artifacts.add_argument("--commit", required=True)
-    for name in ("cache-env", "flutter-env", "gradle-wrapper", "windows-env"):
+    for name in ("cache-env", "flutter-env", "gradle-wrapper", "windows-env", "android-native-env"):
         setup = commands.add_parser(name)
         setup.add_argument("--root", default=".")
     args = parser.parse_args()
@@ -326,6 +342,8 @@ def main():
             flutter_environment(args.root, os.environ)
         elif args.command == "windows-env":
             windows_environment(os.environ)
+        elif args.command == "android-native-env":
+            android_native_environment(os.environ)
         else:
             prepare_gradle_wrapper(args.root, os.environ)
     except (ValueError, KeyError, OSError, subprocess.CalledProcessError) as error:

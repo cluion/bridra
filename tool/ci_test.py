@@ -303,6 +303,44 @@ class SDKEnvironmentTests(unittest.TestCase):
         self.assertIn('fvm flutter precache "${artifact_flags[@]}"', action)
         self.assertIn("fail-on-cache-miss: ${{ inputs.require-cache-hit }}", action)
 
+    def android_fixture(self, source='val ndkVersion: String = "28.2.13676358"'):
+        sdk = self.root / 'android-sdk'
+        sdk.mkdir(exist_ok=True)
+        extension = self.root / 'flutter/packages/flutter_tools/gradle/src/main/kotlin/FlutterExtension.kt'
+        extension.parent.mkdir(parents=True, exist_ok=True)
+        extension.write_text(source)
+        return {'ANDROID_HOME': str(sdk), 'FLUTTER_ROOT': str(self.root / 'flutter'),
+                'GITHUB_OUTPUT': self.environment['GITHUB_OUTPUT']}
+
+    def test_native_android_cache_only_selects_exact_sdk_tool_versions(self):
+        environment = self.android_fixture()
+        ci.android_native_environment(environment)
+        values = dict(line.split('=', 1) for line in Path(environment['GITHUB_OUTPUT']).read_text().splitlines())
+        self.assertEqual(values['ndk'], '28.2.13676358')
+        self.assertEqual(values['cmake'], ci.ANDROID_CMAKE_VERSION)
+        self.assertEqual(values['ndk_path'], environment['ANDROID_HOME'] + '/ndk/28.2.13676358')
+        self.assertEqual(values['cmake_path'], environment['ANDROID_HOME'] + '/cmake/' + ci.ANDROID_CMAKE_VERSION)
+        self.assertEqual(set(values), {'ndk', 'cmake', 'ndk_path', 'cmake_path'})
+
+    def test_missing_or_injected_ndk_and_missing_android_sdk_fail_before_export(self):
+        for source in ('', 'val ndkVersion: String = "latest"', 'val ndkVersion: String = "28.2.1\\nother=value"'):
+            environment = self.android_fixture(source)
+            with self.subTest(source=source), self.assertRaises(ValueError):
+                ci.android_native_environment(environment)
+            self.assertFalse(Path(environment['GITHUB_OUTPUT']).exists())
+        environment = self.android_fixture()
+        environment['ANDROID_HOME'] += '/missing'
+        with self.assertRaises(ValueError):
+            ci.android_native_environment(environment)
+
+    def test_android_native_cache_writer_installs_both_tools_and_keeps_full_builds(self):
+        action = (Path(__file__).resolve().parent.parent / '.github/actions/setup-flutter/action.yml').read_text()
+        self.assertIn('android-native-v1-${{ runner.os }}-${{ runner.arch }}', action)
+        self.assertIn("sdkmanager --install 'ndk;${{ steps.android-native.outputs.ndk }}' 'cmake;${{ steps.android-native.outputs.cmake }}'", action)
+        self.assertIn('${{ steps.android-native.outputs.ndk_path }}', action)
+        self.assertIn('${{ steps.android-native.outputs.cmake_path }}', action)
+        self.assertNotIn('/ndk/*', action)
+
     def test_unknown_host_fails_before_exporting_a_cache_profile(self):
         self.environment["RUNNER_OS"] = "unknown"
         with self.assertRaises(KeyError):
