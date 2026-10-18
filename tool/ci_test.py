@@ -304,8 +304,12 @@ class SDKEnvironmentTests(unittest.TestCase):
         self.assertIn("fail-on-cache-miss: ${{ inputs.require-cache-hit }}", action)
 
     def android_fixture(self, source='val ndkVersion: String = "28.2.13676358"'):
-        sdk = self.root / 'android-sdk'
+        sdk = self.root / 'android SDK'
         sdk.mkdir(exist_ok=True)
+        manager = sdk / 'cmdline-tools/latest/bin/sdkmanager'
+        manager.parent.mkdir(parents=True, exist_ok=True)
+        manager.write_text('#!/bin/sh\nexit 0\n')
+        manager.chmod(0o755)
         extension = self.root / 'flutter/packages/flutter_tools/gradle/src/main/kotlin/FlutterExtension.kt'
         extension.parent.mkdir(parents=True, exist_ok=True)
         extension.write_text(source)
@@ -320,7 +324,8 @@ class SDKEnvironmentTests(unittest.TestCase):
         self.assertEqual(values['cmake'], ci.ANDROID_CMAKE_VERSION)
         self.assertEqual(values['ndk_path'], environment['ANDROID_HOME'] + '/ndk/28.2.13676358')
         self.assertEqual(values['cmake_path'], environment['ANDROID_HOME'] + '/cmake/' + ci.ANDROID_CMAKE_VERSION)
-        self.assertEqual(set(values), {'ndk', 'cmake', 'ndk_path', 'cmake_path'})
+        self.assertEqual(values['sdkmanager_path'], environment['ANDROID_HOME'] + '/cmdline-tools/latest/bin/sdkmanager')
+        self.assertEqual(set(values), {'ndk', 'cmake', 'ndk_path', 'cmake_path', 'sdkmanager_path'})
 
     def test_missing_or_injected_ndk_and_missing_android_sdk_fail_before_export(self):
         for source in ('', 'val ndkVersion: String = "latest"', 'val ndkVersion: String = "28.2.1\\nother=value"'):
@@ -336,10 +341,36 @@ class SDKEnvironmentTests(unittest.TestCase):
     def test_android_native_cache_writer_installs_both_tools_and_keeps_full_builds(self):
         action = (Path(__file__).resolve().parent.parent / '.github/actions/setup-flutter/action.yml').read_text()
         self.assertIn('android-native-v1-${{ runner.os }}-${{ runner.arch }}', action)
-        self.assertIn("sdkmanager --install 'ndk;${{ steps.android-native.outputs.ndk }}' 'cmake;${{ steps.android-native.outputs.cmake }}'", action)
+        self.assertIn('BRIDRA_ANDROID_SDKMANAGER: ${{ steps.android-native.outputs.sdkmanager_path }}', action)
+        self.assertIn('"$BRIDRA_ANDROID_SDKMANAGER" --install', action)
+        self.assertIn("'ndk;${{ steps.android-native.outputs.ndk }}' 'cmake;${{ steps.android-native.outputs.cmake }}'", action)
         self.assertIn('${{ steps.android-native.outputs.ndk_path }}', action)
         self.assertIn('${{ steps.android-native.outputs.cmake_path }}', action)
         self.assertNotIn('/ndk/*', action)
+
+    def test_sdkmanager_absolute_path_runs_with_spaces_and_no_path_entry(self):
+        environment = self.android_fixture()
+        manager = Path(environment['ANDROID_HOME']) / 'cmdline-tools/latest/bin/sdkmanager'
+        manager.write_text(f'#!{sys.executable}\nimport json,os,sys\nopen(os.environ["CALLS"],"w").write(json.dumps(sys.argv[1:]))\n')
+        ci.android_native_environment(environment)
+        values = dict(line.split('=', 1) for line in Path(environment['GITHUB_OUTPUT']).read_text().splitlines())
+        action = (Path(__file__).resolve().parent.parent / '.github/actions/setup-flutter/action.yml').read_text()
+        command = action.split('    - name: Complete the Android native tool cache profile', 1)[1].split('      run: |\n', 1)[1]
+        command = command.replace('${{ steps.android-native.outputs.ndk }}', values['ndk'])
+        command = command.replace('${{ steps.android-native.outputs.cmake }}', values['cmake'])
+        calls = self.root / 'calls.json'
+        process = subprocess.run(['/bin/bash', '-e', '-c', command], capture_output=True, text=True,
+                                 env={**os.environ, 'PATH': '/missing', 'CALLS': str(calls),
+                                      'BRIDRA_ANDROID_SDKMANAGER': values['sdkmanager_path']}, timeout=5)
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+        self.assertEqual(json.loads(calls.read_text()), ['--install', 'ndk;' + values['ndk'], 'cmake;' + values['cmake']])
+
+    def test_missing_sdkmanager_blocks_profile_export_instead_of_relying_on_path(self):
+        environment = self.android_fixture()
+        (Path(environment['ANDROID_HOME']) / 'cmdline-tools/latest/bin/sdkmanager').unlink()
+        with self.assertRaises(ValueError):
+            ci.android_native_environment(environment)
+        self.assertFalse(Path(environment['GITHUB_OUTPUT']).exists())
 
     def test_unknown_host_fails_before_exporting_a_cache_profile(self):
         self.environment["RUNNER_OS"] = "unknown"

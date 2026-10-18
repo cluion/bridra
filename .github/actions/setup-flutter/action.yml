@@ -111,4 +111,7 @@ runs:
     - name: Complete the Android native tool cache profile
       if: inputs.android == 'true'
       shell: bash
-      run: sdkmanager --install 'ndk;${{ steps.android-native.outputs.ndk }}' 'cmake;${{ steps.android-native.outputs.cmake }}'
+      env:
+        BRIDRA_ANDROID_SDKMANAGER: ${{ steps.android-native.outputs.sdkmanager_path }}
+      run: |
+        "$BRIDRA_ANDROID_SDKMANAGER" --install 'ndk;${{ steps.android-native.outputs.ndk }}' 'cmake;${{ steps.android-native.outputs.cmake }}'

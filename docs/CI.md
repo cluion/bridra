@@ -209,6 +209,8 @@ Android jobs also cache the exact Flutter-selected NDK and the CMake version in
 component directories are included, not every preinstalled NDK. The NDK version
 is read from the pinned Flutter SDK; `sdkmanager` installs/verifies both tools on
 every run before saving, so a first writer cannot freeze a partial profile.
+Its executable is resolved and checked under the configured Android SDK's
+`cmdline-tools/latest/bin`, without relying on the runner's default PATH.
 Normal release/debug builds and the real Emulator HTTP flow still run. The
 existing default-branch warm-up populates this same profile. First population
 and later restored measurements must be reported separately.

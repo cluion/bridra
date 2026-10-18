@@ -128,14 +128,17 @@ def windows_environment(environment):
 
 def android_native_environment(environment):
     sdk = Path(environment.get("ANDROID_HOME") or environment["ANDROID_SDK_ROOT"])
+    manager = sdk / "cmdline-tools/latest/bin/sdkmanager"
     extension = Path(environment["FLUTTER_ROOT"]) / "packages/flutter_tools/gradle/src/main/kotlin/FlutterExtension.kt"
     match = re.search(r'\bval\s+ndkVersion\s*:\s*String\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"',
                       extension.read_text())
-    if not match or not sdk.is_dir() or not sdk.is_absolute():
+    if (not match or not sdk.is_dir() or not sdk.is_absolute()
+            or not manager.is_file() or not os.access(manager, os.X_OK)):
         raise ValueError("expected the pinned Flutter NDK and an installed Android SDK")
     values = {"ndk": match[1], "cmake": ANDROID_CMAKE_VERSION,
               "ndk_path": (sdk / "ndk" / match[1]).as_posix(),
-              "cmake_path": (sdk / "cmake" / ANDROID_CMAKE_VERSION).as_posix()}
+              "cmake_path": (sdk / "cmake" / ANDROID_CMAKE_VERSION).as_posix(),
+              "sdkmanager_path": manager.as_posix()}
     with open(environment["GITHUB_OUTPUT"], "a") as output:
         for name, value in values.items():
             output.write(f"{name}={value}\n")
