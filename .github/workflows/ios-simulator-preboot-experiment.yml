@@ -1,0 +1,129 @@
+name: iOS Simulator preboot experiment
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-preboot-experiment-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.label.name == 'benchmark-ios-preboot' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.base.ref == 'main')
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - preparation: early
+            sample: 1
+          - preparation: deferred
+            sample: 1
+          - preparation: deferred
+            sample: 2
+          - preparation: early
+            sample: 2
+    name: compare (${{ matrix.preparation }}, ${{ matrix.sample }})
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - name: Check out the same tested source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Record measurement identity
+        env:
+          PREPARATION: ${{ matrix.preparation }}
+          SAMPLE: ${{ matrix.sample }}
+          SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/bridra-ios-preboot"
+          python3 - <<'PY'
+          import json, os, pathlib, platform, subprocess
+          def git(*args):
+              return subprocess.check_output(['git', *args], text=True, timeout=10).strip()
+          report = {
+              'preparation': os.environ['PREPARATION'], 'sample': int(os.environ['SAMPLE']),
+              'sourceHead': os.environ['SOURCE_HEAD'], 'testedSha': git('rev-parse', 'HEAD'),
+              'tree': git('rev-parse', 'HEAD^{tree}'), 'runId': os.environ['GITHUB_RUN_ID'],
+              'attempt': os.environ['GITHUB_RUN_ATTEMPT'], 'arch': platform.machine(),
+              'image': os.environ.get('ImageOS'), 'imageVersion': os.environ.get('ImageVersion'),
+              'developerDirectory': os.environ.get('DEVELOPER_DIR'),
+              'dependencyProfile': 'warm Go, Flutter SDK and Pub; fresh native build and Simulator',
+          }
+          path = pathlib.Path(os.environ['RUNNER_TEMP']) / 'bridra-ios-preboot/context.json'
+          path.write_text(json.dumps(report, indent=2) + '\n')
+          print(json.dumps(report))
+          PY
+      - name: Start Simulator before toolchain setup (A)
+        if: matrix.preparation == 'early'
+        id: early
+        run: python3 tool/ios_simulator_prepare.py start --state "$RUNNER_TEMP/bridra-ios-preparation/state.json"
+      - name: Set up Go
+        id: go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: |
+            backend/go.mod
+            backend/integration/sqljobstore/go.mod
+      - name: Require the same warm Go cache
+        env:
+          GO_CACHE_HIT: ${{ steps.go.outputs.cache-hit }}
+        run: test "$GO_CACHE_HIT" = true
+      - name: Set up pinned Flutter
+        uses: ./.github/actions/setup-flutter
+        with:
+          require-cache-hit: 'true'
+      - name: Start Simulator after toolchain setup (B)
+        if: matrix.preparation == 'deferred'
+        id: deferred
+        run: python3 tool/ios_simulator_prepare.py start --state "$RUNNER_TEMP/bridra-ios-preparation/state.json"
+      - name: Exercise iOS Simulator HTTP round trip
+        id: ios_simulator_smoke
+        continue-on-error: true
+        timeout-minutes: 12
+        env:
+          DEVICE: ${{ steps.early.outputs.device || steps.deferred.outputs.device }}
+          BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR: ${{ runner.temp }}/bridra-ios-simulator-diagnostics/initial
+        run: |
+          TIMEFORMAT='Simulator readiness seconds: %3R'
+          time python3 tool/ios_simulator_prepare.py ready --state "$RUNNER_TEMP/bridra-ios-preparation/state.json"
+          TIMEFORMAT='Simulator smoke seconds: %3R'
+          time make ios-simulator-smoke DEVICE="$DEVICE"
+      - name: Reset iOS Simulator before one retry
+        if: steps.ios_simulator_smoke.outcome == 'failure'
+        run: python3 tool/ios_simulator_prepare.py reset --state "$RUNNER_TEMP/bridra-ios-preparation/state.json"
+      - name: Retry iOS Simulator HTTP round trip
+        id: ios_simulator_retry
+        if: steps.ios_simulator_smoke.outcome == 'failure'
+        timeout-minutes: 12
+        env:
+          DEVICE: ${{ steps.early.outputs.device || steps.deferred.outputs.device }}
+          BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR: ${{ runner.temp }}/bridra-ios-simulator-diagnostics/retry
+        run: |
+          TIMEFORMAT='Simulator retry seconds: %3R'
+          time make ios-simulator-smoke DEVICE="$DEVICE"
+      - name: Stop the preparation worker and owned Simulator
+        if: always()
+        run: python3 tool/ios_simulator_prepare.py finish --state "$RUNNER_TEMP/bridra-ios-preparation/state.json"
+      - name: Upload experiment context and any failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-preboot-${{ matrix.preparation }}-${{ matrix.sample }}-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/bridra-ios-preboot
+            ${{ runner.temp }}/bridra-ios-preparation
+            ${{ runner.temp }}/bridra-ios-simulator-diagnostics

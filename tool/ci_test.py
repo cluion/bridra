@@ -326,6 +326,63 @@ class SDKEnvironmentTests(unittest.TestCase):
         self.assertFalse((self.root / 'android/gradle/wrapper/gradle-wrapper.jar').exists())
 
 
+class SimulatorPrebootExperimentTests(unittest.TestCase):
+    def setUp(self):
+        root = Path(__file__).resolve().parent.parent
+        self.workflow = (root / '.github/workflows/ios-simulator-preboot-experiment.yml').read_text()
+
+    def test_trial_is_opt_in_same_repository_and_bounded_to_four_samples(self):
+        self.assertIn("github.event.label.name == 'benchmark-ios-preboot'", self.workflow)
+        self.assertIn('github.event.pull_request.head.repo.full_name == github.repository', self.workflow)
+        self.assertIn("github.event.pull_request.base.ref == 'main'", self.workflow)
+        self.assertNotIn('pull_request_target:', self.workflow)
+        self.assertNotIn('synchronize', self.workflow)
+        self.assertIn('contents: read', self.workflow)
+        self.assertIn('persist-credentials: false', self.workflow)
+        self.assertIn('runs-on: macos-15', self.workflow)
+        self.assertIn('fail-fast: false', self.workflow)
+        self.assertIn('max-parallel: 2', self.workflow)
+        samples = re.findall(r'- preparation: (early|deferred)\n            sample: ([12])', self.workflow)
+        self.assertEqual(samples, [('early', '1'), ('deferred', '1'), ('deferred', '2'), ('early', '2')])
+
+    def test_only_preparation_position_changes_and_warm_caches_are_required(self):
+        early = self.workflow.index('name: Start Simulator before toolchain setup (A)')
+        go = self.workflow.index('name: Set up Go')
+        flutter = self.workflow.index('name: Set up pinned Flutter')
+        deferred = self.workflow.index('name: Start Simulator after toolchain setup (B)')
+        smoke = self.workflow.index('name: Exercise iOS Simulator HTTP round trip')
+        self.assertLess(early, go)
+        self.assertLess(go, flutter)
+        self.assertLess(flutter, deferred)
+        self.assertLess(deferred, smoke)
+        self.assertEqual(self.workflow.count('ios_simulator_prepare.py start --state'), 2)
+        self.assertIn("if: matrix.preparation == 'early'", self.workflow)
+        self.assertIn("if: matrix.preparation == 'deferred'", self.workflow)
+        self.assertIn('GO_CACHE_HIT: ${{ steps.go.outputs.cache-hit }}', self.workflow)
+        self.assertIn('run: test "$GO_CACHE_HIT" = true', self.workflow)
+        self.assertIn("require-cache-hit: 'true'", self.workflow)
+        self.assertIn('backend/integration/sqljobstore/go.mod', self.workflow)
+        self.assertNotIn('cache-namespace:', self.workflow)
+        self.assertNotIn('actions/download-artifact', self.workflow)
+
+    def test_both_samples_keep_the_original_smoke_retry_and_owned_cleanup(self):
+        self.assertEqual(self.workflow.count('make ios-simulator-smoke DEVICE="$DEVICE"'), 2)
+        self.assertEqual(self.workflow.count('DEVICE: ${{ steps.early.outputs.device || steps.deferred.outputs.device }}'), 2)
+        self.assertEqual(self.workflow.count('timeout-minutes: 12'), 2)
+        self.assertEqual(self.workflow.count("if: steps.ios_simulator_smoke.outcome == 'failure'"), 2)
+        self.assertEqual(self.workflow.count('continue-on-error: true'), 1)
+        initial = self.workflow.split('id: ios_simulator_smoke', 1)[1].split('- name: Reset', 1)[0]
+        self.assertIn('ios_simulator_prepare.py ready --state', initial)
+        self.assertIn("TIMEFORMAT='Simulator readiness seconds: %3R'", initial)
+        self.assertIn("TIMEFORMAT='Simulator smoke seconds: %3R'", initial)
+        self.assertIn('time python3 tool/ios_simulator_prepare.py ready --state', initial)
+        self.assertIn('ios_simulator_prepare.py reset --state', self.workflow)
+        self.assertIn('if: always()\n        run: python3 tool/ios_simulator_prepare.py finish', self.workflow)
+        self.assertIn('if: always()\n        uses: actions/upload-artifact@v7', self.workflow)
+        self.assertNotIn('erase all', self.workflow)
+        self.assertNotIn('shutdown all', self.workflow)
+
+
 class WorkflowWiringTests(unittest.TestCase):
     def job(self, name):
         workflow = (Path(__file__).resolve().parent.parent / '.github/workflows/checks.yml').read_text()
