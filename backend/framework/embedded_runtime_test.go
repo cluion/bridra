@@ -299,10 +299,17 @@ func TestEmbeddedRuntimeCloseTimeoutDoesNotAbandonShutdown(t *testing.T) {
 
 func TestEmbeddedRuntimeCancelInterruptsOnlyMatchingRequest(t *testing.T) {
 	started := make(chan string, 2)
+	firstCanceled := make(chan struct{})
+	releaseFirst := make(chan struct{})
 	router := NewRouter()
 	router.Handle("wait", func(ctx *Context) (any, error) {
 		started <- ctx.Request.ID
 		<-ctx.Done()
+		if ctx.Request.ID == "first" {
+			close(firstCanceled)
+			// Keep the request active while repeated cancellation is checked.
+			<-releaseFirst
+		}
 		return map[string]any{"cause": context.Cause(ctx).Error()}, nil
 	})
 	runtime, err := NewEmbeddedRuntime(router, func(context.Context) error { return nil })
@@ -310,6 +317,11 @@ func TestEmbeddedRuntimeCancelInterruptsOnlyMatchingRequest(t *testing.T) {
 		t.Fatalf("NewEmbeddedRuntime() error = %v", err)
 	}
 	t.Cleanup(func() {
+		select {
+		case <-releaseFirst:
+		default:
+			close(releaseFirst)
+		}
 		_ = runtime.Close(context.Background())
 	})
 
@@ -335,12 +347,20 @@ func TestEmbeddedRuntimeCancelInterruptsOnlyMatchingRequest(t *testing.T) {
 	if runtime.Cancel("") || runtime.Cancel("missing") {
 		t.Fatal("Cancel() accepted an empty or unknown request id")
 	}
-	if !runtime.Cancel("first") || !runtime.Cancel("first") {
+	if !runtime.Cancel("first") {
+		t.Fatal("Cancel() did not find the first request")
+	}
+	<-firstCanceled
+	if !runtime.Cancel("first") {
 		t.Fatal("Cancel() did not remain idempotent for the active request")
 	}
+	close(releaseFirst)
 	first := <-firstDone
 	if first.err != nil {
 		t.Fatalf("first CallJSON() error = %v", first.err)
+	}
+	if runtime.Cancel("first") {
+		t.Fatal("Cancel() accepted a completed request")
 	}
 	var response Response
 	if err := json.Unmarshal([]byte(first.encoded), &response); err != nil {
