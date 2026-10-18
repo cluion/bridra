@@ -173,7 +173,8 @@ matrix covers the selected runner. Its macOS/ARM64 SDK and Pub keys also serve
 the macOS 15 desktop/release jobs; no native build output is shared, and an
 unused Intel profile is not kept as an additional nightly job. Initial dependency population and exact warm matches
 must be reported separately, including failed and cancelled trial costs.
-The hosted scheduling trial sets `BRIDRA_IOS_CI_XCODE_JOBS=1`.
+The hosted scheduling trial sets `BRIDRA_IOS_CI_XCODE_JOBS=2`, following the
+single-operation trial on the same ARM image/toolchain/runtime/model.
 `tool/ios_ci_smoke.sh` scopes an additional `xcrun` adapter to a temporary directory
 inside `RUNNER_TEMP`. It passes Xcode's `-jobs` argument only to Flutter's actual
 Simulator build (identified by its SDK and result-bundle flags); metadata and
@@ -184,6 +185,9 @@ arguments fail closed. The adapter supports bounded values 1–3 only on ephemer
 hosted runners, and removes its owned link on exit. A lower memory/CPU peak is a
 timing hypothesis requiring hosted comparison, not a measured speed guarantee.
 The preparation source identity also binds this requested scheduling value.
+Each foreground stage also reports waited-process user/system CPU seconds using
+Bash's timing builtin. These values exclude work performed by unrelated OS
+services; they are not whole-VM utilization, peak memory or billed runner time.
 
 Host CPU/memory and swap snapshots are logged before preparation and after its
 join. Cached dependencies do not replace fresh native builds, and hosted timing

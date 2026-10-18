@@ -723,7 +723,7 @@ class WorkflowWiringTests(unittest.TestCase):
         self.assertIn('DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer', body)
         self.assertIn('BRIDRA_IOS_SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-18-5', body)
         self.assertIn('BRIDRA_IOS_SIMULATOR_NAME: iPhone 16 Pro', body)
-        self.assertIn("BRIDRA_IOS_CI_XCODE_JOBS: '1'", body)
+        self.assertIn("BRIDRA_IOS_CI_XCODE_JOBS: '2'", body)
         self.assertIn('sysctl hw.memsize hw.ncpu vm.swapusage', body)
         for name in ('ios-build', 'macos-lifecycle', 'macos-bundle'):
             self.assertIn('runs-on: macos-15\n', self.job(name))

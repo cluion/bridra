@@ -75,6 +75,8 @@ exit "${SMOKE_STATUS:-0}"
         self.assertEqual(self.calls(), ['macos-check', 'backend-server-build', 'smoke'])
         for name in ('xcode-check', 'backend-build', 'transport-smoke'):
             self.assertRegex(result.stderr, rf'Bridra iOS {name} seconds: [0-9]+\.[0-9]{{3}}')
+            for kind in ('user', 'system'):
+                self.assertRegex(result.stderr, rf'Bridra iOS {name} CPU {kind} seconds: [0-9]+\.[0-9]{{3}}')
             self.assertIn(f'Bridra iOS {name} exit: 0', result.stdout)
 
     def test_preflight_build_and_smoke_failures_propagate_and_stop(self):

@@ -373,7 +373,7 @@ jobs:
       DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
       BRIDRA_IOS_SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-18-5
       BRIDRA_IOS_SIMULATOR_NAME: iPhone 16 Pro
-      BRIDRA_IOS_CI_XCODE_JOBS: '1'
+      BRIDRA_IOS_CI_XCODE_JOBS: '2'
     timeout-minutes: 35
     steps:
       - name: Check out repository
