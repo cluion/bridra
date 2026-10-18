@@ -311,6 +311,178 @@ void main() {
     },
   );
 
+  test(
+    'pausing a pending read suspends idle expiry and resumes delivery',
+    () async {
+      final started = Completer<void>();
+      final frames = StreamController<RpcStreamEvent<RpcReply>>();
+      final client = waitingClient(started, frames: frames);
+      final received = Completer<int>();
+      final errors = <Object>[];
+      const policy = RpcSubscriptionPolicy(
+        idleTimeout: Duration(milliseconds: 40),
+        maxConsecutiveReconnects: 0,
+      );
+      final subscription = client
+          .subscribe('logs.watch', decode: decodeInt, policy: policy)
+          .listen(
+            (event) => received.complete(event.value),
+            onError: (Object error) => errors.add(error),
+          );
+      addTearDown(subscription.cancel);
+      await started.future;
+      subscription.pause();
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      expect(client.tokens.single.isCancelled, isFalse);
+      expect(client.calls, 1);
+      subscription.resume();
+      frames.add(data('resumed', 42));
+      expect(await received.future.timeout(const Duration(seconds: 2)), 42);
+      expect(errors, isEmpty);
+    },
+  );
+
+  test('resuming a pending read rearms its idle watchdog', () async {
+    final started = Completer<void>();
+    final client = waitingClient(started);
+    final failed = Completer<Object>();
+    const policy = RpcSubscriptionPolicy(
+      idleTimeout: Duration(milliseconds: 40),
+      maxConsecutiveReconnects: 0,
+    );
+    final subscription = client
+        .subscribe('logs.watch', decode: decodeInt, policy: policy)
+        .listen((_) {}, onError: failed.complete);
+    addTearDown(subscription.cancel);
+    await started.future;
+    subscription.pause();
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    expect(client.tokens.single.isCancelled, isFalse);
+    subscription.resume();
+    expect(
+      await failed.future.timeout(const Duration(seconds: 2)),
+      isA<TimeoutException>(),
+    );
+    expect(client.tokens.single.isCancelled, isTrue);
+    expect(client.calls, 1);
+  });
+
+  for (final cancelWithToken in [false, true]) {
+    test(
+      'cancellation interrupts a paused pending read (token=$cancelWithToken)',
+      () async {
+        final started = Completer<void>();
+        final client = waitingClient(started);
+        final token = RpcCancellationToken();
+        final failed = Completer<Object>();
+        const policy = RpcSubscriptionPolicy(
+          idleTimeout: Duration(milliseconds: 40),
+          maxConsecutiveReconnects: 0,
+        );
+        final subscription = client
+            .subscribe(
+              'logs.watch',
+              decode: decodeInt,
+              policy: policy,
+              cancellationToken: token,
+            )
+            .listen((_) {}, onError: failed.complete);
+        addTearDown(subscription.cancel);
+        await started.future;
+        subscription.pause();
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+        expect(client.tokens.single.isCancelled, isFalse);
+        if (cancelWithToken) {
+          token.cancel();
+          expect(client.tokens.single.isCancelled, isTrue);
+          subscription.resume();
+          expect(
+            await failed.future.timeout(const Duration(seconds: 2)),
+            isA<RpcCancelledException>(),
+          );
+        } else {
+          await subscription.cancel().timeout(const Duration(seconds: 1));
+          expect(failed.isCompleted, isFalse);
+        }
+        expect(client.tokens.single.isCancelled, isTrue);
+        expect(client.calls, 1);
+      },
+    );
+  }
+
+  test(
+    'the total deadline remains effective while a pending read is paused',
+    () async {
+      final started = Completer<void>();
+      final client = waitingClient(started);
+      final failed = Completer<Object>();
+      const total = Duration(milliseconds: 80);
+      const policy = RpcSubscriptionPolicy(
+        idleTimeout: Duration(milliseconds: 30),
+        totalTimeout: total,
+        maxConsecutiveReconnects: 0,
+      );
+      final subscription = client
+          .subscribe('logs.watch', decode: decodeInt, policy: policy)
+          .listen((_) {}, onError: failed.complete);
+      addTearDown(subscription.cancel);
+      await started.future;
+      subscription.pause();
+      await Future<void>.delayed(const Duration(milliseconds: 160));
+      expect(client.tokens.single.isCancelled, isTrue);
+      subscription.resume();
+      expect(
+        await failed.future.timeout(const Duration(seconds: 2)),
+        isA<TimeoutException>()
+            .having((error) => error.duration, 'total deadline', total)
+            .having(
+              (error) => error.message,
+              'cause',
+              'Subscription logs.watch timed out.',
+            ),
+      );
+    },
+  );
+
+  test(
+    'the HTTP connection deadline remains effective during a pending pause',
+    () async {
+      final transport = PendingHeadersClient();
+      final client = HttpRpcClient(
+        endpoint: Uri.parse('https://example.test/rpc'),
+        token: 'token',
+        client: transport,
+      );
+      addTearDown(client.close);
+      final failed = Completer<Object>();
+      const deadline = Duration(milliseconds: 80);
+      const policy = RpcSubscriptionPolicy(
+        connectionTimeout: deadline,
+        idleTimeout: Duration(milliseconds: 30),
+        maxConsecutiveReconnects: 0,
+      );
+      final subscription = client
+          .subscribe('logs.watch', decode: decodeInt, policy: policy)
+          .listen((_) {}, onError: failed.complete);
+      addTearDown(subscription.cancel);
+      await transport.started.future;
+      subscription.pause();
+      await Future<void>.delayed(const Duration(milliseconds: 160));
+      expect(transport.aborted, isTrue);
+      subscription.resume();
+      expect(
+        await failed.future.timeout(const Duration(seconds: 2)),
+        isA<TimeoutException>()
+            .having((error) => error.duration, 'connection deadline', deadline)
+            .having(
+              (error) => error.message,
+              'cause',
+              'HTTP stream logs.watch timed out.',
+            ),
+      );
+    },
+  );
+
   for (final error in <Object>[
     const RpcException('subscription_cursor_expired', 'resync'),
     const RpcException('unauthenticated', 'login'),
@@ -495,16 +667,18 @@ class ScriptClient implements RpcClient {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-ScriptClient waitingClient(Completer<void> started) =>
-    ScriptClient((a, p, token, d) {
-      final controller = StreamController<RpcStreamEvent<RpcReply>>();
-      final cancellation = token.onCancel.listen(
-        (_) => unawaited(controller.close()),
-      );
-      controller.onCancel = cancellation.cancel;
-      started.complete();
-      return controller.stream;
-    });
+ScriptClient waitingClient(
+  Completer<void> started, {
+  StreamController<RpcStreamEvent<RpcReply>>? frames,
+}) => ScriptClient((a, p, token, d) {
+  final controller = frames ?? StreamController<RpcStreamEvent<RpcReply>>();
+  final cancellation = token.onCancel.listen(
+    (_) => unawaited(controller.close()),
+  );
+  controller.onCancel = cancellation.cancel;
+  started.complete();
+  return controller.stream;
+});
 
 class SubscriptionHttpClient extends http.BaseClient {
   SubscriptionHttpClient({this.status = 200});
@@ -537,8 +711,10 @@ class SubscriptionHttpClient extends http.BaseClient {
 
 class PendingHeadersClient extends http.BaseClient {
   var aborted = false;
+  final started = Completer<void>();
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    if (!started.isCompleted) started.complete();
     await (request as http.AbortableRequest).abortTrigger;
     aborted = true;
     throw http.RequestAbortedException(request.url);

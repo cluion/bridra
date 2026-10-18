@@ -194,11 +194,13 @@ Sidecar restart, cursor expiry and malformed data/sequence frames are terminal.
 The helper preserves their errors and never silently resets an expired cursor.
 
 Pausing the consumer pauses pulls without triggering its idle watchdog. The
-underlying connection/total deadlines still apply. Sidecar retains its bounded
-credit window, HTTP retains response-stream backpressure, and Embedded pauses
-native frame pulls. A cancellation token, listener cancellation, or total timeout
-interrupts pending reads, pauses and reconnect waits and cancels the exact active
-request. No subscription API closes the shared client or cancels unrelated calls.
+idle watchdog also stops when a read is already pending; resuming starts a fresh
+idle interval. The underlying connection/total deadlines still apply. Sidecar
+retains its bounded credit window, HTTP retains response-stream backpressure, and
+Embedded pauses native frame pulls. A cancellation token, listener cancellation,
+or total timeout interrupts pending reads, pauses and reconnect waits and cancels
+the exact active request. No subscription API closes the shared client or cancels
+unrelated calls.
 
 HTTP deployments must also configure streaming/proxy buffering and server
 deadlines appropriately. Heartbeats are ordinary flushed NDJSON data, not a

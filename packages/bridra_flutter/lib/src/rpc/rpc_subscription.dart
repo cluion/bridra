@@ -96,7 +96,7 @@ final class _Subscription<T> {
     output = StreamController<RpcSubscriptionData<T>>(
       sync: true,
       onListen: () => scheduleMicrotask(_run),
-      onPause: () => resumed ??= Completer<void>(),
+      onPause: _pause,
       onResume: _resume,
       onCancel: () {
         _stop();
@@ -120,19 +120,30 @@ final class _Subscription<T> {
   String cursor;
   RpcCancellationToken? connectionCancellation;
   Completer<void>? resumed;
+  Timer? idleTimer;
+  void Function()? restartIdle;
   Object? stopError;
 
   Stream<RpcSubscriptionData<T>> get stream => output.stream;
 
+  void _pause() {
+    resumed ??= Completer<void>();
+    idleTimer?.cancel();
+  }
+
   void _resume() {
-    resumed?.complete();
+    final waiting = resumed;
+    if (waiting == null) return;
     resumed = null;
+    waiting.complete();
+    if (!stopped.isCompleted) restartIdle?.call();
   }
 
   void _stop([Object? error]) {
     if (stopped.isCompleted) return;
     stopError = error;
     stopped.complete();
+    idleTimer?.cancel();
     stopEvents.add(null);
     connectionCancellation?.cancel();
     _resume();
@@ -151,6 +162,40 @@ final class _Subscription<T> {
     } finally {
       // A never-completing shared Future would retain one callback per event.
       await listener.cancel();
+    }
+  }
+
+  Future<bool> _moveNext(
+    StreamIterator<RpcStreamEvent<RpcReply>> iterator,
+    void Function() onIdleTimeout,
+  ) async {
+    final expired = Completer<bool>();
+    void arm() {
+      if (stopped.isCompleted || expired.isCompleted) return;
+      idleTimer?.cancel();
+      idleTimer = Timer(policy.idleTimeout, () {
+        onIdleTimeout();
+        expired.completeError(
+          TimeoutException(
+            'Subscription heartbeat timed out.',
+            policy.idleTimeout,
+          ),
+        );
+      });
+    }
+
+    // A pending read can be paused after it starts. Future.timeout cannot pause
+    // its timer, so keep one watchdog which onPause cancels and onResume rearms.
+    restartIdle = arm;
+    if (resumed == null) arm();
+    try {
+      return await _untilStopped(
+        Future.any([iterator.moveNext(), expired.future]),
+      );
+    } finally {
+      idleTimer?.cancel();
+      idleTimer = null;
+      restartIdle = null;
     }
   }
 
@@ -199,18 +244,7 @@ final class _Subscription<T> {
           while (!stopped.isCompleted) {
             final ready = resumed;
             if (ready != null) await _untilStopped(ready.future);
-            final more = await _untilStopped(
-              iterator.moveNext().timeout(
-                policy.idleTimeout,
-                onTimeout: () {
-                  idleExpired = true;
-                  throw TimeoutException(
-                    'Subscription heartbeat timed out.',
-                    policy.idleTimeout,
-                  );
-                },
-              ),
-            );
+            final more = await _moveNext(iterator, () => idleExpired = true);
             if (stopped.isCompleted) throw const _SubscriptionStopped();
             // A completion frame permanently ends the subscription.
             if (!more) return;
