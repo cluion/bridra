@@ -235,7 +235,7 @@ class SDKEnvironmentTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         (self.root / ".fvmrc").write_text('{"flutter":"3.44.6"}')
         self.environment = {name: str(self.root / name) for name in
-                            ("RUNNER_TOOL_CACHE", "GITHUB_ENV", "GITHUB_OUTPUT", "GITHUB_PATH")}
+                            ("RUNNER_TOOL_CACHE", "RUNNER_TEMP", "GITHUB_ENV", "GITHUB_OUTPUT", "GITHUB_PATH")}
         self.environment["RUNNER_OS"] = "Linux"
 
     def test_cache_paths_export_only_dependency_locations(self):
@@ -253,7 +253,7 @@ class SDKEnvironmentTests(unittest.TestCase):
         for host, profile, flags in (
                 ("Linux", "linux-android-web", "--linux --android --web"),
                 ("macOS", "macos-ios", "--macos --ios"),
-                ("Windows", "windows", "--windows")):
+                ("Windows", "windows-temp-v1", "--windows")):
             with self.subTest(host=host):
                 self.environment["RUNNER_OS"] = host
                 Path(self.environment["GITHUB_OUTPUT"]).unlink(missing_ok=True)
@@ -261,6 +261,35 @@ class SDKEnvironmentTests(unittest.TestCase):
                 output = Path(self.environment["GITHUB_OUTPUT"]).read_text()
                 self.assertIn(f"profile={profile}\n", output)
                 self.assertIn(f"precache_flags={flags}\n", output)
+
+    def test_windows_dependency_cache_uses_runner_scratch_instead_of_system_disk(self):
+        self.environment["RUNNER_OS"] = "Windows"
+        ci.cache_environment(self.root, self.environment)
+        env = Path(self.environment["GITHUB_ENV"]).read_text()
+        self.assertIn(f"FVM_CACHE_PATH={self.environment['RUNNER_TEMP']}/bridra-dependencies/bridra-fvm\n", env)
+        self.assertNotIn(self.environment["RUNNER_TOOL_CACHE"], env)
+
+    def test_windows_build_and_test_scratch_is_owned_by_the_hosted_job(self):
+        environment = {**self.environment, "RUNNER_OS": "Windows", "GITHUB_ACTIONS": "true",
+                       "RUNNER_ENVIRONMENT": "github-hosted"}
+        ci.windows_environment(environment)
+        values = dict(line.split("=", 1) for line in Path(environment["GITHUB_ENV"]).read_text().splitlines())
+        self.assertEqual(set(values), {"GOCACHE", "GOMODCACHE", "GOTMPDIR", "TEMP", "TMP"})
+        for value in values.values():
+            directory = Path(value)
+            self.assertTrue(directory.is_dir())
+            self.assertIn(Path(environment["RUNNER_TEMP"]), directory.parents)
+        self.assertEqual(values["TEMP"], values["TMP"])
+        self.assertEqual(values["GOTMPDIR"], values["TMP"])
+
+    def test_scratch_reconfiguration_rejects_non_hosted_and_other_platforms(self):
+        environment = {**self.environment, "RUNNER_OS": "Windows", "GITHUB_ACTIONS": "true",
+                       "RUNNER_ENVIRONMENT": "github-hosted"}
+        for overrides in ({"RUNNER_OS": "macOS"}, {"GITHUB_ACTIONS": "false"},
+                          {"RUNNER_ENVIRONMENT": "self-hosted"}):
+            with self.subTest(overrides=overrides), self.assertRaises(ValueError):
+                ci.windows_environment({**environment, **overrides})
+        self.assertFalse(Path(self.environment["GITHUB_ENV"]).exists())
 
     def test_windows_installer_keeps_sdk_initialization_and_platform_cache_contracts(self):
         action = (Path(__file__).resolve().parent.parent / '.github/actions/setup-flutter/action.yml').read_text()
@@ -419,6 +448,11 @@ class WorkflowWiringTests(unittest.TestCase):
         for dependency in ('backend/go.mod', 'backend/integration/sqljobstore/go.mod'):
             self.assertIn(dependency, verify)
             self.assertIn(dependency, bundle)
+
+    def test_windows_scratch_is_exported_before_go_cache_restore(self):
+        for name in ('windows-verify', 'windows-bundle'):
+            body = self.job(name)
+            self.assertLess(body.index('tool/ci.py windows-env'), body.index('uses: actions/setup-go@v7'))
 
     def test_windows_common_checks_delegate_only_to_required_core_work(self):
         windows = self.job('windows-verify')

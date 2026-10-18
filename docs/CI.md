@@ -199,6 +199,16 @@ every original command. Independent generated-consumer name/target subtests run
 in parallel, with separate scratch projects or read-only source and Go's normal
 compiler-cache coordination; no test case or target is filtered out.
 
+On hosted Windows, dependency caches and build/test scratch use directories under
+`RUNNER_TEMP`, avoiding repeated small-file work on the system tool-cache disk.
+The environment is exported before Go setup and includes `GOCACHE`, `GOMODCACHE`,
+`GOTMPDIR`, `TEMP` and `TMP`. SDK/Pub caches use `bridra-dependencies`; Go and test
+scratch use `bridra-work`. Windows' SDK profile is `windows-temp-v1`, with the
+same required Windows artifacts. Changed paths also give Pub/Go caches distinct
+cache versions, so the first relocated run is cold; measure later restores
+separately. Existing cache entries are not deleted. Linux/macOS locations,
+toolchain versions, antivirus settings and validation requirements are unchanged.
+
 PR merge-ref caches cannot seed a later main/tag run. The existing weekly/manual
 Runtime Stress workflow therefore has a default-branch-only `cache-warm` matrix
 for Linux/macOS/Windows. It warms SDK platform artifacts, Pub resolution and the

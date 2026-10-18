@@ -94,10 +94,12 @@ def cache_environment(root, environment):
     profiles = {
         "Linux": ("linux-android-web", "--linux --android --web"),
         "macOS": ("macos-ios", "--macos --ios"),
-        "Windows": ("windows", "--windows"),
+        "Windows": ("windows-temp-v1", "--windows"),
     }
     profile, flags = profiles[environment["RUNNER_OS"]]
     cache = Path(environment["RUNNER_TOOL_CACHE"])
+    if environment["RUNNER_OS"] == "Windows":
+        cache = Path(environment["RUNNER_TEMP"]) / "bridra-dependencies"
     values = {"FVM_CACHE_PATH": (cache / "bridra-fvm").as_posix(),
               "PUB_CACHE": (cache / "bridra-pub").as_posix()}
     with open(environment["GITHUB_ENV"], "a") as output:
@@ -107,6 +109,20 @@ def cache_environment(root, environment):
         output.write(f'version={version}\nfvm={values["FVM_CACHE_PATH"]}\npub={values["PUB_CACHE"]}\n')
         output.write(f'profile={profile}\nprecache_flags={flags}\n')
         output.write(f'fvm_version={FVM_VERSION}\n')
+
+
+def windows_environment(environment):
+    if (environment.get("RUNNER_OS") != "Windows" or environment.get("GITHUB_ACTIONS") != "true"
+            or environment.get("RUNNER_ENVIRONMENT") != "github-hosted"):
+        raise ValueError("Windows scratch configuration requires an ephemeral hosted Windows runner")
+    scratch = Path(environment["RUNNER_TEMP"]) / "bridra-work"
+    locations = {"GOCACHE": scratch / "go-build", "GOMODCACHE": scratch / "go-mod",
+                 "GOTMPDIR": scratch / "tmp", "TEMP": scratch / "tmp", "TMP": scratch / "tmp"}
+    for directory in locations.values():
+        directory.mkdir(parents=True, exist_ok=True)
+    with open(environment["GITHUB_ENV"], "a") as output:
+        for name, directory in locations.items():
+            output.write(f"{name}={directory.as_posix()}\n")
 
 
 def flutter_environment(root, environment):
@@ -274,7 +290,7 @@ def main():
     artifacts.add_argument("--directory", required=True)
     artifacts.add_argument("--version", required=True)
     artifacts.add_argument("--commit", required=True)
-    for name in ("cache-env", "flutter-env", "gradle-wrapper"):
+    for name in ("cache-env", "flutter-env", "gradle-wrapper", "windows-env"):
         setup = commands.add_parser(name)
         setup.add_argument("--root", default=".")
     args = parser.parse_args()
@@ -308,6 +324,8 @@ def main():
             cache_environment(args.root, os.environ)
         elif args.command == "flutter-env":
             flutter_environment(args.root, os.environ)
+        elif args.command == "windows-env":
+            windows_environment(os.environ)
         else:
             prepare_gradle_wrapper(args.root, os.environ)
     except (ValueError, KeyError, OSError, subprocess.CalledProcessError) as error:

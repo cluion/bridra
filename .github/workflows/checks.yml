@@ -411,6 +411,8 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - name: Use runner-local Windows build and dependency directories
+        run: python tool/ci.py windows-env
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
@@ -451,6 +453,8 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - name: Use runner-local Windows build and dependency directories
+        run: python tool/ci.py windows-env
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
