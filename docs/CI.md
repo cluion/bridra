@@ -125,6 +125,14 @@ selection still uses `tool/ios_simulator_prepare.py`: 120-second discovery and
 180-second readiness bounds, one existing available iPhone and no device creation.
 A borrowed booted device is checked without requesting another boot.
 
+The Simulator job uses the standard `macos-15-intel` image and selects Xcode 16.4
+explicitly for the hosted timing trial. Unsigned iOS release and native macOS
+verification retain `macos-15` ARM runners. Dependency cache keys distinguish the
+architectures; the first Intel SDK/Go population is cold and must be reported
+separately from warm measurements. Host CPU/memory and swap snapshots are logged
+before preparation and after its join. This is a measured runner alternative,
+not a weaker test path or a latency guarantee.
+
 Each prerequisite has a recorded exit code and monotonic duration; Xcode/backend
 commands have 180-second limits and the combined native initialization command has
 a 330-second limit. The foreground smoke joins the worker within 360 seconds,
@@ -171,6 +179,12 @@ launch barrier and watchdogs are unchanged. Buffered log timestamps cannot be
 mistaken for internal build-start times. The optional preboot experiment retains
 its prior 20-second optional discovery probe and serial prerequisite control;
 results from its earlier implementation are not measurements of the new pipeline.
+
+The macOS job runs its lifecycle XCTest and independent signed Go sandbox fixture
+with `make -j2`, then builds and smoke-tests the release bundle serially. The
+sandbox fixture uses its own temporary application and does not write Runner's
+build directory. XCTest retains a single host (`-parallel-testing-enabled NO`);
+the shared Xcode prerequisite is evaluated once and both checks must pass.
 
 ## SDK and dependency caches
 

@@ -530,6 +530,27 @@ class WorkflowWiringTests(unittest.TestCase):
         self.assertNotIn('ios_ci_smoke_test.py', self.job('core-static'))
         self.assertIn('make ios-build BACKEND_URL=', self.job('ios-build'))
 
+    def test_simulator_uses_standard_intel_with_existing_arm_release_and_desktop_coverage(self):
+        body = self.job('ios-simulator')
+        self.assertIn('runs-on: macos-15-intel', body)
+        self.assertIn('DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer', body)
+        self.assertIn('sysctl hw.memsize hw.ncpu vm.swapusage', body)
+        for name in ('ios-build', 'macos'):
+            self.assertIn('runs-on: macos-15\n', self.job(name))
+
+    def test_macos_independent_fixture_overlaps_lifecycle_without_parallel_xctest_hosts(self):
+        body = self.job('macos')
+        self.assertIn('make -j2 macos-native-test macos-sandbox-smoke', body)
+        self.assertGreater(body.index('make macos-smoke'), body.index('make -j2'))
+        root = Path(__file__).resolve().parent.parent
+        commands = subprocess.check_output(['make', '-n', '-j2', 'macos-native-test', 'macos-sandbox-smoke'],
+                                           cwd=root, text=True)
+        self.assertEqual(commands.count('xcodebuild -version'), 1)
+        self.assertEqual(commands.count('xcodebuild test'), 1)
+        self.assertIn('-parallel-testing-enabled NO', commands)
+        self.assertIn('BRIDRA_MACOS_SANDBOX_SMOKE=1', commands)
+        self.assertIn('-count=1', commands)
+
     def test_pr_requires_its_authoritative_plan_while_full_tag_requires_all_jobs(self):
         empty_jobs = {key: {"result": "skipped"} for key in VerificationResultsTests.jobs}
         for full, needs in ((False, empty_jobs), (True, empty_jobs)):

@@ -280,10 +280,8 @@ jobs:
             backend/integration/sqljobstore/go.mod
       - name: Set up pinned Flutter
         uses: ./.github/actions/setup-flutter
-      - name: Test macOS application lifecycle
-        run: make macos-native-test
-      - name: Test signed macOS sandbox bookmark handoff
-        run: make macos-sandbox-smoke
+      - name: Test macOS lifecycle and sandbox concurrently
+        run: make -j2 macos-native-test macos-sandbox-smoke
       - name: Build and smoke-test macOS bundle
         run: make macos-smoke
 
@@ -328,7 +326,9 @@ jobs:
 
   ios-simulator:
     if: inputs.full || fromJSON(inputs.plan).ios_simulator
-    runs-on: macos-15
+    runs-on: macos-15-intel
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
     timeout-minutes: 35
     steps:
       - name: Check out repository
@@ -342,6 +342,11 @@ jobs:
           cache-dependency-path: |
             backend/go.mod
             backend/integration/sqljobstore/go.mod
+      - name: Record Simulator host resources
+        run: |
+          uname -m
+          sysctl hw.memsize hw.ncpu vm.swapusage
+          vm_stat
       - name: Start independent iOS prerequisites during Flutter setup
         run: python3 tool/ios_ci_prepare.py begin --state "$RUNNER_TEMP/bridra-ios-preparation/pipeline.json"
       - name: Set up pinned Flutter
@@ -354,6 +359,8 @@ jobs:
           BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR: ${{ runner.temp }}/bridra-ios-simulator-diagnostics/initial
         run: |
           python3 tool/ios_ci_prepare.py ready --state "$RUNNER_TEMP/bridra-ios-preparation/pipeline.json"
+          sysctl vm.swapusage
+          vm_stat
           bridra_simulator_device="$(python3 tool/ios_simulator_prepare.py device --state "$RUNNER_TEMP/bridra-ios-preparation/simulator.json")"
           bash tool/ios_ci_smoke.sh "$bridra_simulator_device" "$RUNNER_TEMP/bridra-ios-preparation/pipeline.json"
       - name: Reset iOS Simulator before one retry
