@@ -366,7 +366,7 @@ jobs:
 
   ios-simulator:
     if: inputs.full || fromJSON(inputs.plan).ios_simulator
-    runs-on: macos-15
+    runs-on: macos-15-intel
     env:
       DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
     timeout-minutes: 35
