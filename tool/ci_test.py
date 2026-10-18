@@ -666,9 +666,9 @@ class WorkflowWiringTests(unittest.TestCase):
         self.assertNotIn('ios_ci_smoke_test.py', self.job('core-static'))
         self.assertIn('make ios-build BACKEND_URL=', self.job('ios-build'))
 
-    def test_simulator_uses_standard_intel_with_existing_arm_release_and_desktop_coverage(self):
+    def test_simulator_uses_standard_arm_and_explicit_xcode_with_release_and_desktop_coverage(self):
         body = self.job('ios-simulator')
-        self.assertIn('runs-on: macos-15-intel', body)
+        self.assertIn('runs-on: macos-15\n', body)
         self.assertIn('DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer', body)
         self.assertIn('sysctl hw.memsize hw.ncpu vm.swapusage', body)
         for name in ('ios-build', 'macos-lifecycle', 'macos-bundle'):

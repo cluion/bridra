@@ -136,13 +136,13 @@ selection still uses `tool/ios_simulator_prepare.py`: 120-second discovery and
 180-second readiness bounds, one existing available iPhone and no device creation.
 A borrowed booted device is checked without requesting another boot.
 
-The Simulator job uses the standard `macos-15-intel` image and selects Xcode 16.4
-explicitly for the hosted timing trial. Unsigned iOS release and native macOS
-verification retain `macos-15` ARM runners. Dependency cache keys distinguish the
-architectures; the first Intel SDK/Go population is cold and must be reported
-separately from warm measurements. Host CPU/memory and swap snapshots are logged
-before preparation and after its join. This is a measured runner alternative,
-not a weaker test path or a latency guarantee.
+The Simulator job uses the standard `macos-15` ARM image and selects its installed
+Xcode 16.4 explicitly. Unsigned iOS release and native macOS verification also
+retain `macos-15` ARM runners. A hosted Intel trial was rejected after two cold
+SDK initializations consumed excessive time without completing; it provides no
+positive native performance or reliability evidence. Host CPU/memory and swap
+snapshots are logged before preparation and after its join. Cached dependencies
+do not replace fresh native builds, and hosted timing is not a latency guarantee.
 
 Each prerequisite has a recorded exit code and monotonic duration; Xcode/backend
 commands have 180-second limits and the combined native initialization command has
