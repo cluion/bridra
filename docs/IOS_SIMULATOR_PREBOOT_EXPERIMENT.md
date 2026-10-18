@@ -69,6 +69,11 @@ owned cleanup; a failed first attempt must be reported even if its retry passes.
 Compare discovery, Go setup, Flutter setup, readiness, smoke, retry and cleanup
 durations. Shell timing preserves command exit status and records readiness and
 smoke separately. Also inspect timestamp gaps around `go env` and cache extraction.
+The CI-only `tool/ios_ci_smoke.sh` wrapper measures Xcode validation, backend build
+and the unchanged native smoke separately, with exit codes. Both variants and
+both attempts use it. Flutter verbose output exposes tool-reported build/install
+details; preserve its original output and avoid deriving internal phase timings
+from buffered outer log timestamps.
 Report each sample and its range, rather than only a mean. Record first-attempt
 successes, retries and failures separately. Four positive samples provide initial
 repeatability evidence, not a flake-rate estimate or proof of reset recovery when

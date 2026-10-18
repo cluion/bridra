@@ -102,6 +102,20 @@ commands and the whole task, including failed commands. CI appends the timings t
 its step summary and uploads `windows-verify-timings-ATTEMPT` and
 `windows-bundle-timings-ATTEMPT` even on failure. Command and task totals overlap;
 do not sum them together as runner usage.
+The Windows verify command also sets `GOFLAGS=-v` to report individual native
+test durations and compilation progress. This adds logging without a test filter,
+short mode or another test invocation; `(cached)` results remain distinguishable.
+
+Windows x64 setup installs FVM from its
+[fixed-version standalone GitHub release](https://github.com/btwld/fvm/releases/tag/4.1.2),
+using the committed SHA-256, a bounded archive size and an
+exact runtime version check before exporting its path. The archive's license is
+retained. This avoids Chocolatey's separate Dart SDK installation; project SDK
+installation, Pub resolution, platform precaching and native verification still
+run. `tool/ci_fvm.py` is also the source of the pinned FVM version used by the Unix
+installer. Download, checksum, extraction or version failures block setup.
+Other Windows architectures retain the existing Chocolatey path; the x64 ZIP
+layout is not assumed for ARM64's different standalone packaging.
 
 On ephemeral GitHub-hosted runners, `tool/ios_simulator_prepare.py` optionally
 starts one existing available iPhone Simulator before SDK setup. Its initial
@@ -143,6 +157,18 @@ owned probe/Flutter child processes; failure log collection has a bounded 10s
 budget (configurable with `BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_TIMEOUT_SECONDS`)
 and retains partial output when that budget expires. Starter projects
 use the same watchdog and cleanup behavior.
+
+CI runs `tool/ios_ci_smoke.sh` after readiness and validated device selection.
+It executes the same `macos-check`, `backend-server-build` and original Simulator
+smoke script as `make ios-simulator-smoke`, once each, in the foreground. Each
+stage prints `Bridra iOS STAGE seconds: ...` and its exit code, including failure;
+an unsuccessful prerequisite stops later stages and reaches the existing retry
+and always-cleanup steps. The wrapper rejects local/self-hosted execution.
+The Flutter invocation adds `--verbose` to expose tool-reported build, install
+and launch phases; test assertions, launch barrier and watchdogs are unchanged.
+These stage durations come from the shell's command timer, so buffered Flutter
+output timestamps cannot be mistaken for build-start timestamps. The existing
+opt-in preboot experiment uses the same wrapper in both variants and attempts.
 
 ## SDK and dependency caches
 

@@ -39,6 +39,7 @@ jobs:
       - name: Verify CI helper regressions
         run: |
           python3 -m unittest discover -s tool -p ci_test.py -v
+          python3 -m unittest discover -s tool -p ci_fvm_test.py -v
           python3 -m unittest discover -s tool -p release_verification_test.py -v
           python3 -m unittest discover -s tool -p ios_simulator_prepare_test.py -v
       - name: Run shared static and watchdog checks once
@@ -297,6 +298,8 @@ jobs:
           persist-credentials: false
       - name: Test hosted Simulator preparation and cleanup contracts
         run: python3 -m unittest discover -s tool -p ios_simulator_prepare_test.py -v
+      - name: Test iOS CI timing and failure propagation
+        run: python3 -m unittest discover -s tool -p ios_ci_smoke_test.py -v
       - name: Test iOS Simulator watchdog
         run: make ios-simulator-watchdog-test
 
@@ -351,7 +354,7 @@ jobs:
         run: |
           python3 tool/ios_simulator_prepare.py ready --state "$RUNNER_TEMP/bridra-ios-preparation/state.json"
           bridra_simulator_device="$(python3 tool/ios_simulator_prepare.py device --state "$RUNNER_TEMP/bridra-ios-preparation/state.json")"
-          make ios-simulator-smoke DEVICE="$bridra_simulator_device"
+          bash tool/ios_ci_smoke.sh "$bridra_simulator_device"
       - name: Reset iOS Simulator before one retry
         if: steps.ios_simulator_smoke.outcome == 'failure'
         run: python3 tool/ios_simulator_prepare.py reset --state "$RUNNER_TEMP/bridra-ios-preparation/state.json"
@@ -364,7 +367,7 @@ jobs:
         run: |
           python3 tool/ios_simulator_prepare.py ready --state "$RUNNER_TEMP/bridra-ios-preparation/state.json"
           bridra_simulator_device="$(python3 tool/ios_simulator_prepare.py device --state "$RUNNER_TEMP/bridra-ios-preparation/state.json")"
-          make ios-simulator-smoke DEVICE="$bridra_simulator_device"
+          bash tool/ios_ci_smoke.sh "$bridra_simulator_device"
       - name: Stop the preparation worker and owned Simulator
         if: always()
         run: python3 tool/ios_simulator_prepare.py finish --state "$RUNNER_TEMP/bridra-ios-preparation/state.json"
@@ -421,6 +424,7 @@ jobs:
       - name: Verify framework on Windows
         env:
           BRIDRA_WINDOWS_TIMINGS_PATH: ${{ runner.temp }}/bridra-windows-timings.jsonl
+          GOFLAGS: -v
         run: |
           @("### Windows command timings", "", "| Task | Kind | Command | Seconds | Passed |", "| --- | --- | --- | ---: | --- |") |
             Add-Content -Path $env:GITHUB_STEP_SUMMARY

@@ -9,6 +9,8 @@ import re
 import shutil
 import subprocess
 
+from ci_fvm import VERSION as FVM_VERSION
+
 
 SCOPES = ("core", "linux", "android", "web", "macos", "ios", "windows",
           "android_emulator", "ios_simulator")
@@ -104,6 +106,7 @@ def cache_environment(root, environment):
     with open(environment["GITHUB_OUTPUT"], "a") as output:
         output.write(f'version={version}\nfvm={values["FVM_CACHE_PATH"]}\npub={values["PUB_CACHE"]}\n')
         output.write(f'profile={profile}\nprecache_flags={flags}\n')
+        output.write(f'fvm_version={FVM_VERSION}\n')
 
 
 def flutter_environment(root, environment):

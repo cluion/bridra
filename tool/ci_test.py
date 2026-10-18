@@ -244,6 +244,7 @@ class SDKEnvironmentTests(unittest.TestCase):
         self.assertIn("version=3.44.6\n", output)
         self.assertIn("/bridra-fvm\n", output)
         self.assertIn("/bridra-pub\n", output)
+        self.assertIn("fvm_version=4.1.2\n", output)
         env = Path(self.environment["GITHUB_ENV"]).read_text()
         self.assertIn("FVM_CACHE_PATH=", env)
         self.assertIn("PUB_CACHE=", env)
@@ -260,6 +261,18 @@ class SDKEnvironmentTests(unittest.TestCase):
                 output = Path(self.environment["GITHUB_OUTPUT"]).read_text()
                 self.assertIn(f"profile={profile}\n", output)
                 self.assertIn(f"precache_flags={flags}\n", output)
+
+    def test_windows_installer_keeps_sdk_initialization_and_platform_cache_contracts(self):
+        action = (Path(__file__).resolve().parent.parent / '.github/actions/setup-flutter/action.yml').read_text()
+        self.assertIn('python tool/ci_fvm.py', action)
+        self.assertIn("runner.os == 'Windows' && runner.arch == 'X64'", action)
+        self.assertIn("runner.os == 'Windows' && runner.arch != 'X64'", action)
+        self.assertIn("steps.paths.outputs.fvm_version", action)
+        self.assertIn('fvm install\n', action)
+        self.assertIn('fvm flutter --version', action)
+        self.assertEqual(action.count('fvm flutter pub get'), 2)
+        self.assertIn('fvm flutter precache "${artifact_flags[@]}"', action)
+        self.assertIn("fail-on-cache-miss: ${{ inputs.require-cache-hit }}", action)
 
     def test_unknown_host_fails_before_exporting_a_cache_profile(self):
         self.environment["RUNNER_OS"] = "unknown"
@@ -366,7 +379,7 @@ class SimulatorPrebootExperimentTests(unittest.TestCase):
         self.assertNotIn('actions/download-artifact', self.workflow)
 
     def test_both_samples_keep_the_original_smoke_retry_and_owned_cleanup(self):
-        self.assertEqual(self.workflow.count('make ios-simulator-smoke DEVICE="$bridra_simulator_device"'), 2)
+        self.assertEqual(self.workflow.count('bash tool/ios_ci_smoke.sh "$bridra_simulator_device"'), 2)
         self.assertEqual(self.workflow.count('ios_simulator_prepare.py device --state'), 2)
         self.assertEqual(self.workflow.count('ios_simulator_prepare.py ready --state'), 2)
         self.assertNotIn('outputs.device', self.workflow)
@@ -389,6 +402,14 @@ class WorkflowWiringTests(unittest.TestCase):
     def job(self, name):
         workflow = (Path(__file__).resolve().parent.parent / '.github/workflows/checks.yml').read_text()
         return re.split(r'\n  [a-z][a-z0-9-]*:\n', workflow.split(f'\n  {name}:\n', 1)[1], 1)[0]
+
+    def test_windows_detailed_logging_does_not_filter_native_suites(self):
+        windows = self.job('windows-verify')
+        self.assertIn('GOFLAGS: -v', windows)
+        self.assertNotIn('-run ', windows)
+        self.assertNotIn('-short', windows)
+        source = (Path(__file__).resolve().parent / 'windows.ps1').read_text()
+        self.assertEqual(source.count('@("test", "./...")'), 2)
 
     def test_windows_common_checks_delegate_only_to_required_core_work(self):
         windows = self.job('windows-verify')
@@ -449,7 +470,7 @@ class WorkflowWiringTests(unittest.TestCase):
         self.assertLess(body.index('ios_simulator_prepare.py start'), body.index('name: Set up Go'))
         self.assertIn('ios_simulator_prepare.py ready', body)
         self.assertIn('ios_simulator_prepare.py reset', body)
-        self.assertEqual(body.count('make ios-simulator-smoke DEVICE="$bridra_simulator_device"'), 2)
+        self.assertEqual(body.count('bash tool/ios_ci_smoke.sh "$bridra_simulator_device"'), 2)
         self.assertEqual(body.count('ios_simulator_prepare.py device --state'), 2)
         self.assertEqual(body.count('ios_simulator_prepare.py ready --state'), 2)
         self.assertNotIn('outputs.device', body)
@@ -459,6 +480,8 @@ class WorkflowWiringTests(unittest.TestCase):
         self.assertNotIn('erase all', body)
         self.assertNotIn('shutdown all', body)
         self.assertIn('make ios-simulator-watchdog-test', self.job('ios-watchdog'))
+        self.assertIn('ios_ci_smoke_test.py', self.job('ios-watchdog'))
+        self.assertNotIn('ios_ci_smoke_test.py', self.job('core-static'))
         self.assertIn('make ios-build BACKEND_URL=', self.job('ios-build'))
 
     def test_pr_requires_its_authoritative_plan_while_full_tag_requires_all_jobs(self):

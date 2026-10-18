@@ -56,13 +56,18 @@ runs:
       shell: bash
       run: |
         curl -fsSL https://fvm.app/install.sh -o "$RUNNER_TEMP/fvm-install.sh"
-        bash "$RUNNER_TEMP/fvm-install.sh" 4.1.2
+        bash "$RUNNER_TEMP/fvm-install.sh" '${{ steps.paths.outputs.fvm_version }}'
         echo "$HOME/fvm/bin" >> "$GITHUB_PATH"
 
-    - name: Install FVM on Windows
-      if: runner.os == 'Windows'
+    - name: Install standalone FVM on Windows x64
+      if: runner.os == 'Windows' && runner.arch == 'X64'
+      shell: bash
+      run: python tool/ci_fvm.py
+
+    - name: Install FVM on other Windows architectures
+      if: runner.os == 'Windows' && runner.arch != 'X64'
       shell: pwsh
-      run: choco install fvm --version=4.1.2 --yes
+      run: choco install fvm --version=${{ steps.paths.outputs.fvm_version }} --yes
 
     - name: Install and initialize pinned Flutter
       shell: bash
