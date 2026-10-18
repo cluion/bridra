@@ -712,16 +712,18 @@ class WorkflowWiringTests(unittest.TestCase):
         self.assertIn('make ios-simulator-watchdog-test', self.job('ios-watchdog'))
         self.assertIn('ios_ci_smoke_test.py', self.job('ios-watchdog'))
         self.assertIn('ios_ci_prepare_test.py', self.job('ios-watchdog'))
+        self.assertIn('ios_ci_xcrun_test.py', self.job('ios-watchdog'))
         self.assertNotIn('ios_ci_smoke_test.py', self.job('core-static'))
         self.assertIn('make ios-build BACKEND_URL=', self.job('ios-build'))
 
-    def test_simulator_selects_installed_matching_modern_arm_toolchain_with_all_native_coverage(self):
+    def test_simulator_trials_bounded_build_scheduling_on_verified_arm_toolchain(self):
         body = self.job('ios-simulator')
-        self.assertIn('runs-on: macos-26\n', body)
+        self.assertIn('runs-on: macos-15\n', body)
         self.assertLess(body.index('name: Set up pinned Flutter'), body.index('ios_ci_prepare.py begin'))
-        self.assertIn('DEVELOPER_DIR: /Applications/Xcode_26.4.1.app/Contents/Developer', body)
-        self.assertIn('BRIDRA_IOS_SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-26-4', body)
-        self.assertIn('BRIDRA_IOS_SIMULATOR_NAME: iPhone 17e', body)
+        self.assertIn('DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer', body)
+        self.assertIn('BRIDRA_IOS_SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-18-5', body)
+        self.assertIn('BRIDRA_IOS_SIMULATOR_NAME: iPhone 16 Pro', body)
+        self.assertIn("BRIDRA_IOS_CI_XCODE_JOBS: '1'", body)
         self.assertIn('sysctl hw.memsize hw.ncpu vm.swapusage', body)
         for name in ('ios-build', 'macos-lifecycle', 'macos-bundle'):
             self.assertIn('runs-on: macos-15\n', self.job(name))

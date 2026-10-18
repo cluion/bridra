@@ -13,9 +13,16 @@ class IOSCIStagesTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         (self.root / 'tool').mkdir()
         shutil.copyfile(Path(__file__).with_name('ios_ci_smoke.sh'), self.root / 'tool/ios_ci_smoke.sh')
+        shutil.copyfile(Path(__file__).with_name('ios_ci_xcrun.sh'), self.root / 'tool/ios_ci_xcrun.sh')
+        (self.root / 'tool/ios_ci_xcrun.sh').chmod(0o755)
         binary = self.root / 'bin'
         binary.mkdir()
         (binary / 'dirname').symlink_to(shutil.which('dirname'))
+        for command in ('mktemp', 'ln', 'rm', 'rmdir'):
+            (binary / command).symlink_to(shutil.which(command))
+        self.write_executable(binary / 'xcrun', '''#!/bin/bash
+echo "$*" >> "$XCRUN_CALLS"
+''')
         self.write_executable(binary / 'make', '''#!/bin/bash
 echo "$*" >> "$CALLS"
 if [[ "$*" == macos-check ]]; then exit "${XCODE_STATUS:-0}"; fi
@@ -35,6 +42,9 @@ echo smoke >> "$CALLS"
 [[ "$BRIDRA_FLUTTER" == "fvm flutter --verbose" ]] || exit 92
 [[ "$BRIDRA_IOS_SIMULATOR_PORT" == "$EXPECTED_PORT" ]] || exit 93
 [[ "$BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR" == "$EXPECTED_ROOT/diagnostics" ]] || exit 94
+if [[ -n "${BRIDRA_IOS_CI_XCODE_JOBS:-}" ]]; then
+  xcrun xcodebuild -sdk iphonesimulator -resultBundlePath "$EXPECTED_ROOT/result bundle" || exit $?
+fi
 exit "${SMOKE_STATUS:-0}"
 ''')
         self.device = '01234567-89AB-CDEF-0123-456789ABCDEF'
@@ -42,8 +52,10 @@ exit "${SMOKE_STATUS:-0}"
                                 RUNNER_ENVIRONMENT='github-hosted', EXPECTED_DEVICE=self.device,
                                 EXPECTED_ROOT=str(self.root), EXPECTED_PORT='18080',
                                 CALLS=str(self.root / 'calls'),
+                                XCRUN_CALLS=str(self.root / 'xcrun-calls'), RUNNER_TEMP=str(self.root),
                                 BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR=str(self.root / 'diagnostics'))
         self.environment.pop('BRIDRA_IOS_SIMULATOR_PORT', None)
+        self.environment.pop('BRIDRA_IOS_CI_XCODE_JOBS', None)
 
     def write_executable(self, path, source):
         path.write_text(source)
@@ -113,6 +125,25 @@ exit "${SMOKE_STATUS:-0}"
         self.environment['BRIDRA_IOS_SIMULATOR_PORT'] = self.environment['EXPECTED_PORT'] = '19080'
         result = self.run_script(self.device)
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+
+    def test_optional_build_limit_preserves_native_status_and_cleans_its_owned_link(self):
+        self.environment['BRIDRA_IOS_CI_XCODE_JOBS'] = '1'
+        for status in ('0', '65'):
+            self.environment['SMOKE_STATUS'] = status
+            (self.root / 'calls').unlink(missing_ok=True)
+            (self.root / 'xcrun-calls').unlink(missing_ok=True)
+            result = self.run_script(self.device)
+            self.assertEqual(result.returncode, int(status), result.stderr + result.stdout)
+            self.assertEqual(self.calls(), ['macos-check', 'backend-server-build', 'smoke'])
+            self.assertIn('xcodebuild -jobs 1 -sdk iphonesimulator -resultBundlePath',
+                          (self.root / 'xcrun-calls').read_text())
+            self.assertEqual(list(self.root.glob('bridra-ios-xcode.*')), [])
+
+    def test_invalid_build_limit_is_rejected_before_any_preparation(self):
+        self.environment['BRIDRA_IOS_CI_XCODE_JOBS'] = '4'
+        result = self.run_script(self.device)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.calls(), [])
 
 
 if __name__ == '__main__':

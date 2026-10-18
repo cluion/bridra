@@ -26,7 +26,8 @@ def identity():
         raise ValueError("invalid preparation source identity")
     return {"head": head, "developerDirectory": os.environ.get("DEVELOPER_DIR", ""), "root": str(ROOT),
             "simulatorRuntime": os.environ.get("BRIDRA_IOS_SIMULATOR_RUNTIME", ""),
-            "simulatorName": os.environ.get("BRIDRA_IOS_SIMULATOR_NAME", "")}
+            "simulatorName": os.environ.get("BRIDRA_IOS_SIMULATOR_NAME", ""),
+            "simulatorBuildJobs": os.environ.get("BRIDRA_IOS_CI_XCODE_JOBS", "")}
 
 
 def native_state(path):

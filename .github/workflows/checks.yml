@@ -340,6 +340,8 @@ jobs:
         run: python3 -m unittest discover -s tool -p ios_ci_prepare_test.py -v
       - name: Test iOS CI timing and failure propagation
         run: python3 -m unittest discover -s tool -p ios_ci_smoke_test.py -v
+      - name: Test hosted Xcode build scheduling and argument preservation
+        run: python3 -m unittest discover -s tool -p ios_ci_xcrun_test.py -v
       - name: Test iOS Simulator watchdog
         run: make ios-simulator-watchdog-test
 
@@ -366,11 +368,12 @@ jobs:
 
   ios-simulator:
     if: inputs.full || fromJSON(inputs.plan).ios_simulator
-    runs-on: macos-26
+    runs-on: macos-15
     env:
-      DEVELOPER_DIR: /Applications/Xcode_26.4.1.app/Contents/Developer
-      BRIDRA_IOS_SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-26-4
-      BRIDRA_IOS_SIMULATOR_NAME: iPhone 17e
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      BRIDRA_IOS_SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-18-5
+      BRIDRA_IOS_SIMULATOR_NAME: iPhone 16 Pro
+      BRIDRA_IOS_CI_XCODE_JOBS: '1'
     timeout-minutes: 35
     steps:
       - name: Check out repository

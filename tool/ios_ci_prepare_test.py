@@ -20,18 +20,21 @@ class SourceIdentityTests(unittest.TestCase):
     def test_source_identity_also_binds_requested_runtime_and_model(self):
         environment = {"DEVELOPER_DIR": "/fixed/Xcode",
                        "BRIDRA_IOS_SIMULATOR_RUNTIME": "com.apple.CoreSimulator.SimRuntime.iOS-18-5",
-                       "BRIDRA_IOS_SIMULATOR_NAME": "iPhone SE (3rd generation)"}
+                       "BRIDRA_IOS_SIMULATOR_NAME": "iPhone SE (3rd generation)",
+                       "BRIDRA_IOS_CI_XCODE_JOBS": "1"}
         with patch.dict(os.environ, environment, clear=True), \
                 patch.object(prepare.subprocess, "check_output", return_value="a" * 40 + "\n"):
             first = prepare.identity()
             self.assertEqual(first["simulatorRuntime"], environment["BRIDRA_IOS_SIMULATOR_RUNTIME"])
             self.assertEqual(first["simulatorName"], environment["BRIDRA_IOS_SIMULATOR_NAME"])
+            self.assertEqual(first["simulatorBuildJobs"], "1")
             with tempfile.TemporaryDirectory() as root:
                 path = Path(root) / "pipeline.json"
                 prepare.simulator.save(path, {"schema": 1, "pid": 123,
                                              "token": "b" * 32, "source": first})
                 for key, value in (("BRIDRA_IOS_SIMULATOR_RUNTIME", "com.apple.CoreSimulator.SimRuntime.iOS-18-6"),
-                                   ("BRIDRA_IOS_SIMULATOR_NAME", "iPhone 16 Pro")):
+                                   ("BRIDRA_IOS_SIMULATOR_NAME", "iPhone 16 Pro"),
+                                   ("BRIDRA_IOS_CI_XCODE_JOBS", "2")):
                     with self.subTest(key=key), patch.dict(os.environ, {key: value}):
                         with self.assertRaises(ValueError):
                             prepare.load(path)

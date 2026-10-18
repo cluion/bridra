@@ -147,16 +147,16 @@ selection still uses `tool/ios_simulator_prepare.py`: 120-second discovery and
 180-second readiness bounds, one existing available iPhone and no device creation.
 A borrowed booted device is checked without requesting another boot.
 
-The Simulator timing trial uses the standard `macos-26` ARM image with installed
-Xcode 26.4.1, its existing iOS 26.4 runtime and iPhone 17e.
+The Simulator timing trial uses the standard `macos-15` ARM image with installed
+Xcode 16.4, its existing iOS 18.5 runtime and iPhone 16 Pro.
 `BRIDRA_IOS_SIMULATOR_RUNTIME` and `BRIDRA_IOS_SIMULATOR_NAME` constrain discovery;
 if either requested selection is unavailable, initialization fails without
 creating a device or falling back to a different runtime/model. The preparation
 identity binds both selectors as well as the source and Xcode directory. The
-same complete transport test runs on this existing model. The previous
-macOS 15 / Xcode 16.4 / iOS 18.5 / iPhone SE trial did not improve full native
-latency. The modern matching image/toolchain/runtime is a new timing hypothesis,
-not a measured latency guarantee.
+same complete transport test runs on this existing model. A smaller iPhone SE
+did not produce a shorter complete native sample; a matching modern ARM
+macOS 26 / Xcode 26.4.1 / iOS 26.4 trial needed 200.8 seconds for readiness alone.
+These observations do not establish the cause of the timing variation.
 Unsigned iOS release and native macOS verification retain their ARM runners.
 
 Earlier Intel trials either timed out/cancelled during initialization or ran
@@ -173,6 +173,18 @@ matrix covers the selected runner. Its macOS/ARM64 SDK and Pub keys also serve
 the macOS 15 desktop/release jobs; no native build output is shared, and an
 unused Intel profile is not kept as an additional nightly job. Initial dependency population and exact warm matches
 must be reported separately, including failed and cancelled trial costs.
+The hosted scheduling trial sets `BRIDRA_IOS_CI_XCODE_JOBS=1`.
+`tool/ios_ci_smoke.sh` scopes an additional `xcrun` adapter to a temporary directory
+inside `RUNNER_TEMP`. It passes Xcode's `-jobs` argument only to Flutter's actual
+Simulator build (identified by its SDK and result-bundle flags); metadata and
+Simulator commands pass through. This limits build operations, not every child
+thread. It preserves the original launch/watchdog adapter, build arguments,
+command exit status and complete fresh native assertions. Conflicting build-job
+arguments fail closed. The adapter supports bounded values 1–3 only on ephemeral
+hosted runners, and removes its owned link on exit. A lower memory/CPU peak is a
+timing hypothesis requiring hosted comparison, not a measured speed guarantee.
+The preparation source identity also binds this requested scheduling value.
+
 Host CPU/memory and swap snapshots are logged before preparation and after its
 join. Cached dependencies do not replace fresh native builds, and hosted timing
 is not a latency guarantee.
