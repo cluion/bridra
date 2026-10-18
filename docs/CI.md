@@ -129,9 +129,12 @@ precache still run. This avoids downloading Flutter's entire Git history on cold
 ephemeral runners; it does not restore compiled application or test results.
 
 On ephemeral GitHub-hosted runners, `tool/ios_ci_prepare.py` starts three
-independent prerequisites after the pinned Go setup: `make macos-check`,
+independent prerequisites after pinned Go and Flutter SDK setup: `make macos-check`,
 `make backend-server-build`, and strict Simulator discovery/readiness. They run
-concurrently in one owned process group while Flutter setup proceeds. Native
+concurrently in one owned process group. SDK cache extraction and Simulator
+initialization are ordered separately for the hosted timing trial: overlapping
+them coincided with much slower SDK setup than the same-profile iOS build job.
+The measurements do not by themselves establish CPU, memory or I/O as the cause. Native
 selection still uses `tool/ios_simulator_prepare.py`: 120-second discovery and
 180-second readiness bounds, one existing available iPhone and no device creation.
 A borrowed booted device is checked without requesting another boot.

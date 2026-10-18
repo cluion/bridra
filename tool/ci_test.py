@@ -644,10 +644,11 @@ class WorkflowWiringTests(unittest.TestCase):
             self.assertIn(profile, gate)
         self.assertLess(gate.index('Collect both required Flutter profiles'), gate.index('make coverage-report'))
 
-    def test_simulator_preparation_overlaps_setup_with_one_retry_and_always_cleanup(self):
+    def test_simulator_prerequisites_run_after_sdk_with_one_retry_and_always_cleanup(self):
         body = self.job('ios-simulator')
         self.assertLess(body.index('name: Set up Go'), body.index('ios_ci_prepare.py begin'))
-        self.assertLess(body.index('ios_ci_prepare.py begin'), body.index('name: Set up pinned Flutter'))
+        self.assertLess(body.index('name: Set up pinned Flutter'), body.index('ios_ci_prepare.py begin'))
+        self.assertLess(body.index('ios_ci_prepare.py begin'), body.index('ios_ci_prepare.py ready'))
         self.assertIn('ios_ci_prepare.py ready', body)
         self.assertIn('ios_simulator_prepare.py ready', body)
         self.assertIn('ios_ci_prepare.py reset', body)

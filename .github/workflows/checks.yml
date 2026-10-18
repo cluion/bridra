@@ -387,10 +387,10 @@ jobs:
           uname -m
           sysctl hw.memsize hw.ncpu vm.swapusage
           vm_stat
-      - name: Start independent iOS prerequisites during Flutter setup
-        run: python3 tool/ios_ci_prepare.py begin --state "$RUNNER_TEMP/bridra-ios-preparation/pipeline.json"
       - name: Set up pinned Flutter
         uses: ./.github/actions/setup-flutter
+      - name: Start independent iOS prerequisites after SDK setup
+        run: python3 tool/ios_ci_prepare.py begin --state "$RUNNER_TEMP/bridra-ios-preparation/pipeline.json"
       - name: Exercise iOS Simulator HTTP round trip
         id: ios_simulator_smoke
         continue-on-error: true
