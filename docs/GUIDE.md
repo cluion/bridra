@@ -2134,6 +2134,12 @@ control message and cannot queue an unbounded stream in the bridge.
 `rpc.stream_ack` is a reserved Sidecar control method and must not be registered
 as an application route.
 
+For continuous monitoring and logs, use the opt-in
+[long-lived subscription layer](SUBSCRIPTIONS.md). It provides idle heartbeats,
+cursor-based replay, finite connection rotation and bounded retries while keeping
+ordinary generated streaming methods unchanged. Application-owned durable history,
+access scoping and snapshot/resync semantics remain explicit.
+
 The opt-in iOS Embedded Core uses the same `RpcClient.download`／`upload` API.
 File contents do not enter the JSON envelope: MethodChannel carries at most
 64 KiB of typed bytes per operation, Go rejects chunks above its 256 KiB safety

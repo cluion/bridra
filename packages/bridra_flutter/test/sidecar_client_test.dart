@@ -8,6 +8,68 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test(
+    'a subscription resumes after Sidecar restart with the last delivered cursor',
+    () async {
+      final first = FakeSidecarProcess();
+      final replacement = FakeSidecarProcess();
+      final starter = FakeSidecarStarter([first, replacement]);
+      final client = await SidecarClient.start(
+        executablePath: '/fake/sidecar',
+        token: 'test-token',
+        processStarter: starter.start,
+        restartPolicy: const SidecarRestartPolicy(
+          maxAttempts: 1,
+          initialDelay: Duration.zero,
+          maxDelay: Duration.zero,
+        ),
+      );
+      addTearDown(client.close);
+      const policy = RpcSubscriptionPolicy(
+        initialReconnectDelay: Duration(milliseconds: 1),
+        maxReconnectDelay: Duration(milliseconds: 2),
+      );
+      final result = client
+          .subscribe(
+            'logs.watch',
+            decode: (value) => value as int,
+            policy: policy,
+          )
+          .toList();
+      final request = await first.nextRequest();
+      first.respond({
+        'id': request['id'],
+        'result': {'kind': 'data', 'cursor': '1', 'value': 1},
+        'stream': {'sequence': 1, 'kind': 'data'},
+      });
+      expect((await first.nextRequest())['method'], 'rpc.stream_ack');
+      await first.exit(17);
+      final health = await replacement.nextRequest();
+      expect(health['method'], 'system.health');
+      replacement.respond({
+        'id': health['id'],
+        'result': {'status': 'ok'},
+        'meta': <String, Object?>{},
+      });
+      final resumed = await replacement.nextRequest();
+      expect(resumed['method'], 'logs.watch');
+      expect((resumed['params'] as Map)['afterCursor'], '1');
+      replacement.respond({
+        'id': resumed['id'],
+        'result': {'kind': 'data', 'cursor': '2', 'value': 2},
+        'stream': {'sequence': 1, 'kind': 'data'},
+      });
+      replacement.respond({
+        'id': resumed['id'],
+        'result': null,
+        'stream': {'sequence': 2, 'kind': 'complete'},
+      });
+      expect((await result).map((e) => e.value), [1, 2]);
+      expect(client.diagnostics().successfulRestarts, 1);
+      expect(client.diagnostics().activeStreams, 0);
+    },
+  );
+
   test('launches without exposing the token in process arguments', () async {
     final process = FakeSidecarProcess();
     final arguments = <List<String>>[];

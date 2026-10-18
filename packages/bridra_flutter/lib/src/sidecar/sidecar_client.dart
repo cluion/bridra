@@ -9,7 +9,7 @@ import '../resource/resource_bookmark.dart';
 import '../rpc/rpc_client.dart';
 import 'sidecar_executable.dart';
 
-class SidecarExitedException extends BackendConnectionException {
+class SidecarExitedException extends BackendTransportException {
   const SidecarExitedException(this.exitCode)
     : super('The Go sidecar exited with code $exitCode.');
 

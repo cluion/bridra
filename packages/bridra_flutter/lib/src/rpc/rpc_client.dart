@@ -270,6 +270,19 @@ class BackendProtocolException extends BackendConnectionException {
   final Object? cause;
 }
 
+/// A valid stream was cut off before its terminal frame. Other framing errors
+/// remain terminal; only this specific condition is safe for cursor-based replay.
+class RpcStreamInterruptedException extends BackendProtocolException {
+  const RpcStreamInterruptedException(super.message);
+}
+
+class RpcHttpStatusException extends BackendTransportException {
+  const RpcHttpStatusException(this.statusCode)
+    : super('The Go HTTP backend returned status $statusCode.');
+
+  final int statusCode;
+}
+
 class RpcFileExpiredException extends BackendConnectionException {
   const RpcFileExpiredException() : super('The file transfer has expired.');
 }

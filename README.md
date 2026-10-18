@@ -80,6 +80,8 @@ distribution channels.
   shutdown across EOF, Serve failure, signal cancellation, and blocked stdin
 - Typed server streams with progress events, cancellation, and bounded
   per-stream backpressure
+- Opt-in long-lived subscriptions with heartbeats, cursor replay, bounded
+  reconnects and explicit resync when retained history expires
 - Out-of-band large-file uploads and resumable downloads with short-lived HTTP
   capabilities, managed Desktop files, bounded retries, and end-to-end size
   plus SHA-256 verification
@@ -219,6 +221,8 @@ repository protection and workflow run counts.
 
 ## Documentation
 
+- [Subscriptions](docs/SUBSCRIPTIONS.md): heartbeat/replay contract, Go sources,
+  Flutter reconnect policy, retention and snapshot recovery
 - [Complete guide](docs/GUIDE.md): prerequisites, CLI workflows, platform runs,
   builds, configuration, and framework API examples
 - [Architecture](docs/ARCHITECTURE.md): package boundaries, lifecycle,

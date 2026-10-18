@@ -114,6 +114,13 @@ The default stream timeout is five minutes. HTTP uses flushed NDJSON. Desktop
 Sidecars use a bounded credit window and acknowledge each event only after the
 listener consumes it.
 
+For continuous monitoring, `client.subscribe<T>(...)` adds heartbeat deadlines,
+cursor-based reconnect/replay and cancellation over ordinary streams. The logical
+subscription can outlive its finite RPC connections. Go provides
+`framework.ProduceSubscription` and an optional bounded in-memory replay source;
+durable history and access scoping remain application-owned. See the
+[subscription contract and examples](https://github.com/cluion/bridra/blob/main/docs/SUBSCRIPTIONS.md).
+
 Large results use a generated `RpcFileReference` instead of embedding bytes in
 JSON. The same API streams HTTP response chunks or reads a Sidecar-managed
 temporary file, then verifies the declared byte count and SHA-256 digest:

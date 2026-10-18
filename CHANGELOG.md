@@ -5,6 +5,20 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 
 ## [Unreleased]
 
+### Added
+
+- Opt-in long-lived subscriptions over existing server streams, with idle
+  heartbeats, cursor-based replay, finite connection rotation, bounded reconnect
+  backoff and cancellation. A bounded in-memory Go replay source reports cursor
+  gaps and restart epochs explicitly; durable event history remains app-owned.
+
+### Fixed
+
+- Pause Embedded stream pulls when the Flutter consumer pauses, and release a
+  paused stream on cancellation. Distinguish premature stream EOF and HTTP status
+  errors so subscriptions retry outages while preserving terminal protocol and
+  authorization failures.
+
 ### Changed
 
 - Combine CI verification and coverage into one race-enabled test pass, select
