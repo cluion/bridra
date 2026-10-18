@@ -183,9 +183,7 @@ class HttpRpcClient implements RpcClient {
         );
       }
       if (response.statusCode != 200) {
-        throw BackendTransportException(
-          'The Go HTTP backend returned status ${response.statusCode}.',
-        );
+        throw RpcHttpStatusException(response.statusCode);
       }
 
       var expectedSequence = 1;
@@ -212,7 +210,7 @@ class HttpRpcClient implements RpcClient {
       if (!completed) {
         final error = abortError;
         if (error != null) throw error;
-        throw const FormatException(
+        throw const RpcStreamInterruptedException(
           'The HTTP stream ended without a completion frame.',
         );
       }

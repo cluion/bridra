@@ -7,6 +7,98 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test(
+    'a stream created before client closure fails asynchronously when listened to',
+    () async {
+      final bridge = _TestStreamingBridge((request) => const Stream.empty());
+      final client = EmbeddedRpcClient(token: 'token', bridge: bridge);
+      final stream = client.stream('logs.watch');
+      await client.close();
+      await expectLater(stream, emitsError(isA<BackendClosedException>()));
+      expect(bridge.requests, isEmpty);
+    },
+  );
+
+  test(
+    'subscription replay uses embedded frames and preserves the cursor',
+    () async {
+      var attempts = 0;
+      final bridge = _TestStreamingBridge((request) async* {
+        final attempt = ++attempts;
+        expect(
+          (request['params'] as Map)['afterCursor'],
+          attempt == 1 ? '' : '1',
+        );
+        yield jsonEncode({
+          'id': request['id'],
+          'result': {'kind': 'data', 'cursor': '$attempt', 'value': attempt},
+          'stream': {'sequence': 1, 'kind': 'data'},
+        });
+        if (attempt == 2) {
+          yield jsonEncode({
+            'id': request['id'],
+            'result': null,
+            'stream': {'sequence': 2, 'kind': 'complete'},
+          });
+        }
+      });
+      final client = EmbeddedRpcClient(token: 'token', bridge: bridge);
+      addTearDown(client.close);
+      const policy = RpcSubscriptionPolicy(
+        initialReconnectDelay: Duration(milliseconds: 1),
+        maxReconnectDelay: Duration(milliseconds: 2),
+      );
+      final events = await client
+          .subscribe(
+            'logs.watch',
+            decode: (value) => value as int,
+            policy: policy,
+          )
+          .toList();
+      expect(events.map((e) => e.value), [1, 2]);
+      expect(attempts, 2);
+    },
+  );
+
+  test(
+    'pausing the embedded consumer stops native frame pulls and cancellation releases it',
+    () async {
+      var pulled = 0;
+      var released = false;
+      final bridge = _TestStreamingBridge((request) async* {
+        try {
+          for (var i = 1; i <= 1000; i++) {
+            pulled++;
+            yield jsonEncode({
+              'id': request['id'],
+              'result': i,
+              'stream': {'sequence': i, 'kind': 'data'},
+            });
+          }
+        } finally {
+          released = true;
+        }
+      });
+      final client = EmbeddedRpcClient(token: 'token', bridge: bridge);
+      addTearDown(client.close);
+      final first = Completer<void>();
+      late StreamSubscription<RpcStreamEvent<RpcReply>> subscription;
+      subscription = client.stream('logs.watch').listen((event) {
+        subscription.pause();
+        first.complete();
+      });
+      await first.future;
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(pulled, 1);
+      await subscription.cancel();
+      for (var i = 0; i < 10 && !released; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(released, isTrue);
+      expect(pulled, lessThanOrEqualTo(2));
+    },
+  );
+
   test('dispatches a unary request through the embedded bridge', () async {
     final bridge = _TestEmbeddedBridge((request) async {
       return jsonEncode({

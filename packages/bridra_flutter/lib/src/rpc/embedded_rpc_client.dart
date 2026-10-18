@@ -204,10 +204,13 @@ final class EmbeddedRpcClient implements RpcClient {
     late final StreamController<RpcStreamEvent<RpcReply>> controller;
     late final _EmbeddedStreamState state;
     controller = StreamController<RpcStreamEvent<RpcReply>>(
+      sync: true,
       onListen: () {
         if (_closed) {
-          controller.addError(const BackendClosedException());
-          unawaited(controller.close());
+          scheduleMicrotask(() {
+            controller.addError(const BackendClosedException());
+            unawaited(controller.close());
+          });
           return;
         }
         state = _EmbeddedStreamState(controller);
@@ -216,6 +219,8 @@ final class EmbeddedRpcClient implements RpcClient {
           _runStream(id, method, params, timeout, cancellationToken, state),
         );
       },
+      onPause: () => _streams[id]?.pause(),
+      onResume: () => _streams[id]?.resume(),
       onCancel: () async {
         final active = _streams[id];
         if (active != null && !active.completed && !active.abortRequested) {
@@ -273,7 +278,7 @@ final class EmbeddedRpcClient implements RpcClient {
       var expectedSequence = 1;
       var receivedCompletion = false;
       await for (final responseJSON in _bridge.stream(requestJSON)) {
-        if (state.abortRequested) continue;
+        if (state.abortRequested) break;
         final frame = decodeRpcStreamFrame(
           jsonDecode(responseJSON),
           expectedID: id,
@@ -295,10 +300,12 @@ final class EmbeddedRpcClient implements RpcClient {
           continue;
         }
         state.controller.add(frame.event!);
+        // Do not pull another native frame while the Flutter consumer is paused.
+        await state.ready;
       }
       if (state.abortRequested) return;
       if (!receivedCompletion) {
-        throw const FormatException(
+        throw const RpcStreamInterruptedException(
           'The embedded Go backend ended without a completion frame.',
         );
       }
@@ -349,6 +356,7 @@ final class EmbeddedRpcClient implements RpcClient {
   }) async {
     if (state.completed || state.abortRequested) return;
     state.abortRequested = true;
+    state.resume();
     if (cancelNative) {
       try {
         await _cancel(id);
@@ -793,6 +801,16 @@ final class _EmbeddedStreamState {
   final StreamController<RpcStreamEvent<RpcReply>> controller;
   var completed = false;
   var abortRequested = false;
+  Completer<void>? _resume;
+
+  Future<void> get ready => _resume?.future ?? Future<void>.value();
+
+  void pause() => _resume ??= Completer<void>();
+
+  void resume() {
+    _resume?.complete();
+    _resume = null;
+  }
 }
 
 final class _EmbeddedAbort {

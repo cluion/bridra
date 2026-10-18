@@ -667,6 +667,11 @@ termination or inherited pipe handles.
 - Frames within one stream have strictly increasing sequence numbers. Flutter
   rejects gaps, duplicates, malformed progress, and missing completion frames as
   protocol failures.
+- Optional [long-lived subscriptions](SUBSCRIPTIONS.md) use application result
+  envelopes over those same frames. Replay cursors belong to the source, not the
+  connection sequence; heartbeats, bounded retries and finite connection rotation
+  preserve existing authentication, cancellation and backpressure. Cursor expiry
+  requires an explicit application snapshot/resync.
 - Flutter timeouts and explicit `RpcCancellationToken` cancellation send the
   reserved control method so cooperative Go handlers can stop work.
 - Sidecar download references contain only paths created inside the
