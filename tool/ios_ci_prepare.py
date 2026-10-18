@@ -24,7 +24,9 @@ def identity():
     head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True, timeout=10).strip()
     if not re.fullmatch(r"[0-9a-f]{40}", head):
         raise ValueError("invalid preparation source identity")
-    return {"head": head, "developerDirectory": os.environ.get("DEVELOPER_DIR", ""), "root": str(ROOT)}
+    return {"head": head, "developerDirectory": os.environ.get("DEVELOPER_DIR", ""), "root": str(ROOT),
+            "simulatorRuntime": os.environ.get("BRIDRA_IOS_SIMULATOR_RUNTIME", ""),
+            "simulatorName": os.environ.get("BRIDRA_IOS_SIMULATOR_NAME", "")}
 
 
 def native_state(path):

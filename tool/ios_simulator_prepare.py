@@ -52,17 +52,26 @@ def command(*arguments, timeout=20, check=True):
 def discover(path, timeout=120):
     if path.exists():
         raise ValueError("refusing to replace existing Simulator ownership")
+    runtime = os.environ.get("BRIDRA_IOS_SIMULATOR_RUNTIME", "")
+    name = os.environ.get("BRIDRA_IOS_SIMULATOR_NAME", "")
+    if runtime and not re.fullmatch(r"com\.apple\.CoreSimulator\.SimRuntime\.iOS-\d+(?:-\d+){1,2}", runtime):
+        raise ValueError("invalid requested iOS Simulator runtime")
+    if name and (not name.startswith("iPhone ") or len(name) > 100 or "\n" in name):
+        raise ValueError("invalid requested iPhone Simulator name")
     # A fresh hosted runner initializes CoreSimulator on its first query.
     devices = json.loads(command("list", "devices", "available", "--json", timeout=timeout).stdout)["devices"]
-    candidates = [device for group in devices.values() for device in group
-                  if device.get("isAvailable") is True and device.get("name", "").startswith("iPhone")]
+    candidates = [(key, device) for key, group in devices.items() for device in group
+                  if (not runtime or key == runtime) and device.get("isAvailable") is True
+                  and device.get("name", "").startswith("iPhone")
+                  and (not name or device["name"] == name)]
     if not candidates:
-        raise ValueError("no available iPhone Simulator")
-    device = next((d for d in candidates if d["state"] == "Booted"), candidates[0])
+        raise ValueError("no available iPhone Simulator matches the requested selection")
+    selected_runtime, device = next((row for row in candidates if row[1]["state"] == "Booted"), candidates[0])
     state = validate_state({"schema": 1, "device": device["udid"], "owned": device["state"] != "Booted"})
     # Validate the UUID before writing an executable worker's input.
     path.parent.mkdir(parents=True, exist_ok=True)
     save(path, state)
+    print(f"Selected existing Simulator: {device['name']} / {selected_runtime} / {device['udid']}", flush=True)
     return state
 
 

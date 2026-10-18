@@ -715,11 +715,13 @@ class WorkflowWiringTests(unittest.TestCase):
         self.assertNotIn('ios_ci_smoke_test.py', self.job('core-static'))
         self.assertIn('make ios-build BACKEND_URL=', self.job('ios-build'))
 
-    def test_simulator_trials_standard_intel_after_sdk_with_arm_release_and_desktop_coverage(self):
+    def test_simulator_selects_existing_small_arm_device_after_sdk_with_all_native_coverage(self):
         body = self.job('ios-simulator')
-        self.assertIn('runs-on: macos-26-intel', body)
+        self.assertIn('runs-on: macos-15\n', body)
         self.assertLess(body.index('name: Set up pinned Flutter'), body.index('ios_ci_prepare.py begin'))
-        self.assertIn('DEVELOPER_DIR: /Applications/Xcode_26.4.1.app/Contents/Developer', body)
+        self.assertIn('DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer', body)
+        self.assertIn('BRIDRA_IOS_SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-18-5', body)
+        self.assertIn('BRIDRA_IOS_SIMULATOR_NAME: iPhone SE (3rd generation)', body)
         self.assertIn('sysctl hw.memsize hw.ncpu vm.swapusage', body)
         for name in ('ios-build', 'macos-lifecycle', 'macos-bundle'):
             self.assertIn('runs-on: macos-15\n', self.job(name))

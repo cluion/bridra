@@ -74,6 +74,49 @@ class PreparationTests(unittest.TestCase):
         self.assertFalse(prepare.load(self.path)["owned"])
         self.command.assert_called_once_with("list", "devices", "available", "--json", timeout=20)
 
+    def test_requested_runtime_and_phone_do_not_borrow_another_booted_device(self):
+        runtime = "com.apple.CoreSimulator.SimRuntime.iOS-18-5"
+        phone = self.phone(name="iPhone SE (3rd generation)")
+        self.command.return_value.stdout = json.dumps({"devices": {
+            "com.apple.CoreSimulator.SimRuntime.iOS-26-2": [self.phone("Booted", self.other)],
+            runtime: [self.phone("Booted", self.other), phone]}})
+        with patch.dict(os.environ, {"BRIDRA_IOS_SIMULATOR_RUNTIME": runtime,
+                                     "BRIDRA_IOS_SIMULATOR_NAME": phone["name"]}, clear=True):
+            prepare.ready(self.path)
+        self.assertTrue(prepare.load(self.path)["owned"])
+        self.assertEqual(prepare.load(self.path)["device"], self.device)
+        self.assertEqual(self.command.call_args_list,
+                         [call("list", "devices", "available", "--json", timeout=120),
+                          call("bootstatus", self.device, "-b", timeout=180)])
+
+    def test_missing_requested_runtime_or_phone_fails_before_boot_without_fallback(self):
+        runtime = "com.apple.CoreSimulator.SimRuntime.iOS-18-5"
+        cases = (
+            {runtime: [self.phone("Booted", name="iPhone 16 Pro")]},
+            {"com.apple.CoreSimulator.SimRuntime.iOS-18-6": [self.phone(name="iPhone SE (3rd generation)")]},
+            {runtime: [self.phone(name="iPhone SE (3rd generation)", isAvailable=False)]})
+        for devices in cases:
+            self.command.reset_mock()
+            self.command.return_value.stdout = json.dumps({"devices": devices})
+            with self.subTest(devices=devices), patch.dict(os.environ, {
+                    "BRIDRA_IOS_SIMULATOR_RUNTIME": runtime,
+                    "BRIDRA_IOS_SIMULATOR_NAME": "iPhone SE (3rd generation)"}, clear=True):
+                with self.assertRaises(ValueError):
+                    prepare.ready(self.path)
+            self.command.assert_called_once_with("list", "devices", "available", "--json", timeout=120)
+            self.assertFalse(self.path.exists())
+
+    def test_invalid_requested_selection_is_rejected_before_native_commands(self):
+        for environment in ({"BRIDRA_IOS_SIMULATOR_RUNTIME": "iOS-18-5"},
+                            {"BRIDRA_IOS_SIMULATOR_RUNTIME": "com.apple.CoreSimulator.SimRuntime.tvOS-18-5"},
+                            {"BRIDRA_IOS_SIMULATOR_NAME": "iPad"},
+                            {"BRIDRA_IOS_SIMULATOR_NAME": "iPhone SE\n"}):
+            with self.subTest(environment=environment), patch.dict(os.environ, environment, clear=True):
+                with self.assertRaises(ValueError):
+                    prepare.ready(self.path)
+            self.command.assert_not_called()
+            self.assertFalse(self.path.exists())
+
     def test_start_owned_existing_phone_in_bounded_detached_worker(self):
         self.command.return_value.stdout = self.devices(self.phone(name="iPad"), self.phone())
         with patch.object(prepare.subprocess, "Popen", return_value=Mock(pid=123)) as popen:
