@@ -38,6 +38,7 @@ test_attach_timeout_seconds=${BRIDRA_IOS_SIMULATOR_ATTACH_TIMEOUT_SECONDS:-90}
 launch_delay_seconds=${BRIDRA_IOS_SIMULATOR_LAUNCH_DELAY_SECONDS:-5}
 watchdog_interval_seconds=${BRIDRA_IOS_SIMULATOR_WATCHDOG_INTERVAL_SECONDS:-5}
 diagnostics_dir=${BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR:-}
+diagnostic_timeout_seconds=${BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_TIMEOUT_SECONDS:-10}
 
 require_positive_seconds() {
   value=$1
@@ -58,6 +59,7 @@ require_positive_seconds "$test_timeout_seconds" BRIDRA_IOS_SIMULATOR_TIMEOUT_SE
 require_positive_seconds "$test_no_progress_seconds" BRIDRA_IOS_SIMULATOR_NO_PROGRESS_SECONDS
 require_positive_seconds "$test_attach_timeout_seconds" BRIDRA_IOS_SIMULATOR_ATTACH_TIMEOUT_SECONDS
 require_positive_seconds "$watchdog_interval_seconds" BRIDRA_IOS_SIMULATOR_WATCHDOG_INTERVAL_SECONDS
+require_positive_seconds "$diagnostic_timeout_seconds" BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_TIMEOUT_SECONDS
 
 case "$launch_delay_seconds" in
   ''|*[!0-9]*)
@@ -101,6 +103,7 @@ fi
 booted_by_script=0
 server_pid=
 test_pid=
+attach_probe_pid=
 watchdog_reason=
 smoke_log=${TMPDIR:-/tmp}/bridra-ios-simulator-smoke.$$.log
 flutter_log=${TMPDIR:-/tmp}/bridra-ios-simulator-flutter.$$.log
@@ -204,6 +207,7 @@ collect_diagnostics() {
     echo "timeout_seconds=$test_timeout_seconds"
     echo "no_progress_seconds=$test_no_progress_seconds"
     echo "attach_timeout_seconds=$test_attach_timeout_seconds"
+    echo "diagnostics_timeout_seconds=$diagnostic_timeout_seconds"
   } >"$diagnostics_dir/summary.txt" 2>&1 || true
   if [ -f "$flutter_log" ]; then
     cp "$flutter_log" "$diagnostics_dir/flutter-test.log" 2>/dev/null || true
@@ -211,14 +215,29 @@ collect_diagnostics() {
   if [ -f "$smoke_log" ]; then
     cp "$smoke_log" "$diagnostics_dir/backend.log" 2>/dev/null || true
   fi
-  xcrun simctl list devices >"$diagnostics_dir/devices.txt" 2>&1 || true
-  ps -axo pid=,ppid=,state=,etime=,comm= \
-    >"$diagnostics_dir/processes.txt" 2>&1 || true
-  xcrun simctl spawn "$device" log show \
-    --style compact \
-    --last 10m \
-    --predicate 'process == "Runner"' \
-    >"$diagnostics_dir/runner.log" 2>&1 || true
+  touch "$diagnostics_dir/devices.txt" "$diagnostics_dir/processes.txt" "$diagnostics_dir/runner.log"
+  (
+    xcrun simctl list devices >"$diagnostics_dir/devices.txt" 2>&1 || true
+    ps -axo pid=,ppid=,state=,etime=,comm= \
+      >"$diagnostics_dir/processes.txt" 2>&1 || true
+    xcrun simctl spawn "$device" log show \
+      --style compact \
+      --last 10m \
+      --predicate 'process == "Runner"' \
+      >"$diagnostics_dir/runner.log" 2>&1 || true
+  ) &
+  diagnostic_pid=$!
+  diagnostic_started_at=$(date +%s)
+  while process_is_running "$diagnostic_pid"; do
+    if [ "$(($(date +%s) - diagnostic_started_at))" -ge "$diagnostic_timeout_seconds" ]; then
+      terminate_process_tree "$diagnostic_pid"
+      echo "Runner log collection exceeded ${diagnostic_timeout_seconds}s; partial diagnostics retained." \
+        >>"$diagnostics_dir/runner.log"
+      break
+    fi
+    sleep 1
+  done
+  wait "$diagnostic_pid" 2>/dev/null || true
   echo "Saved iOS Simulator diagnostics to $diagnostics_dir" >&2
 }
 
@@ -228,8 +247,11 @@ cleanup() {
   if [ -n "$test_pid" ]; then
     terminate_process_tree "$test_pid"
   fi
+  if [ -n "$attach_probe_pid" ]; then
+    terminate_process_tree "$attach_probe_pid"
+  fi
   if [ "$status" -ne 0 ]; then
-    collect_diagnostics "$status"
+    collect_diagnostics "$status" || true
   fi
   if [ -n "$server_pid" ] && kill -0 "$server_pid" 2>/dev/null; then
     terminate_process "$server_pid"
@@ -282,6 +304,7 @@ done
 
 echo "Running iOS Simulator RPC, streaming, managed-download, and resumable-upload integration test on $device..."
 runner_attach_started_at=@$(date +%s)
+test_started_at=$(date +%s)
 test_status=0
 # BRIDRA_FLUTTER intentionally contains a command and optional wrapper argument.
 # shellcheck disable=SC2086
@@ -300,11 +323,10 @@ BRIDRA_IOS_SIMULATOR_LAUNCH_MARKER="$launch_marker" \
   >"$flutter_log" 2>&1 &
 test_pid=$!
 
-elapsed_seconds=0
-idle_seconds=0
-heartbeat_seconds=0
+last_progress_at=$test_started_at
+last_heartbeat_at=$test_started_at
 last_log_size=0
-attach_elapsed_seconds=0
+attach_started_at=0
 attach_detected=0
 while kill -0 "$test_pid" 2>/dev/null; do
   sleep "$watchdog_interval_seconds"
@@ -312,31 +334,39 @@ while kill -0 "$test_pid" 2>/dev/null; do
     break
   fi
   current_log_size=$(wc -c <"$flutter_log" | tr -d '[:space:]')
-  elapsed_seconds=$((elapsed_seconds + watchdog_interval_seconds))
-  heartbeat_seconds=$((heartbeat_seconds + watchdog_interval_seconds))
+  now=$(date +%s)
+  elapsed_seconds=$((now - test_started_at))
   if [ "$current_log_size" -ne "$last_log_size" ]; then
     last_log_size=$current_log_size
-    idle_seconds=0
-  else
-    idle_seconds=$((idle_seconds + watchdog_interval_seconds))
+    last_progress_at=$now
   fi
+  idle_seconds=$((now - last_progress_at))
   if [ "$attach_detected" -eq 0 ]; then
-    xcrun simctl spawn "$device" log show \
-      --style compact \
-      --start "$runner_attach_started_at" \
-      --predicate 'process == "Runner" AND eventMessage CONTAINS "The Dart VM service is listening"' \
-      >"$runner_attach_log" 2>&1 || true
-    if grep -Fq 'The Dart VM service is listening' "$runner_attach_log"; then
+    if grep -Fq '"rpc_method":"system.health"' "$smoke_log"; then
+      attach_detected=2
+    elif [ -f "$runner_attach_log" ] && grep -Fq 'The Dart VM service is listening' "$runner_attach_log"; then
       attach_detected=1
-      attach_elapsed_seconds=0
+      attach_started_at=$now
       echo "Dart VM service detected; waiting for the first smoke RPC."
+    elif [ -f "$launch_marker" ]; then
+      # Query only after launch, and never let Simulator logging block deadlines.
+      if [ -z "$attach_probe_pid" ] || ! process_is_running "$attach_probe_pid"; then
+        if [ -n "$attach_probe_pid" ]; then
+          wait "$attach_probe_pid" 2>/dev/null || true
+        fi
+        xcrun simctl spawn "$device" log show \
+          --style compact \
+          --start "$runner_attach_started_at" \
+          --predicate 'process == "Runner" AND eventMessage CONTAINS "The Dart VM service is listening"' \
+          >"$runner_attach_log" 2>&1 &
+        attach_probe_pid=$!
+      fi
     fi
   elif [ "$attach_detected" -eq 1 ]; then
     if grep -Fq '"rpc_method":"system.health"' "$smoke_log"; then
       attach_detected=2
     else
-      attach_elapsed_seconds=$((attach_elapsed_seconds + watchdog_interval_seconds))
-      if [ "$attach_elapsed_seconds" -ge "$test_attach_timeout_seconds" ]; then
+      if [ "$((now - attach_started_at))" -ge "$test_attach_timeout_seconds" ]; then
         watchdog_reason="Flutter test driver did not attach within ${test_attach_timeout_seconds}s after the Dart VM service started."
         test_status=124
         break
@@ -353,9 +383,9 @@ while kill -0 "$test_pid" 2>/dev/null; do
     test_status=124
     break
   fi
-  if [ "$heartbeat_seconds" -ge 30 ]; then
+  if [ "$((now - last_heartbeat_at))" -ge 30 ]; then
     echo "iOS Simulator smoke still running: ${elapsed_seconds}s elapsed, ${idle_seconds}s without output."
-    heartbeat_seconds=0
+    last_heartbeat_at=$now
   fi
 done
 

@@ -34,39 +34,233 @@ reusable workflow's `check-results` validates every expected job, including
 intentional skips. Failures, cancellations, missing results and unexpected skips
 block it. The reusable jobs and their gate consume the same authoritative JSON
 plan, so a missing forwarded plan fails rather than silently disabling checks.
-Full tag mode does not depend on PR selection and requires every job.
+The full tag fallback does not depend on PR selection and requires every job.
+A separate release evidence check may reuse complete PR verification for the
+identical source tree; partial PR selection never satisfies that check.
 Do not use workflow-level `paths` filters for this required workflow.
 
 ## Execution and test reuse
 
 `checks.yml` separates these independently runnable jobs:
 
-- `core`: schema/codegen/format/vet/analysis, SQL-store integration and
-  `make verify-coverage`, retaining all eight coverage floors.
+- `core-static`: schema/codegen/format/vet/analysis and watchdog contracts through
+  `make verify-checks`.
+- `core-go`: SQL-store integration and the complete race-enabled Go suite with
+  atomic coverage. PostgreSQL and Redis services remain on this runner.
+- `core-flutter`: both Flutter coverage suites and Chrome, sharing one backend
+  build on this runner.
+- `core`: require all three core shards, download their three coverage profiles
+  from this run/attempt and enforce all eight original floors with
+  `make coverage-report`. Missing profiles or below-floor results block the gate;
+  collecting coverage does not rerun tests.
 - `linux`: native bundle build and Sidecar smoke.
 - `android-web`: selected Android/Web release builds; these short builds share
   one runner to avoid an extra SDK setup for each target.
 - `android-emulator`: real HTTP recovery, streaming and resumable transfers.
-- `macos`: native lifecycle, signed sandbox handoff and bundle smoke. XCTest
-  hosts run serially because the application enforces a single instance;
-  parallel hosts can exit before connecting to XCTest. Other jobs remain parallel.
-- `ios`: unsigned release build and, when selected, bounded real simulator smoke
-  with the existing single retry and failure diagnostics.
-- `windows`: Windows verification and native bundle smoke.
+- `macos-lifecycle`, `macos-bundle`: native lifecycle and signed sandbox handoff
+  run separately from the universal bundle build/smoke, with independent VMs and
+  build directories. `macos` requires both. XCTest hosts remain serial because
+  the application enforces a single instance; parallel hosts can exit before
+  connecting to XCTest.
+- `ios-watchdog`, `ios-simulator`, `ios-build`: native watchdog contracts, bounded
+  real Simulator smoke and the unsigned release build run independently.
+  `ios` requires each selected shard, allowing only plan-authorized skips.
+- `windows-verify`, `windows-bundle`: native Go vet/tests, SQL-store tests and both
+  Flutter suites run separately from bundle build/smoke. `windows` requires both.
+  When the authoritative plan also requires `core`, common metadata,
+  code generation, formatting and Dart analysis run there once. Windows-only
+  plans retain those checks locally. Environment/doctor checks remain native.
 - `release-package`: final metadata, Dart publication dry-run, reproducible
-  six-target CLI artifacts and native archive identity; release runs only.
+  six-target CLI artifacts and native archive identity; release runs only. Its
+  implementation is shared through `release-package.yml` by both tag paths.
 
-The former long Linux chain and combined macOS/iOS chain run independently.
-All selected jobs must pass before the reusable workflow succeeds. More parallel
-jobs can use more runner minutes even when wall time falls; keep the smaller
-Android/Web builds together and measure both waiting time and runner usage.
+Each shard has its own checkout and build outputs. The `core`, `macos`, `ios` and `windows`
+group gates run even after a dependency fails. Both these gates and the final
+`check-results` independently reject missing, failed, cancelled or unexpectedly
+skipped shards. Source-equivalent release verification also requires every shard,
+not just the group gates.
+
+This graph adds ten jobs to a complete PR plan compared with the serial graph:
+six Linux jobs, three macOS jobs and one Windows job, including the group gates.
+It adds five Flutter setup/cache restores. Keep the smaller Android/Web builds
+together to bound that overhead. Shorter critical paths can still cost more
+runner time, and account concurrency limits can increase queueing. Measure wall
+time, queueing, retries and per-OS runner time before claiming a five-minute result.
 
 `make verify-coverage` runs the common static checks, race-enabled Go tests with
 an atomic coverage profile, SQL integration, both Flutter suites with coverage,
 and Chrome exactly once each. External-package public API tests are included in
 the complete Go test pass. It does not run `make verify` and then rerun tests with
 `make coverage`. Existing developer `make verify`, standalone `make coverage`
-and Windows PowerShell entrypoints remain available.
+and Windows PowerShell entrypoints remain available. CI runs the same Make
+components on separate runners; only the final coverage report is collected.
+
+Windows verification runs the complete Go suite once, including public API tests.
+`tool/windows.ps1 -Task verify` remains a complete standalone check; only CI's
+explicit `-SharedChecksInCore` mode delegates common checks to the selected,
+required core job. No Windows tests or native build checks are delegated.
+`BRIDRA_WINDOWS_TIMINGS_PATH` opts into JSON-lines timing for checked Go/FVM/gofmt
+commands and the whole task, including failed commands. CI appends the timings to
+its step summary and uploads `windows-verify-timings-ATTEMPT` and
+`windows-bundle-timings-ATTEMPT` even on failure. Command and task totals overlap;
+do not sum them together as runner usage.
+The Windows verify command also sets `GOFLAGS=-v` to report individual native
+test durations and compilation progress. This adds logging without a test filter,
+short mode or another test invocation; `(cached)` results remain distinguishable.
+
+Windows x64 setup installs FVM from its
+[fixed-version standalone GitHub release](https://github.com/btwld/fvm/releases/tag/4.1.2),
+using the committed SHA-256, a bounded archive size and an
+exact runtime version check before exporting its path. The archive's license is
+retained. This avoids Chocolatey's separate Dart SDK installation; project SDK
+installation, Pub resolution, platform precaching and native verification still
+run. `tool/ci_fvm.py` is also the source of the pinned FVM version used by the Unix
+installer. Download, checksum, extraction or version failures block setup.
+Other Windows architectures retain the existing Chocolatey path; the x64 ZIP
+layout is not assumed for ARM64's different standalone packaging.
+
+On a Unix SDK cache miss, the hosted-only `seed-flutter` helper clones only the
+exact `.fvmrc` release tag from the official Flutter repository, with depth one.
+It requires the exact checked-out tag and an executable `bin/flutter`, then
+atomically moves the staged source into the FVM versions cache. Existing entries
+are retained for FVM's checks; partial clones are never published as cache entries.
+The original `fvm install`, SDK initialization, Pub resolution and full platform
+precache still run. This avoids downloading Flutter's entire Git history on cold
+ephemeral runners; it does not restore compiled application or test results.
+
+SDK and Pub caches are saved only after installation, resolution and platform
+precaching succeed; NDK/CMake caches are saved after `sdkmanager` succeeds.
+Separate pinned restore/save actions preserve these validated dependencies even
+if a later native test fails. A failed setup stage does not save that stage's cache. Gradle
+remains a post-build cache. Cache writes do not replace any native assertion or
+release gate. Controlled warm measurements require exact cache matches, including
+Pub/Gradle, rather than accepting a prefix fallback as fully warm.
+
+On ephemeral GitHub-hosted runners, `tool/ios_ci_prepare.py` starts three
+independent prerequisites after pinned Go and Flutter SDK setup: `make macos-check`,
+`make backend-server-build`, and strict Simulator discovery/readiness. They run
+concurrently in one owned process group. SDK cache extraction and Simulator
+initialization are ordered separately for the hosted timing trial: overlapping
+them coincided with much slower SDK setup than the same-profile iOS build job.
+The measurements do not by themselves establish CPU, memory or I/O as the cause. Native
+selection still uses `tool/ios_simulator_prepare.py`: 120-second discovery and
+180-second readiness bounds, one existing available iPhone and no device creation.
+A borrowed booted device is checked without requesting another boot.
+
+The initial step uses one foreground `prepare` controller after SDK setup. It
+retains the child `Popen` handle and checks that child's liveness while waiting,
+avoiding a separate Python controller and repeated `ps` processes during startup.
+The source/PID/token/command-line and process-group checks still precede group
+signals. Teardown reaps its own terminated leader while waiting for the group;
+only ESRCH proves extinction, and EPERM still cannot authorize success. The
+original `begin`/`ready` modes and independent `always()` cleanup remain available
+for an interrupted controller. Its complete command wall time is reported as
+`Bridra iOS preparation process seconds`; it must be measured separately from the
+three overlapping stage durations.
+
+The Simulator timing trial uses the standard `macos-15` ARM image with installed
+Xcode 16.4, its existing iOS 18.5 runtime and iPhone 16 Pro.
+`BRIDRA_IOS_SIMULATOR_RUNTIME` and `BRIDRA_IOS_SIMULATOR_NAME` constrain discovery;
+if either requested selection is unavailable, initialization fails without
+creating a device or falling back to a different runtime/model. The preparation
+identity binds both selectors as well as the source and Xcode directory. The
+same complete transport test runs on this existing model. A smaller iPhone SE
+did not produce a shorter complete native sample; a matching modern ARM
+macOS 26 / Xcode 26.4.1 / iOS 26.4 trial needed 200.8 seconds for readiness alone.
+These observations do not establish the cause of the timing variation.
+Unsigned iOS release and native macOS verification retain their ARM runners.
+
+Earlier Intel trials either timed out/cancelled during initialization or ran
+substantially slower than the ARM samples; one owned shutdown also timed out.
+The SDK-first macOS 15 Intel trial hit the original 120-second discovery limit.
+A modern `macos-26-intel` / Xcode 26.4.1 trial retained every native assertion but
+initial discovery/readiness alone took 241.8 seconds, then the initial smoke
+exceeded its original twelve-minute bound. That negative trial was cancelled
+while retaining its cost and cleanup evidence. Apple's
+[Xcode 26.4 notes](https://developer.apple.com/documentation/Xcode-Release-Notes/xcode-26_4-release-notes)
+describe a fixed `simdiskimaged` issue that could hang `simctl`; this does not
+establish the cause of our earlier timeouts. The default-branch SDK cache-warming
+matrix covers the selected runner. Its macOS/ARM64 SDK and Pub keys also serve
+the macOS 15 desktop/release jobs; no native build output is shared, and an
+unused Intel profile is not kept as an additional nightly job. Initial dependency population and exact warm matches
+must be reported separately, including failed and cancelled trial costs.
+The hosted scheduling trial sets `BRIDRA_IOS_CI_XCODE_JOBS=2`, following the
+single-operation trial on the same ARM image/toolchain/runtime/model.
+`tool/ios_ci_smoke.sh` scopes an additional `xcrun` adapter to a temporary directory
+inside `RUNNER_TEMP`. It passes Xcode's `-jobs` argument only to Flutter's actual
+Simulator build (identified by its SDK and result-bundle flags); metadata and
+Simulator commands pass through. This limits build operations, not every child
+thread. It preserves the original launch/watchdog adapter, build arguments,
+command exit status and complete fresh native assertions. Conflicting build-job
+arguments fail closed. The adapter supports bounded values 1–3 only on ephemeral
+hosted runners, and removes its owned link on exit. A lower memory/CPU peak is a
+timing hypothesis requiring hosted comparison, not a measured speed guarantee.
+The preparation source identity also binds this requested scheduling value.
+Each foreground stage also reports waited-process user/system CPU seconds using
+Bash's timing builtin. These values exclude work performed by unrelated OS
+services; they are not whole-VM utilization, peak memory or billed runner time.
+
+Host CPU/memory and swap snapshots are logged before preparation and after its
+join. Cached dependencies do not replace fresh native builds, and hosted timing
+is not a latency guarantee.
+
+Each prerequisite has a recorded exit code and monotonic duration; Xcode/backend
+commands have 180-second limits and the combined native initialization command has
+a 330-second limit. Native command start markers precede captured command output,
+so a stalled command can be identified before its output is flushed; elapsed
+markers alone never prove successful process teardown. The foreground preparation joins the worker within 360 seconds,
+inside its original twelve-minute boundary, and requires every result to pass.
+Preparation evidence binds the worker PID/token, checked-out source and selected
+Xcode directory. The wrapper verifies the selected UUID and SHA-256 of the actual
+executable backend before consuming its prepared prerequisites. Nothing is cached
+across jobs and no preparation result replaces transport assertions.
+
+A failed first attempt still permits exactly one targeted reset and twelve-minute
+retry. Reset stops the owned preparation group before touching the selected
+device; missing selection erases nothing. Retry repeats strict readiness and the
+original foreground Xcode/backend checks. An `always()` step stops the preparation
+group and shuts down only the owned device, including setup failures. Process
+identity is checked before signals; an unverifiable live group blocks device
+mutation. A bounded retained group leader allows cleanup to stop descendants even
+if a prerequisite command timed out. Cleanup failures block the job.
+
+The helpers reject local/self-hosted runners and state outside `RUNNER_TEMP`.
+Tests use mocks and isolated fake native commands, including real owned-group
+cancellation tests, without operating on developer Simulators. The host/path
+restriction uses GitHub's documented
+[`RUNNER_ENVIRONMENT` and `RUNNER_TEMP` variables](https://docs.github.com/en/actions/reference/workflows-and-actions/variables).
+
+The iOS watchdog starts its background attach query only after a Simulator launch
+is requested. Slow log queries cannot block the foreground deadline checks.
+Total, no-output and post-VM-service attach deadlines use elapsed wall-clock
+timestamps, including work between sleeps. The launch barrier, first-RPC guard,
+all transport receipts and the existing retry remain required. Cleanup terminates
+owned probe/Flutter child processes; failure log collection has a bounded 10s
+budget (configurable with `BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_TIMEOUT_SECONDS`)
+and retains partial output when that budget expires. Starter projects
+use the same watchdog and cleanup behavior.
+
+CI runs `tool/ios_ci_smoke.sh` after readiness and validated device selection.
+Its optional preparation-state argument requires the successful source-bound
+results instead of executing the same prerequisites again. Without that argument
+(retry and the separate preboot experiment), it runs the original foreground
+`macos-check` and `backend-server-build` before the unchanged native smoke.
+Prerequisite durations come from monotonic worker timers; native smoke retains
+its shell timer. Both print `Bridra iOS STAGE seconds: ...` and exit codes.
+The Flutter invocation adds `--verbose` to expose tool-reported phases; assertions,
+launch barrier and watchdogs are unchanged. Buffered log timestamps cannot be
+mistaken for internal build-start times. The optional preboot experiment retains
+its prior 20-second optional discovery probe and serial prerequisite control;
+results from its earlier implementation are not measurements of the new pipeline.
+
+macOS lifecycle XCTest and the signed Go sandbox fixture run serially on their
+own runner, concurrently with the separate release bundle runner. Each has a
+workload-specific Go cache fingerprint so a smaller first writer cannot freeze
+the other's complete compiler profile. Both use ARM `macos-15`; XCTest retains
+one host (`-parallel-testing-enabled NO`). Both shards are required by `macos`,
+`check-results` and complete source-equivalent release verification. This adds
+one macOS setup and a short Linux group gate; measure that overhead against the
+shorter critical path rather than assuming lower runner usage.
 
 ## SDK and dependency caches
 
@@ -79,8 +273,42 @@ and its exact SDK/Dart paths are resolved through FVM rather than assuming a
 project symlink exists.
 
 Only SDK versions, Pub hosted/git packages and Gradle dependencies are cached.
+SDK keys identify complete host profiles, and each writer pre-caches the entire
+profile before saving. macOS/iOS therefore cannot save different SDK artifact
+sets under the same immutable key. See the optional
+[XCTest comparison](IOS_XCTEST_EXPERIMENT.md) for controlled cold/warm measurements.
 Credentials, OIDC files, repository checkouts, test outcomes and release candidates
 are not dependency-cache entries. Go's existing setup-action cache remains enabled.
+
+Android jobs also cache the exact Flutter-selected NDK and the CMake version in
+`tool/ci.py`, under a separate SDK/architecture/tool-version key. Only those two
+component directories are included, not every preinstalled NDK. The NDK version
+is read from the pinned Flutter SDK; `sdkmanager` installs/verifies both tools on
+every run before saving, so a first writer cannot freeze a partial profile.
+Its executable is resolved and checked under the configured Android SDK's
+`cmdline-tools/latest/bin`, without relying on the runner's default PATH.
+Normal release/debug builds and the real Emulator HTTP flow still run. The
+existing default-branch warm-up populates this same profile. First population
+and later restored measurements must be reported separately.
+
+Windows verification includes `tool/windows.ps1` in its Go cache fingerprint,
+separating its complete generated-consumer/cross-compile profile from the bundle
+job's smaller compilation workload. The first run for a new profile is cold;
+later verification restores the cache written by that same workload rather than
+an immutable entry first written by the bundle job. Verification still executes
+every original command. Independent generated-consumer name/target subtests run
+in parallel, with separate scratch projects or read-only source and Go's normal
+compiler-cache coordination; no test case or target is filtered out.
+
+On hosted Windows, dependency caches and build/test scratch use directories under
+`RUNNER_TEMP`, avoiding repeated small-file work on the system tool-cache disk.
+The environment is exported before Go setup and includes `GOCACHE`, `GOMODCACHE`,
+`GOTMPDIR`, `TEMP` and `TMP`. SDK/Pub caches use `bridra-dependencies`; Go and test
+scratch use `bridra-work`. Windows' SDK profile is `windows-temp-v1`, with the
+same required Windows artifacts. Changed paths also give Pub/Go caches distinct
+cache versions, so the first relocated run is cold; measure later restores
+separately. Existing cache entries are not deleted. Linux/macOS locations,
+toolchain versions, antivirus settings and validation requirements are unchanged.
 
 PR merge-ref caches cannot seed a later main/tag run. The existing weekly/manual
 Runtime Stress workflow therefore has a default-branch-only `cache-warm` matrix
@@ -112,53 +340,71 @@ and [merge queues](https://docs.github.com/en/repositories/configuring-pull-requ
 
 ## Tag verification and publication
 
-`release.yml` is triggered by `backend/v*.*.*` when public releases are enabled:
+`release.yml` is triggered by `backend/v*.*.*` when public releases are enabled.
+It always matches `VERSION`, requires the exact tag SHA to be reachable from
+`main`, and creates fresh release artifacts for that SHA. It chooses one path:
 
-1. Match `VERSION` and require the exact tag SHA to be reachable from `main`.
-2. Run the shared checks with `full: true`: every platform, real mobile runtime,
-   coverage floor and release-package job is required regardless of PR scope.
-3. In parallel with platform testing, validate final changelogs and the Dart
-   package dry-run. Build the CLI twice from the same source SHA and timestamp,
-   compare the six archives/checksums/manifest/SBOM and run the native Linux CLI.
-4. Upload one immutable candidate. Parallel upload alone does not authorize
-   publication: all other verification jobs and `check-results` must succeed.
-5. Only then request the protected `public-release` environment approval and gain
-   OIDC/publication permissions. Download the same artifact by ID, recheck tag/SHA,
-   digests, sizes and the exact nine-file set, then attest and publish those bytes.
+| Evidence available for this source | Tag work |
+| --- | --- |
+| A matching, complete, successful PR verification record | Reuse platform/coverage verification; run exact-tag release packaging |
+| Partial, missing, expired, mismatched or unverifiable evidence | Run `checks.yml` with `full: true`, including every platform and packaging |
 
-No CLI rebuild occurs in the publication job. PR success is not substituted for
-exact-tag verification. Environment protection, owner authorization, source checks,
-OIDC and provenance/SBOM attestations remain required. Post-release public-registry
-identity and one fresh external-consumer acceptance remain separate gates; see
-[RELEASING.md](RELEASING.md).
+The fixed PR gate records `verification.json` only after every selected check
+passes, and only for a same-repository PR into `main` whose plan includes all
+platforms, both real mobile runtimes and core coverage. The record identifies
+the tested merge SHA, complete Git tree, base/head SHAs, repository ID, workflow,
+run ID and attempt. It is uploaded as `pr-verification-RUN-ATTEMPT` with 14-day
+retention. An unavailable optional evidence upload does not invalidate otherwise
+successful PR checks; the later tag falls back to full verification.
 
-## Run counts and local validation
+`tool/release_verification.py` uses read-only GitHub APIs to require all of:
 
-With one successful PR run per change and no retries/queue activity:
+- The tag is exactly the merge/squash commit of one merged PR into `main`, with
+  both branches in this repository. Branch names and commit titles are not evidence.
+- The latest `verify.yml` run for that PR head is a successful `pull_request` run
+  from the expected repository/workflow, created within the last seven days.
+  A newer failed or running run is never bypassed in favor of an older success.
+- Every required core, platform, emulator/simulator and final gate job in that
+  exact attempt has one successful result. Missing/duplicate jobs, unexpected
+  skips and incomplete API pages are rejected.
+- The run's immutable artifact has the expected name, run/head identity and a
+  matching SHA-256 digest. Only its bounded `verification.json` is read; no PR
+  artifact is executed or used as a release binary.
+- GitHub's commit data independently confirms that the tested merge has the
+  recorded base/head parents and its **entire Git tree equals the tag's tree**.
+  A successful gate step whose name GitHub evaluates with `github.sha` also binds
+  that merge SHA to the actual run, independently of the artifact's claims.
+  Squash commits may have different commit SHAs; every tracked file, dependency,
+  workflow and script must still be identical. The source checkout must be clean.
 
-| Work | PRs | Event-triggered verification/release runs |
-| --- | ---: | ---: |
-| Merge one change | 1 | 1 PR run |
-| Merge and release one change | 1 | 1 PR run + 1 tag run |
-| Merge three changes, then release | 3 | 3 PR runs + 1 tag run |
+The lookup has a 45-second budget with at most 10 seconds per API request.
+Unavailable APIs, insufficient permission, deleted repositories/commits or
+artifacts, old records, fork PRs, merge-group-only evidence, partial plans and
+any other uncertainty select full verification. Existing PR runs without the
+new record also fall back; this is expected during rollout. The decision and
+matching run/tree identity are retained as a release artifact and step summary.
+No workflow-dispatch label or manual boolean can force verification reuse.
 
-Reusable jobs consume runners within these runs. Weekly maintenance is separate.
-Local work should use the smallest relevant checks. A delivery rehearsal needing
-both complete verification and coverage uses `make verify-coverage` once. Do not
-repeat full local suites for candidate, squash and tag when the same source tree
-is already covered and tag CI will validate the final SHA and package identity.
+Both paths use the same read-only `release-package.yml`: final changelogs/version
+checks, Dart publication dry-run, two reproducible builds of all six CLI archives,
+checksums/manifest/SBOM comparison and the native Linux CLI identity smoke test.
+Artifacts embed the actual tag SHA, not the PR's different merge/head SHA.
+The `candidate` gate requires source verification, the selected path's success,
+the other path's intentional skip and a valid immutable candidate artifact ID.
+Failed, cancelled, missing or unexpected results block publication.
 
-For CI changes:
+Only then can `public-release` request the protected environment approval and gain
+OIDC/publication permissions. It downloads the exact candidate by artifact ID,
+rechecks the unchanged tag/SHA, digests, sizes and exact nine-file set, then attests
+and publishes those same bytes without rebuilding. Owner authorization, OIDC,
+provenance/SBOM attestations and post-release public-registry/external-consumer
+acceptance remain required; see [RELEASING.md](RELEASING.md).
 
-```bash
-python3 -m unittest discover -s tool -p ci_test.py -v
-actionlint
-make release-check
-```
+This removes a second complete platform matrix when valid PR evidence exists.
+The parallel graph above targets shorter warm-cache PR waits, but a five-minute
+PR or release remains unmeasured until hosted comparisons pass. Queue time, cold
+SDK caches, reproducible packaging and environment approval add time independently.
 
-Changes to the test entrypoint also need one real `make verify-coverage` run.
-Hosted cache hits, Windows/mobile runners, protected-environment behavior and
-elapsed time require GitHub verification after review/push. Local lint does not
-prove them. Do not publish a tag just to test this migration. Initial goals are
-5–10 minutes for ordinary PRs and 12–18 minutes for tag runs; these are unproven
-measurement targets, not guarantees under cold caches, queueing or retries.
+GitHub documents the [workflow run/attempt APIs](https://docs.github.com/en/rest/actions/workflow-runs),
+[job results for an attempt](https://docs.github.com/en/rest/actions/workflow-jobs#list-jobs-for-a-workflow-run-attempt)
+and [artifact identity/digests](https://docs.github.com/en/rest/actions/artifacts).

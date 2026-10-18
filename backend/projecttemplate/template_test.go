@@ -163,6 +163,7 @@ func TestInitializeSchemaBaselineRequiresCurrentSchema(t *testing.T) {
 }
 
 func TestRenderedCustomProtocolProjectVerifyEnforcesSchemaBaseline(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	config := testConfig(t)
 	config.BridraGoVersion = "v" + releaseinfo.Version
@@ -235,6 +236,7 @@ func readProjectTemplateTestFile(t *testing.T, path string) []byte {
 }
 
 func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	config := testConfig(t)
 	if err := Render(root, config); err != nil {
@@ -253,6 +255,7 @@ func TestRenderedGoConsumerCompilesOutsideRepository(t *testing.T) {
 	}
 	for _, target := range []string{"darwin", "linux", "windows"} {
 		t.Run("sidecar-"+target, func(t *testing.T) {
+			t.Parallel()
 			command := exec.Command("go", "test", "-exec=true", "./cmd/sidecar")
 			command.Dir = filepath.Join(root, "backend")
 			command.Env = append(
@@ -664,8 +667,10 @@ func TestRenderSelectsPlatformOwnedFilesTargetsAndMetadata(t *testing.T) {
 }
 
 func TestRenderedFlutterConsumerCompilesOutsideRepository(t *testing.T) {
+	t.Parallel()
 	for _, name := range []string{"Starter App", `工作台 "Pro" $HOME`} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			root := t.TempDir()
 			config := testConfig(t)
 			config.DisplayName = name

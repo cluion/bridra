@@ -57,7 +57,7 @@ RUNTIME_RESOURCE_MAX_FD_GROWTH ?= 4
 RUNTIME_RESOURCE_MAX_RSS_GROWTH_MIB ?= 32
 
 .PHONY: help setup doctor generate schema-check codegen-check dart-codegen-format-test license-check format backend-build backend-server-build backend-serve backend-format backend-test backend-public-api-test backend-sql-store-test backend-sql-job-store-test backend-vet transport-benchmark http-fault-test ios-simulator-watchdog-test \
-	flutter-format flutter-package-test flutter-web-test flutter-test analyze verify verify-checks verify-coverage coverage backend-coverage flutter-package-coverage flutter-app-coverage coverage-check linux-check linux-run linux-build \
+	flutter-format flutter-package-test flutter-web-test flutter-test analyze verify verify-checks verify-coverage coverage backend-coverage flutter-package-coverage flutter-app-coverage coverage-check coverage-report linux-check linux-run linux-build \
 	linux-smoke macos-check macos-run macos-build macos-native-test macos-sandbox-smoke macos-smoke windows-run \
 	windows-build windows-smoke windows-verify android-run android-build android-emulator-smoke \
 	ios-run ios-build ios-embedded-core-poc ios-embedded-core-smoke ios-simulator-build ios-simulator-smoke ios-device-smoke web-run web-build remote-release-check \
@@ -227,6 +227,9 @@ flutter-app-coverage: backend-build
 	BRIDRA_SIDECAR_PATH=$(SIDECAR) BRIDRA_SERVER_PATH=$(HTTP_SERVER) $(FLUTTER) test --coverage
 
 coverage-check: backend-coverage flutter-package-coverage flutter-app-coverage
+	$(MAKE) coverage-report
+
+coverage-report:
 	cd backend && $(GO) run ./tool/coveragecheck --root ..
 
 coverage: coverage-check flutter-web-test

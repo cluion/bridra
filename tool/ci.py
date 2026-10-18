@@ -8,11 +8,21 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import tempfile
+
+from ci_fvm import VERSION as FVM_VERSION
 
 
+ANDROID_CMAKE_VERSION = "3.22.1"
 SCOPES = ("core", "linux", "android", "web", "macos", "ios", "windows",
           "android_emulator", "ios_simulator")
 PLATFORMS = ("linux", "android", "web", "macos", "ios", "windows")
+GROUPS = {
+    "core": ("core-static", "core-go", "core-flutter"),
+    "ios": ("ios-watchdog", "ios-simulator", "ios-build"),
+    "windows": ("windows-verify", "windows-bundle"),
+    "macos": ("macos-lifecycle", "macos-bundle"),
+}
 TARGETS = [(system, arch) for system in ("darwin", "linux", "windows")
            for arch in ("amd64", "arm64")]
 
@@ -84,7 +94,15 @@ def pinned_flutter(root):
 
 def cache_environment(root, environment):
     version = pinned_flutter(root)
+    profiles = {
+        "Linux": ("linux-android-web", "--linux --android --web"),
+        "macOS": ("macos-ios", "--macos --ios"),
+        "Windows": ("windows-temp-v1", "--windows"),
+    }
+    profile, flags = profiles[environment["RUNNER_OS"]]
     cache = Path(environment["RUNNER_TOOL_CACHE"])
+    if environment["RUNNER_OS"] == "Windows":
+        cache = Path(environment["RUNNER_TEMP"]) / "bridra-dependencies"
     values = {"FVM_CACHE_PATH": (cache / "bridra-fvm").as_posix(),
               "PUB_CACHE": (cache / "bridra-pub").as_posix()}
     with open(environment["GITHUB_ENV"], "a") as output:
@@ -92,6 +110,71 @@ def cache_environment(root, environment):
             output.write(f"{key}={value}\n")
     with open(environment["GITHUB_OUTPUT"], "a") as output:
         output.write(f'version={version}\nfvm={values["FVM_CACHE_PATH"]}\npub={values["PUB_CACHE"]}\n')
+        output.write(f'profile={profile}\nprecache_flags={flags}\n')
+        output.write(f'fvm_version={FVM_VERSION}\n')
+
+
+def windows_environment(environment):
+    if (environment.get("RUNNER_OS") != "Windows" or environment.get("GITHUB_ACTIONS") != "true"
+            or environment.get("RUNNER_ENVIRONMENT") != "github-hosted"):
+        raise ValueError("Windows scratch configuration requires an ephemeral hosted Windows runner")
+    scratch = Path(environment["RUNNER_TEMP"]) / "bridra-work"
+    locations = {"GOCACHE": scratch / "go-build", "GOMODCACHE": scratch / "go-mod",
+                 "GOTMPDIR": scratch / "tmp", "TEMP": scratch / "tmp", "TMP": scratch / "tmp"}
+    for directory in locations.values():
+        directory.mkdir(parents=True, exist_ok=True)
+    with open(environment["GITHUB_ENV"], "a") as output:
+        for name, directory in locations.items():
+            output.write(f"{name}={directory.as_posix()}\n")
+
+
+def seed_flutter(root, environment):
+    if (environment.get("GITHUB_ACTIONS") != "true"
+            or environment.get("RUNNER_ENVIRONMENT") != "github-hosted"
+            or environment.get("RUNNER_OS") not in ("Linux", "macOS")):
+        raise ValueError("Flutter source seeding requires an ephemeral hosted Unix runner")
+    version = pinned_flutter(root)
+    cache = Path(environment["FVM_CACHE_PATH"])
+    expected = Path(environment["RUNNER_TOOL_CACHE"]) / "bridra-fvm"
+    if not cache.is_absolute() or cache.resolve() != expected.resolve():
+        raise ValueError("unexpected Flutter cache location")
+    versions = cache / "versions"
+    destination = versions / version
+    if destination.exists() or destination.is_symlink():
+        print("Existing Flutter cache retained; FVM will validate and initialize it.", flush=True)
+        return
+    versions.mkdir(parents=True, exist_ok=True)
+    # CI needs this exact release, not Flutter's complete repository history.
+    # Stage beside the destination so failed clones never become cache entries.
+    with tempfile.TemporaryDirectory(prefix=".bridra-flutter-seed-", dir=versions) as scratch:
+        source = Path(scratch) / "sdk"
+        subprocess.run(["git", "clone", "--depth=1", "--single-branch", "--branch", version,
+                        "https://github.com/flutter/flutter.git", str(source)], check=True, timeout=180)
+        tag = subprocess.check_output(["git", "-C", str(source), "describe", "--tags",
+                                       "--exact-match", "HEAD"], text=True, timeout=15).strip()
+        executable = source / "bin/flutter"
+        if tag != version or not executable.is_file() or not os.access(executable, os.X_OK):
+            raise ValueError("seeded Flutter source does not match the exact pinned release")
+        source.rename(destination)
+    print(f"Seeded exact Flutter {version} source; FVM initialization and precaching still required.", flush=True)
+
+
+def android_native_environment(environment):
+    sdk = Path(environment.get("ANDROID_HOME") or environment["ANDROID_SDK_ROOT"])
+    manager = sdk / "cmdline-tools/latest/bin/sdkmanager"
+    extension = Path(environment["FLUTTER_ROOT"]) / "packages/flutter_tools/gradle/src/main/kotlin/FlutterExtension.kt"
+    match = re.search(r'\bval\s+ndkVersion\s*:\s*String\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"',
+                      extension.read_text())
+    if (not match or not sdk.is_dir() or not sdk.is_absolute()
+            or not manager.is_file() or not os.access(manager, os.X_OK)):
+        raise ValueError("expected the pinned Flutter NDK and an installed Android SDK")
+    values = {"ndk": match[1], "cmake": ANDROID_CMAKE_VERSION,
+              "ndk_path": (sdk / "ndk" / match[1]).as_posix(),
+              "cmake_path": (sdk / "cmake" / ANDROID_CMAKE_VERSION).as_posix(),
+              "sdkmanager_path": manager.as_posix()}
+    with open(environment["GITHUB_OUTPUT"], "a") as output:
+        for name, value in values.items():
+            output.write(f"{name}={value}\n")
 
 
 def flutter_environment(root, environment):
@@ -145,7 +228,7 @@ def check_gate(scope, needs):
         raise ValueError(f"required checks did not succeed: {result}")
 
 
-def check_results(scope, full, needs):
+def job_requirements(scope, full):
     validate_plan(scope)
     expected = {
         "core": full or scope["core"],
@@ -157,12 +240,32 @@ def check_results(scope, full, needs):
         "windows": full or scope["windows"],
         "release-package": full,
     }
+    for group, jobs in GROUPS.items():
+        expected.update({job: expected[group] for job in jobs})
+    expected["ios-build"] = full or scope["ios"]
+    expected["ios-watchdog"] = expected["ios-simulator"] = full or scope["ios_simulator"]
+    return expected
+
+
+VERIFICATION_JOBS = tuple(job_requirements({key: False for key in SCOPES}, False))
+
+
+def check_required_results(expected, needs):
     if set(needs) != set(expected):
         raise ValueError("missing verification job result")
     for job, required in expected.items():
         result = needs[job].get("result")
         if result != ("success" if required else "skipped"):
             raise ValueError(f"unexpected verification job result: {job}={result}")
+
+
+def check_results(scope, full, needs):
+    check_required_results(job_requirements(scope, full), needs)
+
+
+def check_group(group, scope, full, needs):
+    expected = job_requirements(scope, full)
+    check_required_results({job: expected[job] for job in GROUPS[group]}, needs)
 
 
 def verify_artifacts(directory, version, commit):
@@ -230,11 +333,16 @@ def main():
     results.add_argument("--plan", required=True)
     results.add_argument("--full", required=True, choices=("true", "false"))
     results.add_argument("--needs", required=True)
+    group = commands.add_parser("group")
+    group.add_argument("--group", choices=tuple(GROUPS), required=True)
+    group.add_argument("--plan", required=True)
+    group.add_argument("--full", required=True, choices=("true", "false"))
+    group.add_argument("--needs", required=True)
     artifacts = commands.add_parser("artifacts")
     artifacts.add_argument("--directory", required=True)
     artifacts.add_argument("--version", required=True)
     artifacts.add_argument("--commit", required=True)
-    for name in ("cache-env", "flutter-env", "gradle-wrapper"):
+    for name in ("cache-env", "flutter-env", "gradle-wrapper", "windows-env", "android-native-env", "seed-flutter"):
         setup = commands.add_parser(name)
         setup.add_argument("--root", default=".")
     args = parser.parse_args()
@@ -250,13 +358,16 @@ def main():
         elif args.command == "gate":
             check_gate(json.loads(args.plan), json.loads(args.needs))
             print("All applicable PR checks passed.")
-        elif args.command == "results":
+        elif args.command in ("results", "group"):
             scope = json.loads(args.plan)
             full = args.full == "true"
             # Tag callers intentionally omit a PR plan; full mode still requires every job.
             if full and scope == {}:
                 scope = {key: False for key in SCOPES}
-            check_results(scope, full, json.loads(args.needs))
+            if args.command == "group":
+                check_group(args.group, scope, full, json.loads(args.needs))
+            else:
+                check_results(scope, full, json.loads(args.needs))
             print("Every selected verification job succeeded.")
         elif args.command == "artifacts":
             verify_artifacts(args.directory, args.version, args.commit)
@@ -265,6 +376,12 @@ def main():
             cache_environment(args.root, os.environ)
         elif args.command == "flutter-env":
             flutter_environment(args.root, os.environ)
+        elif args.command == "windows-env":
+            windows_environment(os.environ)
+        elif args.command == "android-native-env":
+            android_native_environment(os.environ)
+        elif args.command == "seed-flutter":
+            seed_flutter(args.root, os.environ)
         else:
             prepare_gradle_wrapper(args.root, os.environ)
     except (ValueError, KeyError, OSError, subprocess.CalledProcessError) as error:

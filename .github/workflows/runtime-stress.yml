@@ -112,14 +112,6 @@ jobs:
         uses: ./.github/actions/setup-flutter
         with:
           android: ${{ runner.os == 'Linux' }}
-      - name: Warm platform SDK artifacts
-        shell: bash
-        run: |
-          case "$RUNNER_OS" in
-            Linux) fvm flutter precache --linux --android --web ;;
-            macOS) fvm flutter precache --macos --ios ;;
-            Windows) fvm flutter precache --windows ;;
-          esac
       - name: Warm Gradle wrapper
         if: runner.os == 'Linux'
         run: |

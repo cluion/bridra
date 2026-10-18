@@ -48,8 +48,10 @@ alone is not publication authorization.
   defaults, changelogs, and the intended tag aligned. General documentation links
   to `VERSION` or uses placeholders; edit it only when its described behavior changes.
 - Run `make release-check FINAL=1` and review `bridra upgrade --plan`. Require
-  all selected PR checks and the exact-tag release checks, including coverage
-  floors, to pass. Local changes use focused checks; if a complete local
+  all selected PR checks and the exact-tag release gate to pass. Complete PR
+  verification, including coverage floors, may be reused only after the strict
+  source/run checks in [CI.md](CI.md); otherwise the tag runs full verification.
+  Local changes use focused checks; if a complete local
   rehearsal is needed, run `make verify-coverage` once rather than separate
   verification and coverage passes.
 - Confirm `LICENSE`, `backend/LICENSE`, and
@@ -112,9 +114,11 @@ never hide it by rewriting `main` or changing files only during publication.
    repeats this final check and refuses an unfinished changelog.
 5. Run relevant local checks and workflow lint for CI changes. Require the PR's
    `ci-gate` against an up-to-date merge result and record verification limits.
-   Tag CI later runs the full cross-platform release checks, coverage floors,
-   Dart dry run, reproducible CLI builds, and native archive smoke test against
-   the actual release SHA before requesting publication approval.
+   Complete same-repository PR verification records can later satisfy the tag's
+   platform/coverage gate only when the tested merge tree exactly matches the
+   tag. Partial plans or unavailable/mismatched evidence trigger full tag
+   verification. Dart dry-run, reproducible CLI builds and native archive smoke
+   always run against the actual release SHA before publication approval.
 6. Obtain maintainer review and repository-owner release authorization.
 
 The Verify workflow runs for Pull Requests targeting `main` and merge groups;
@@ -127,21 +131,27 @@ tagging. See [CI.md](CI.md) for scope and required repository settings.
 ### Validation ownership
 
 Local development checks the changed behavior. PR CI checks the reviewed merge
-result with coverage and affected platform work. The tag workflow owns the full
-validation of the final committed SHA, final Dart dry-run and two reproducible
-CLI builds. Core verification, native targets and release packaging run in
-parallel; protected publication waits for every result.
+result with coverage and affected platform work. For a complete plan, its fixed
+gate also records the exact tested source tree and run identity. The tag workflow
+owns the source-equivalence decision, final Dart dry-run and two reproducible CLI
+builds. It either reuses verified full PR platform/coverage results or runs the
+complete matrix in parallel with packaging. Protected publication waits for the
+selected verification path and exact-tag packaging to succeed.
 
 After squash merge, confirm the final SHA and reviewed source tree before tagging.
 Do not repeat full local suites and generated-consumer rehearsals for candidate,
 squash and tag when only commit identity changed. A changed source tree or failed
-gate requires new relevant verification. Never reuse another SHA's release
-artifacts or treat a PR result as proof of the final package identity.
+gate requires new verification. A partial PR plan cannot replace the release's
+full platform evidence. Never reuse another SHA's release artifacts or treat a
+PR result as proof of final package identity. Evidence older than seven days,
+missing records, unavailable APIs and fork PRs all use the complete tag fallback.
+No new release-only PR or `main` push CI is required.
 
-Before environment approval, inspect the successful exact-tag jobs and immutable
-artifact ID/manifest. Keep the candidate's SHA, version and digests in release
-evidence. A local packaging rehearsal is useful when packaging itself changed;
-it is not a routine second full release pipeline.
+Before environment approval, inspect the release verification decision, its
+source/run/tree evidence when reused, successful exact-tag packaging jobs and
+immutable artifact ID/manifest. Keep the candidate's SHA, version and digests
+in release evidence. A local packaging rehearsal is useful when packaging itself
+changed; it is not a routine second full release pipeline.
 
 Windows maintainers use:
 
@@ -208,13 +218,22 @@ git push origin "backend/v${BRIDRA_VERSION}"
 ```
 
 The GitHub workflow requires the exact tag SHA to be reachable from `main` and
-its version to match `VERSION`. It runs all shared cross-platform release checks
-against that SHA; it does not require or search for a `main` push Verify run.
-A later merge to `main` does not change the approved release source.
+its version to match `VERSION`. It looks up the merged PR's latest successful
+complete Verify run and independently compares its tested Git tree with the tag.
+Every required platform/core shard and group/final gate result, run attempt,
+repository/workflow and artifact digest must match. Core still collects all three
+coverage profiles and enforces all eight floors. A passing group gate cannot
+substitute for a missing shard result. If evidence is absent or cannot be
+confirmed, it runs all shared cross-platform checks against the tagged SHA. It does not require a
+`main` push Verify run. A later merge to `main` does not change the approved source.
+See [CI.md](CI.md) for exact reuse and fallback conditions.
 
-Before environment approval, the read-only verification jobs enforce coverage,
-final version alignment, Dart package validation, two identical CLI builds, and
-a native Linux CLI smoke test. They upload one immutable candidate artifact.
+Before environment approval, coverage and native platform evidence must be
+established by the selected path. Read-only exact-tag packaging always enforces
+final version alignment, Dart package validation, two identical CLI builds and
+a native Linux CLI smoke test, and uploads one immutable candidate artifact.
+The candidate gate rejects failed, cancelled or missing verification/packaging
+and unexpected branch results.
 Only after all jobs pass does `public-release` request owner approval and gain
 publication/OIDC permissions. It downloads the exact artifact by ID, verifies
 the tag is unchanged and the manifest's version, full source SHA, digests, sizes,
