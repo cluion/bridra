@@ -57,9 +57,11 @@ Do not use workflow-level `paths` filters for this required workflow.
 - `android-web`: selected Android/Web release builds; these short builds share
   one runner to avoid an extra SDK setup for each target.
 - `android-emulator`: real HTTP recovery, streaming and resumable transfers.
-- `macos`: native lifecycle, signed sandbox handoff and bundle smoke. XCTest
-  hosts run serially because the application enforces a single instance;
-  parallel hosts can exit before connecting to XCTest. Other jobs remain parallel.
+- `macos-lifecycle`, `macos-bundle`: native lifecycle and signed sandbox handoff
+  run separately from the universal bundle build/smoke, with independent VMs and
+  build directories. `macos` requires both. XCTest hosts remain serial because
+  the application enforces a single instance; parallel hosts can exit before
+  connecting to XCTest.
 - `ios-watchdog`, `ios-simulator`, `ios-build`: native watchdog contracts, bounded
   real Simulator smoke and the unsigned release build run independently.
   `ios` requires each selected shard, allowing only plan-authorized skips.
@@ -72,15 +74,15 @@ Do not use workflow-level `paths` filters for this required workflow.
   six-target CLI artifacts and native archive identity; release runs only. Its
   implementation is shared through `release-package.yml` by both tag paths.
 
-Each shard has its own checkout and build outputs. The `core`, `ios` and `windows`
+Each shard has its own checkout and build outputs. The `core`, `macos`, `ios` and `windows`
 group gates run even after a dependency fails. Both these gates and the final
 `check-results` independently reject missing, failed, cancelled or unexpectedly
 skipped shards. Source-equivalent release verification also requires every shard,
 not just the group gates.
 
-This graph adds eight jobs to a complete PR plan compared with the serial graph:
-five Linux jobs, two macOS jobs and one Windows job, including the group gates.
-It adds four Flutter setup/cache restores. Keep the smaller Android/Web builds
+This graph adds ten jobs to a complete PR plan compared with the serial graph:
+six Linux jobs, three macOS jobs and one Windows job, including the group gates.
+It adds five Flutter setup/cache restores. Keep the smaller Android/Web builds
 together to bound that overhead. Shorter critical paths can still cost more
 runner time, and account concurrency limits can increase queueing. Measure wall
 time, queueing, retries and per-OS runner time before claiming a five-minute result.
@@ -180,11 +182,14 @@ mistaken for internal build-start times. The optional preboot experiment retains
 its prior 20-second optional discovery probe and serial prerequisite control;
 results from its earlier implementation are not measurements of the new pipeline.
 
-The macOS job runs its lifecycle XCTest and independent signed Go sandbox fixture
-with `make -j2`, then builds and smoke-tests the release bundle serially. The
-sandbox fixture uses its own temporary application and does not write Runner's
-build directory. XCTest retains a single host (`-parallel-testing-enabled NO`);
-the shared Xcode prerequisite is evaluated once and both checks must pass.
+macOS lifecycle XCTest and the signed Go sandbox fixture run serially on their
+own runner, concurrently with the separate release bundle runner. Each has a
+workload-specific Go cache fingerprint so a smaller first writer cannot freeze
+the other's complete compiler profile. Both use ARM `macos-15`; XCTest retains
+one host (`-parallel-testing-enabled NO`). Both shards are required by `macos`,
+`check-results` and complete source-equivalent release verification. This adds
+one macOS setup and a short Linux group gate; measure that overhead against the
+shorter critical path rather than assuming lower runner usage.
 
 ## SDK and dependency caches
 

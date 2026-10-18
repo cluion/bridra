@@ -20,6 +20,7 @@ GROUPS = {
     "core": ("core-static", "core-go", "core-flutter"),
     "ios": ("ios-watchdog", "ios-simulator", "ios-build"),
     "windows": ("windows-verify", "windows-bundle"),
+    "macos": ("macos-lifecycle", "macos-bundle"),
 }
 TARGETS = [(system, arch) for system in ("darwin", "linux", "windows")
            for arch in ("amd64", "arm64")]

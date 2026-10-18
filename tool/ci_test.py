@@ -124,7 +124,7 @@ class GateTests(unittest.TestCase):
 
 class VerificationResultsTests(unittest.TestCase):
     jobs = ("core-static", "core-go", "core-flutter", "core", "linux", "android-web",
-            "android-emulator", "macos", "ios-watchdog", "ios-build", "ios-simulator",
+            "android-emulator", "macos-lifecycle", "macos-bundle", "macos", "ios-watchdog", "ios-build", "ios-simulator",
             "ios", "windows-verify", "windows-bundle", "windows", "release-package")
 
     def test_selected_platform_passes_with_only_intentional_skips(self):
@@ -183,6 +183,7 @@ class VerificationResultsTests(unittest.TestCase):
 class ShardGateTests(unittest.TestCase):
     groups = {"core": ("core-static", "core-go", "core-flutter"),
               "windows": ("windows-verify", "windows-bundle"),
+              "macos": ("macos-lifecycle", "macos-bundle"),
               "ios": ("ios-watchdog", "ios-build", "ios-simulator")}
 
     def test_every_full_shard_failure_cancellation_skip_or_missing_result_blocks(self):
@@ -604,15 +605,24 @@ class WorkflowWiringTests(unittest.TestCase):
         self.assertIn('runs-on: macos-15-intel', body)
         self.assertIn('DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer', body)
         self.assertIn('sysctl hw.memsize hw.ncpu vm.swapusage', body)
-        for name in ('ios-build', 'macos'):
+        for name in ('ios-build', 'macos-lifecycle', 'macos-bundle'):
             self.assertIn('runs-on: macos-15\n', self.job(name))
 
-    def test_macos_independent_fixture_overlaps_lifecycle_without_parallel_xctest_hosts(self):
-        body = self.job('macos')
-        self.assertIn('make -j2 macos-native-test macos-sandbox-smoke', body)
-        self.assertGreater(body.index('make macos-smoke'), body.index('make -j2'))
+    def test_macos_native_tests_and_bundle_use_independent_runners_and_strict_gate(self):
+        lifecycle = self.job('macos-lifecycle')
+        bundle = self.job('macos-bundle')
+        gate = self.job('macos')
+        self.assertIn('make macos-native-test', lifecycle)
+        self.assertIn('make macos-sandbox-smoke', lifecycle)
+        self.assertIn('make macos-smoke', bundle)
+        self.assertNotIn('make macos-smoke', lifecycle)
+        self.assertNotIn('macos-native-test', bundle)
+        self.assertIn('needs: [macos-lifecycle, macos-bundle]', gate)
+        self.assertIn('group --group macos', gate)
+        self.assertIn('macos/RunnerTests/RunnerTests.swift', lifecycle)
+        self.assertIn('macos/Runner.xcodeproj/project.pbxproj', bundle)
         root = Path(__file__).resolve().parent.parent
-        commands = subprocess.check_output(['make', '-n', '-j2', 'macos-native-test', 'macos-sandbox-smoke'],
+        commands = subprocess.check_output(['make', '-n', 'macos-native-test', 'macos-sandbox-smoke'],
                                            cwd=root, text=True)
         self.assertEqual(commands.count('xcodebuild -version'), 1)
         self.assertEqual(commands.count('xcodebuild test'), 1)

@@ -262,7 +262,7 @@ jobs:
           disable-animations: true
           script: make android-emulator-smoke
 
-  macos:
+  macos-lifecycle:
     if: inputs.full || fromJSON(inputs.plan).macos
     runs-on: macos-15
     timeout-minutes: 30
@@ -278,12 +278,52 @@ jobs:
           cache-dependency-path: |
             backend/go.mod
             backend/integration/sqljobstore/go.mod
+            macos/RunnerTests/RunnerTests.swift
       - name: Set up pinned Flutter
         uses: ./.github/actions/setup-flutter
-      - name: Test macOS lifecycle and sandbox concurrently
-        run: make -j2 macos-native-test macos-sandbox-smoke
+      - name: Test macOS application lifecycle
+        run: make macos-native-test
+      - name: Test signed macOS sandbox bookmark handoff
+        run: make macos-sandbox-smoke
+
+  macos-bundle:
+    if: inputs.full || fromJSON(inputs.plan).macos
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: |
+            backend/go.mod
+            backend/integration/sqljobstore/go.mod
+            macos/Runner.xcodeproj/project.pbxproj
+      - name: Set up pinned Flutter
+        uses: ./.github/actions/setup-flutter
       - name: Build and smoke-test macOS bundle
         run: make macos-smoke
+
+  macos:
+    if: ${{ always() && (inputs.full || fromJSON(inputs.plan).macos) }}
+    needs: [macos-lifecycle, macos-bundle]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out verified source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Require every selected macos shard
+        env:
+          CI_FULL: ${{ inputs.full }}
+          CI_PLAN: ${{ inputs.plan }}
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: python3 tool/ci.py group --group macos --plan "$CI_PLAN" --full "$CI_FULL" --needs "$CI_NEEDS"
 
   ios-watchdog:
     if: inputs.full || fromJSON(inputs.plan).ios_simulator
@@ -507,7 +547,7 @@ jobs:
 
   check-results:
     if: ${{ always() }}
-    needs: [core-static, core-go, core-flutter, core, linux, android-web, android-emulator, macos, ios-watchdog, ios-build, ios-simulator, ios, windows-verify, windows-bundle, windows, release-package]
+    needs: [core-static, core-go, core-flutter, core, linux, android-web, android-emulator, macos-lifecycle, macos-bundle, macos, ios-watchdog, ios-build, ios-simulator, ios, windows-verify, windows-bundle, windows, release-package]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
