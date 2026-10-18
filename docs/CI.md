@@ -139,14 +139,20 @@ selection still uses `tool/ios_simulator_prepare.py`: 120-second discovery and
 180-second readiness bounds, one existing available iPhone and no device creation.
 A borrowed booted device is checked without requesting another boot.
 
-The Simulator timing trial uses the standard `macos-15-intel` image and selects
-its installed Xcode 16.4 explicitly, with SDK setup completed before Simulator
+The Simulator timing trial uses the standard `macos-26-intel` image and selects
+its installed Xcode 26.4.1 explicitly, with SDK setup completed before Simulator
 preparation. Unsigned iOS release and native macOS verification retain `macos-15`
 ARM runners. Earlier Intel trials overlapped cold SDK and Simulator startup and
 were cancelled without native acceptance; one owned shutdown also timed out.
 They are negative samples for that ordering, not successful Intel qualification.
-The SDK-first Intel trial must independently pass every native assertion and
-cleanup check, and its first SDK/Go population must be separated from warm runs.
+The SDK-first macOS 15 Intel trial also hit the original 120-second discovery
+limit. Apple's [Xcode 26.4 notes](https://developer.apple.com/documentation/Xcode-Release-Notes/xcode-26_4-release-notes)
+describe a fixed `simdiskimaged` issue that could hang `simctl`; this does not
+establish the cause of our earlier timeouts. The modern image/toolchain trial
+must independently pass every native assertion and cleanup check. Initial SDK/Go
+population must be separated from warm runs. The default-branch cache-warming
+matrix includes this Intel runner, so future PRs can restore its SDK dependencies
+from main instead of depending only on a previous run of the same PR.
 Host CPU/memory and swap snapshots are logged before preparation and after its
 join. Cached dependencies do not replace fresh native builds, and hosted timing
 is not a latency guarantee.

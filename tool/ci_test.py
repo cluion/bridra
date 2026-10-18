@@ -669,12 +669,22 @@ class WorkflowWiringTests(unittest.TestCase):
 
     def test_simulator_trials_standard_intel_after_sdk_with_arm_release_and_desktop_coverage(self):
         body = self.job('ios-simulator')
-        self.assertIn('runs-on: macos-15-intel', body)
+        self.assertIn('runs-on: macos-26-intel', body)
         self.assertLess(body.index('name: Set up pinned Flutter'), body.index('ios_ci_prepare.py begin'))
-        self.assertIn('DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer', body)
+        self.assertIn('DEVELOPER_DIR: /Applications/Xcode_26.4.1.app/Contents/Developer', body)
         self.assertIn('sysctl hw.memsize hw.ncpu vm.swapusage', body)
         for name in ('ios-build', 'macos-lifecycle', 'macos-bundle'):
             self.assertIn('runs-on: macos-15\n', self.job(name))
+
+    def test_default_branch_sdk_warming_includes_the_simulator_runner(self):
+        root = Path(__file__).resolve().parent.parent
+        warm = (root / '.github/workflows/runtime-stress.yml').read_text().split('  cache-warm:', 1)[1]
+        simulator = self.job('ios-simulator')
+        runner = re.search(r'^    runs-on: (\S+)$', simulator, re.MULTILINE)[1]
+        matrix = re.search(r'^        os: \[([^]]+)\]$', warm, re.MULTILINE)[1]
+        self.assertIn(runner, [name.strip() for name in matrix.split(',')])
+        self.assertIn("if: github.ref == 'refs/heads/main'", warm)
+        self.assertIn('uses: ./.github/actions/setup-flutter', warm)
 
     def test_macos_native_tests_and_bundle_use_independent_runners_and_strict_gate(self):
         lifecycle = self.job('macos-lifecycle')

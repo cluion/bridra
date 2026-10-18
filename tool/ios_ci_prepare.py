@@ -53,7 +53,7 @@ def begin(path):
             [sys.executable, str(Path(__file__).resolve()), "_work", "--state", str(path), "--token", token],
             cwd=ROOT, stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
     simulator.save(path, {"schema": 1, "pid": process.pid, "token": token, "source": source})
-    print("Preparing Xcode, Go backend and the existing Simulator concurrently with Flutter setup.", flush=True)
+    print("Preparing independent Xcode, Go backend and existing Simulator prerequisites.", flush=True)
 
 
 def commands(path):
