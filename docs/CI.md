@@ -147,14 +147,16 @@ selection still uses `tool/ios_simulator_prepare.py`: 120-second discovery and
 180-second readiness bounds, one existing available iPhone and no device creation.
 A borrowed booted device is checked without requesting another boot.
 
-The Simulator timing trial uses the standard `macos-15` ARM image with installed
-Xcode 16.4, the existing iOS 18.5 runtime and iPhone SE (3rd generation).
+The Simulator timing trial uses the standard `macos-26` ARM image with installed
+Xcode 26.4.1, its existing iOS 26.4 runtime and iPhone 17e.
 `BRIDRA_IOS_SIMULATOR_RUNTIME` and `BRIDRA_IOS_SIMULATOR_NAME` constrain discovery;
 if either requested selection is unavailable, initialization fails without
 creating a device or falling back to a different runtime/model. The preparation
 identity binds both selectors as well as the source and Xcode directory. The
-same complete transport test runs on this smaller existing model; reduced screen
-size is a timing hypothesis, not a measured memory or latency guarantee.
+same complete transport test runs on this existing model. The previous
+macOS 15 / Xcode 16.4 / iOS 18.5 / iPhone SE trial did not improve full native
+latency. The modern matching image/toolchain/runtime is a new timing hypothesis,
+not a measured latency guarantee.
 Unsigned iOS release and native macOS verification retain their ARM runners.
 
 Earlier Intel trials either timed out/cancelled during initialization or ran
@@ -167,8 +169,9 @@ while retaining its cost and cleanup evidence. Apple's
 [Xcode 26.4 notes](https://developer.apple.com/documentation/Xcode-Release-Notes/xcode-26_4-release-notes)
 describe a fixed `simdiskimaged` issue that could hang `simctl`; this does not
 establish the cause of our earlier timeouts. The default-branch SDK cache-warming
-matrix covers the selected runner; an unused Intel profile is not kept as an
-additional nightly job. Initial dependency population and exact warm matches
+matrix covers the selected runner. Its macOS/ARM64 SDK and Pub keys also serve
+the macOS 15 desktop/release jobs; no native build output is shared, and an
+unused Intel profile is not kept as an additional nightly job. Initial dependency population and exact warm matches
 must be reported separately, including failed and cancelled trial costs.
 Host CPU/memory and swap snapshots are logged before preparation and after its
 join. Cached dependencies do not replace fresh native builds, and hosted timing
