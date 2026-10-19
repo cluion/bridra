@@ -104,7 +104,7 @@ help:
 	@echo "make ios-device-smoke Exercise transfer/reconnect and Profile launches on an iPhone"
 	@echo "make web-run      Run the Web app in Chrome"
 	@echo "make web-build    Build a Web release (HTTPS URL required)"
-	@echo "make release-prepare VERSION=x.y.z Synchronize one release version"
+	@echo "make release-prepare VERSION=x.y.z [RELEASE_DATE=YYYY-MM-DD] Synchronize version/date"
 	@echo "make release-check Verify all managed release versions agree"
 	@echo "make cli-release  Build deterministic CLI archives and checksums"
 	@echo "make format       Format Go and Dart sources"
@@ -237,7 +237,7 @@ coverage: coverage-check flutter-web-test
 release-prepare:
 	@test -n "$(VERSION)" || \
 		(echo "VERSION is required, for example: make release-prepare VERSION=0.1.1"; exit 1)
-	$(BRIDRA) release prepare '$(VERSION)' --root ..
+	$(BRIDRA) release prepare '$(VERSION)' --root .. $(if $(strip $(RELEASE_DATE)),--date '$(RELEASE_DATE)')
 	$(FLUTTER) pub get
 
 release-check:

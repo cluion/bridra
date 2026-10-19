@@ -101,17 +101,37 @@ never hide it by rewriting `main` or changing files only during publication.
    surfaces, and both changelogs; the Make target then refreshes the Flutter
    lockfile. It leaves README, architecture, usage, release, and upgrade documents
    byte-identical. Historical migration examples retain their original versions.
-   Update migration guidance only for actual contract changes and support policy
-   when the supported minor line changes.
+   Update migration guidance only for actual contract changes. `SUPPORT.md` and
+   `SECURITY.md` describe the latest published minor line without a fixed version;
+   update them only when the support policy itself changes. Final verification
+   requires the eligibility rule, publication boundary, official release link,
+   development exclusion and supported/unsupported table to remain consistent.
 3. Review the changelog, upgrade/rollback guidance, and independently versioned
    protocol, Project Template, and project metadata contracts. Preserve historical
    release references when reviewing the prepared documentation. Register the new
    release and every required transition in the upgrade migration catalog;
    verification rejects a new current version without a complete path from each
    older registered release.
-4. Replace `Unreleased` in both changelogs with the intended release date, then
-   run `make release-check FINAL=1`. The protected release workflow
-   repeats this final check and refuses an unfinished changelog.
+4. Finalize both changelogs with one explicit calendar date in the reviewed PR:
+
+   ```bash
+   make release-prepare VERSION=X.Y.Z RELEASE_DATE=YYYY-MM-DD
+   make release-check FINAL=1
+   ```
+
+   `RELEASE_DATE` forwards `--date YYYY-MM-DD` to `bridra release prepare`.
+   Omitting it preserves the existing `Unreleased` preparation flow. With a
+   date, preparation updates only the target release's two headings, preserving
+   notes, historical releases and LF/CRLF line endings. Repeating the same
+   version/date is idempotent; an explicit new date may revise the current
+   unpublished candidate. Do not prepare an already published release again.
+   Invalid dates, ambiguous target headings or inconsistent versions fail before any
+   files are written. Final verification rejects invalid or differing dates,
+   pending notes and unfinished changelogs.
+
+   Dates are never inferred from a runner's clock. A candidate date revision
+   changes its source tree and must go through PR verification again. Tag CI
+   verifies the reviewed date without rewriting files or publication artifacts.
 5. Run relevant local checks and workflow lint for CI changes. Require the PR's
    `ci-gate` against an up-to-date merge result and record verification limits.
    Complete same-repository PR verification records can later satisfy the tag's
@@ -157,6 +177,7 @@ Windows maintainers use:
 
 ```powershell
 .\tool\windows.ps1 -Task release-prepare -Version X.Y.Z
+.\tool\windows.ps1 -Task release-prepare -Version X.Y.Z -ReleaseDate YYYY-MM-DD
 .\tool\windows.ps1 -Task release-check
 .\tool\windows.ps1 -Task release-check -Final
 ```

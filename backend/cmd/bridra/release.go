@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 )
 
 var (
@@ -27,15 +28,9 @@ var (
 	packageChangelogPattern = regexp.MustCompile(
 		`(?m)^## ([^\s]+) - (Unreleased|[0-9]{4}-[0-9]{2}-[0-9]{2})\r?$`,
 	)
-	pendingChangelogPattern      = regexp.MustCompile(`(?m)^## (?:\[Unreleased\]|Unreleased)\r?$`)
-	supportCurrentReleasePattern = regexp.MustCompile(
-		`(?m)^Bridra ([0-9]+\.[0-9]+) is the current pre-1\.0 framework line\b`,
-	)
-	securityCurrentReleasePattern = regexp.MustCompile(
-		`(?m)^Bridra ([0-9]+\.[0-9]+) is a pre-1\.0 framework line\.`,
-	)
-	securityLatestReleasePattern = regexp.MustCompile(
-		"(?m)^\\| Latest `([0-9]+\\.[0-9]+)\\.x` patch \\|",
+	pendingChangelogPattern = regexp.MustCompile(`(?m)^## (?:\[Unreleased\]|Unreleased)\r?$`)
+	versionedPolicyPattern  = regexp.MustCompile(
+		`(?m)^(?:Bridra [0-9]+\.[0-9]+\b|\|[^\r\n]*[0-9]+\.[0-9]+)`,
 	)
 	supportHeadingPattern = regexp.MustCompile(`(?m)^### Support\r?$`)
 )
@@ -68,7 +63,7 @@ func (releaseCommand) summary() string {
 
 func (releaseCommand) usage() string {
 	return `Usage:
-  bridra release prepare <version> [--root path]
+  bridra release prepare <version> [--date YYYY-MM-DD] [--root path]
   bridra release check [--version version] [--root path] [--final]
 
 Commands:
@@ -77,7 +72,9 @@ Commands:
 
 The framework, CLI, Go module, and bridra_flutter package share one Semantic
 Version. Protocol, Project Template, and project metadata versions change only
-when their independent compatibility contracts change.`
+when their independent compatibility contracts change. An explicit --date
+synchronizes only the target release's two changelog headings; omitted dates
+retain the Unreleased workflow. No date is inferred from the system clock.`
 }
 
 func (releaseCommand) run(arguments []string, stdout, stderr io.Writer) error {
@@ -95,7 +92,7 @@ func (releaseCommand) run(arguments []string, stdout, stderr io.Writer) error {
 		if err != nil {
 			return err
 		}
-		return prepareRelease(options.root, options.version, stdout)
+		return prepareReleaseWithDate(options.root, options.version, options.date, stdout)
 	case "check":
 		options, err := parseReleaseCheckArguments(arguments[1:])
 		if err != nil {
@@ -114,6 +111,7 @@ func (releaseCommand) run(arguments []string, stdout, stderr io.Writer) error {
 type releasePrepareOptions struct {
 	root    string
 	version string
+	date    string
 }
 
 type releaseCheckOptions struct {
@@ -124,13 +122,13 @@ type releaseCheckOptions struct {
 
 func parseReleasePrepareArguments(arguments []string) (releasePrepareOptions, error) {
 	options := releasePrepareOptions{root: "."}
-	positionals, err := parseReleaseOptions(arguments, &options.root, nil, nil)
+	positionals, err := parseReleaseOptions(arguments, &options.root, nil, nil, &options.date)
 	if err != nil {
 		return releasePrepareOptions{}, err
 	}
 	if len(positionals) != 1 {
 		return releasePrepareOptions{}, fmt.Errorf(
-			"%w: usage: bridra release prepare <version> [--root path]",
+			"%w: usage: bridra release prepare <version> [--date YYYY-MM-DD] [--root path]",
 			errReleaseInvalid,
 		)
 	}
@@ -145,6 +143,7 @@ func parseReleaseCheckArguments(arguments []string) (releaseCheckOptions, error)
 		&options.root,
 		&options.version,
 		&options.final,
+		nil,
 	)
 	if err != nil {
 		return releaseCheckOptions{}, err
@@ -163,6 +162,7 @@ func parseReleaseOptions(
 	root *string,
 	version *string,
 	final *bool,
+	date *string,
 ) ([]string, error) {
 	positionals := make([]string, 0, 1)
 	for index := 0; index < len(arguments); index++ {
@@ -186,6 +186,22 @@ func parseReleaseOptions(
 			*version = strings.TrimPrefix(argument, "--version=")
 		case argument == "--final" && final != nil:
 			*final = true
+		case (argument == "--date" || strings.HasPrefix(argument, "--date=")) && date != nil:
+			if *date != "" {
+				return nil, fmt.Errorf("%w: --date may be supplied only once", errReleaseInvalid)
+			}
+			if argument == "--date" {
+				if index+1 >= len(arguments) {
+					return nil, fmt.Errorf("%w: --date requires YYYY-MM-DD", errReleaseInvalid)
+				}
+				index++
+				*date = arguments[index]
+			} else {
+				*date = strings.TrimPrefix(argument, "--date=")
+			}
+			if err := validateReleaseDate(*date); err != nil {
+				return nil, err
+			}
 		case strings.HasPrefix(argument, "-"):
 			return nil, fmt.Errorf("%w: unknown option %q", errReleaseInvalid, argument)
 		default:
@@ -196,6 +212,23 @@ func parseReleaseOptions(
 }
 
 func prepareRelease(root, target string, output io.Writer) error {
+	return prepareReleaseWithDate(root, target, "", output)
+}
+
+func validateReleaseDate(value string) error {
+	date, err := time.Parse(time.DateOnly, value)
+	if err != nil || date.Year() < 1 || date.Format(time.DateOnly) != value {
+		return fmt.Errorf("%w: release date must be a valid calendar date in YYYY-MM-DD format", errReleaseInvalid)
+	}
+	return nil
+}
+
+func prepareReleaseWithDate(root, target, date string, output io.Writer) error {
+	if date != "" {
+		if err := validateReleaseDate(date); err != nil {
+			return err
+		}
+	}
 	resolvedRoot, err := filepath.Abs(root)
 	if err != nil {
 		return fmt.Errorf("release: resolve root: %w", err)
@@ -225,7 +258,7 @@ func prepareRelease(root, target string, output io.Writer) error {
 		return releaseDiagnosticsError(current, diagnostics)
 	}
 
-	updates, err := buildReleaseUpdates(resolvedRoot, current, target)
+	updates, err := buildReleaseUpdates(resolvedRoot, current, target, date)
 	if err != nil {
 		return err
 	}
@@ -253,6 +286,9 @@ func prepareRelease(root, target string, output io.Writer) error {
 		}
 	}
 	fmt.Fprintf(output, "Tag: backend/v%s\n", target)
+	if date != "" {
+		fmt.Fprintf(output, "Release date: %s\n", date)
+	}
 	fmt.Fprintln(output, "No tag, package, or release was published.")
 	fmt.Fprintln(output, "Next: refresh Flutter dependencies, then run `make release-check`.")
 	return nil
@@ -292,8 +328,7 @@ func checkRelease(root, expected string, final bool, output io.Writer) error {
 	fmt.Fprintf(output, "Flutter package: bridra_flutter %s\n", expected)
 	if final {
 		fmt.Fprintln(output, "Changelogs: finalized")
-		version, _ := parseSemanticVersion(expected)
-		fmt.Fprintf(output, "Support policy: latest %d.%d.x patch\n", version.major, version.minor)
+		fmt.Fprintln(output, "Support policy: latest patch of the latest published minor line")
 	}
 	fmt.Fprintln(output, "All managed release surfaces agree.")
 	return nil
@@ -353,6 +388,7 @@ func inspectReleaseSurfaces(root, expected string, final bool) []string {
 		}
 	}
 
+	var releaseDate string
 	for _, changelog := range []struct {
 		path    string
 		pattern *regexp.Regexp
@@ -386,6 +422,15 @@ func inspectReleaseSurfaces(root, expected string, final bool) []string {
 				diagnostics,
 				changelog.path+": release is still marked Unreleased",
 			)
+		} else if final {
+			date := string(matches[2])
+			if err := validateReleaseDate(date); err != nil {
+				diagnostics = append(diagnostics, changelog.path+": release date must be a valid calendar date")
+			} else if releaseDate != "" && date != releaseDate {
+				diagnostics = append(diagnostics, "both changelogs must use the same release date")
+			} else {
+				releaseDate = date
+			}
 		}
 	}
 
@@ -416,79 +461,52 @@ func inspectReleaseSurfaces(root, expected string, final bool) []string {
 }
 
 func inspectFinalReleasePolicy(root, expected string) []string {
-	version, err := parseSemanticVersion(expected)
-	if err != nil {
-		return []string{fmt.Sprintf("release policy: %v", err)}
-	}
-	expectedLine := fmt.Sprintf("%d.%d", version.major, version.minor)
 	diagnostics := make([]string, 0)
-
-	supportContents, err := os.ReadFile(filepath.Join(root, "SUPPORT.md"))
-	if err != nil {
-		diagnostics = append(diagnostics, fmt.Sprintf("SUPPORT.md: %v", err))
-	} else {
-		diagnostics = append(
-			diagnostics,
-			inspectReleasePolicyVersion(
-				"SUPPORT.md current release line",
-				supportContents,
-				supportCurrentReleasePattern,
-				expectedLine,
-			)...,
-		)
-	}
-
-	securityContents, err := os.ReadFile(filepath.Join(root, "SECURITY.md"))
-	if err != nil {
-		diagnostics = append(diagnostics, fmt.Sprintf("SECURITY.md: %v", err))
-	} else {
-		for _, check := range []struct {
-			name    string
-			pattern *regexp.Regexp
-		}{
-			{name: "SECURITY.md current release line", pattern: securityCurrentReleasePattern},
-			{name: "SECURITY.md supported versions table", pattern: securityLatestReleasePattern},
-		} {
-			diagnostics = append(
-				diagnostics,
-				inspectReleasePolicyVersion(
-					check.name,
-					securityContents,
-					check.pattern,
-					expectedLine,
-				)...,
-			)
+	for _, path := range []string{"SUPPORT.md", "SECURITY.md"} {
+		contents, err := os.ReadFile(filepath.Join(root, path))
+		if err != nil {
+			diagnostics = append(diagnostics, fmt.Sprintf("%s: %v", path, err))
+			continue
 		}
+		diagnostics = append(diagnostics, inspectReleasePolicyDocument(path, contents)...)
 	}
-
 	changelogContents, err := os.ReadFile(filepath.Join(root, "CHANGELOG.md"))
 	if err == nil {
 		section := currentReleaseChangelogSection(changelogContents)
 		if section != nil && !supportHeadingPattern.Match(section) {
-			diagnostics = append(
-				diagnostics,
-				fmt.Sprintf("CHANGELOG.md: release %s has no Support section", expected),
-			)
+			diagnostics = append(diagnostics, fmt.Sprintf("CHANGELOG.md: release %s has no Support section", expected))
 		}
 	}
 	return diagnostics
 }
 
-func inspectReleasePolicyVersion(
-	name string,
-	contents []byte,
-	pattern *regexp.Regexp,
-	expected string,
-) []string {
-	matches := pattern.FindSubmatch(contents)
-	if matches == nil {
-		return []string{name + " not found"}
+func inspectReleasePolicyDocument(path string, contents []byte) []string {
+	// Preparing a candidate must not make it supported before publication. Check
+	// these stable policy claims instead of rewriting its minor number into docs.
+	rules := []struct{ name, text string }{
+		{"eligibility rule", "Before 1.0, only the latest patch of the latest published minor line is eligible for security fixes."},
+		{"publication boundary", "A new minor line's support policy takes effect at publication; the previously published line remains supported until then."},
+		{"published release link", "https://github.com/cluion/bridra/releases"},
+		{"development exclusion", "development branches and unreleased candidates are not supported releases."},
 	}
-	actual := string(matches[1])
-	if actual != expected {
-		return []string{fmt.Sprintf("%s is %s, expected %s", name, actual, expected)}
+	if path == "SECURITY.md" {
+		rules = append(rules, []struct{ name, text string }{
+			{"supported versions table", "| Latest patch of the latest published minor line | Security fixes accepted on a best-effort basis |"},
+			{"unsupported versions table", "| Older minor lines and superseded patches | Unsupported; upgrade to the latest supported patch |"},
+			{"development versions table", "| `main` | Active development only |"},
+		}...)
 	}
-	return nil
+	normalized := strings.Join(strings.Fields(string(contents)), " ")
+	diagnostics := make([]string, 0)
+	for _, rule := range rules {
+		if !strings.Contains(normalized, rule.text) {
+			diagnostics = append(diagnostics, path+": "+rule.name+" is missing or inconsistent")
+		}
+	}
+	if versionedPolicyPattern.Match(contents) {
+		diagnostics = append(diagnostics, path+": fixed release versions are not allowed in support policy")
+	}
+	return diagnostics
 }
 
 func currentReleaseChangelogSection(contents []byte) []byte {
@@ -513,7 +531,7 @@ func managedSurfaceValue(matches [][]byte) string {
 	return strings.TrimSuffix(strings.TrimPrefix(full, prefix), suffix)
 }
 
-func buildReleaseUpdates(root, current, target string) ([]releaseUpdate, error) {
+func buildReleaseUpdates(root, current, target, date string) ([]releaseUpdate, error) {
 	paths := []string{"VERSION"}
 	for _, surface := range managedReleaseSurfaces() {
 		paths = append(paths, surface.path)
@@ -556,6 +574,14 @@ func buildReleaseUpdates(root, current, target string) ([]releaseUpdate, error) 
 				return nil, fmt.Errorf("release: unknown version surface %s", relative)
 			}
 			updated, err = updateReleaseSurface(contents, surface.pattern, current, target)
+		}
+		if err == nil && date != "" {
+			switch relative {
+			case "CHANGELOG.md":
+				updated, err = updateReleaseChangelogDate(updated, rootChangelogPattern, target, date)
+			case "packages/bridra_flutter/CHANGELOG.md":
+				updated, err = updateReleaseChangelogDate(updated, packageChangelogPattern, target, date)
+			}
 		}
 		if err != nil {
 			return nil, fmt.Errorf("release: update %s: %w", relative, err)
@@ -617,9 +643,9 @@ func updateReleaseChangelog(
 			target,
 		)
 	}
-	heading := "## " + target + " - Unreleased\n\n"
+	heading := "## " + target + " - Unreleased"
 	if bracketed {
-		heading = "## [" + target + "] - Unreleased\n\n"
+		heading = "## [" + target + "] - Unreleased"
 	}
 	if pending := pendingChangelogPattern.FindAllIndex(contents, -1); len(pending) > 0 {
 		if len(pending) != 1 || pending[0][0] > pattern.FindIndex(contents)[0] {
@@ -627,7 +653,7 @@ func updateReleaseChangelog(
 		}
 		// Promote the pending notes without changing a published release section.
 		start, end := pending[0][0], pending[0][1]
-		replacement := strings.TrimSuffix(heading, "\n\n")
+		replacement := heading
 		if end > start && contents[end-1] == '\r' {
 			replacement += "\r"
 		}
@@ -640,10 +666,35 @@ func updateReleaseChangelog(
 		return nil, errors.New("release heading not found")
 	}
 	updated := make([]byte, 0, len(contents)+len(heading))
+	eol := "\n"
+	if strings.Contains(string(contents), "\r\n") {
+		eol = "\r\n"
+	}
+	heading += eol + eol
 	updated = append(updated, contents[:start[0]]...)
 	updated = append(updated, heading...)
 	updated = append(updated, contents[start[0]:]...)
 	return updated, nil
+}
+
+func updateReleaseChangelogDate(contents []byte, pattern *regexp.Regexp, target, date string) ([]byte, error) {
+	if pendingChangelogPattern.Match(contents) {
+		return nil, errors.New("pending Unreleased section must be prepared before setting a release date")
+	}
+	matches := pattern.FindAllSubmatchIndex(contents, -1)
+	if len(matches) == 0 || string(contents[matches[0][2]:matches[0][3]]) != target {
+		return nil, errors.New("target release heading not found")
+	}
+	for _, match := range matches[1:] {
+		if string(contents[match[2]:match[3]]) == target {
+			return nil, errors.New("duplicate target release heading")
+		}
+	}
+	// Replace only the current heading's date, never dates in notes or history.
+	match := matches[0]
+	updated := append([]byte(nil), contents[:match[4]]...)
+	updated = append(updated, date...)
+	return append(updated, contents[match[5]:]...), nil
 }
 
 func writeReleaseUpdates(updates []releaseUpdate) error {

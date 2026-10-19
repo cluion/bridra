@@ -109,7 +109,36 @@ try {
             Assert-Contract (-not (Test-Path $summary)) "Untimed commands wrote a CI summary"
         }
     }
-    Write-Host "Windows verification contracts passed (5 scenarios)."
+    $releaseScenarios = @(
+        @{ name = "prepare"; parameters = @{ Task = "release-prepare"; Version = "0.1.1" }; expected = @("go run ./cmd/bridra release prepare --root .. 0.1.1", "fvm flutter pub get") },
+        @{ name = "prepare-date"; parameters = @{ Task = "release-prepare"; Version = "0.1.1"; ReleaseDate = "2026-07-24" }; expected = @("go run ./cmd/bridra release prepare --root .. 0.1.1 --date 2026-07-24", "fvm flutter pub get") },
+        @{ name = "prepare-failure"; parameters = @{ Task = "release-prepare"; Version = "0.1.1"; ReleaseDate = "2026-07-24" }; expected = @("go run ./cmd/bridra release prepare --root .. 0.1.1 --date 2026-07-24"); failure = "go run ./cmd/bridra release prepare --root .. 0.1.1 --date 2026-07-24" },
+        @{ name = "check-final"; parameters = @{ Task = "release-check"; Version = "0.1.1"; Final = $true }; expected = @("go run ./cmd/bridra release check --root .. --version 0.1.1 --final") },
+        @{ name = "check-date-rejected"; parameters = @{ Task = "release-check"; ReleaseDate = "2026-07-24" }; expected = @(); rejected = $true },
+        @{ name = "missing-version"; parameters = @{ Task = "release-prepare"; ReleaseDate = "2026-07-24" }; expected = @(); rejected = $true },
+        @{ name = "empty-date"; parameters = @{ Task = "release-prepare"; Version = "0.1.1"; ReleaseDate = "" }; expected = @(); rejected = $true }
+    )
+    foreach ($scenario in $releaseScenarios) {
+        $global:BridraWindowsContractCalls = [Collections.Generic.List[object]]::new()
+        $global:BridraWindowsContractFailure = $scenario.failure
+        $env:BRIDRA_WINDOWS_TIMINGS_PATH = $null
+        $caught = $null
+        $location = (Get-Location).Path
+        try {
+            $parameters = $scenario.parameters
+            & (Join-Path $fixture "tool/windows.ps1") @parameters
+        }
+        catch { $caught = $_ }
+        $expectedFailure = [bool]$scenario.failure -or [bool]$scenario.rejected
+        Assert-Contract (($null -ne $caught) -eq $expectedFailure) "$($scenario.name): wrong failure result: $caught"
+        Assert-Contract ((Get-Location).Path -eq $location) "Release task did not restore working directory"
+        $commands = @($global:BridraWindowsContractCalls | ForEach-Object { (@($_.name) + $_.arguments) -join " " })
+        Assert-Contract (($commands -join "`n") -ceq ($scenario.expected -join "`n")) "$($scenario.name): wrong release commands: $commands"
+        if ($scenario.failure) {
+            Assert-Contract ($caught.ToString().Contains("exit code 17")) "Release failure was obscured"
+        }
+    }
+    Write-Host "Windows verification/release contracts passed (12 scenarios)."
 }
 finally {
     foreach ($name in $savedEnvironment.Keys) {

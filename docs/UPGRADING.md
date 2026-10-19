@@ -65,6 +65,66 @@ The historical sections below describe each release's full migration scope.
 The current planner filters their classified platform requirements as described
 above; it does not rewrite application-owned files.
 
+## Framework 0.22.0 to 0.23.0
+
+Version `0.23.0` adds opt-in long-lived subscriptions over existing server streams.
+The Go producer and bounded replay buffer carry ordinary data envelopes; Flutter's
+`RpcSubscriptions.subscribe` extension adds an idle watchdog, finite connection
+rotation and bounded cursor-based reconnects without adding an `RpcClient`
+interface method. Existing generated streams and RPC payloads remain compatible.
+Project Template `9`, project metadata schema `3`, CLI upgrade-report schema `5`
+and Template RPC protocol baseline `1` are unchanged.
+
+### Dependency update
+
+The registered dependency transition is automatic when all earlier required
+adoption is complete. After publication, install CLI `0.23.0` and inspect the
+read-only plan before opting into application:
+
+```bash
+bridra upgrade --plan --to 0.23.0 --root /path/to/project
+bridra upgrade --apply --to 0.23.0 --root /path/to/project
+```
+
+Apply updates Go/Flutter dependencies, lockfiles and framework metadata and runs
+the project's verification. It preserves application-owned UI, native runners,
+schema, deployed baseline, generated API files, application protocol and adopted
+template version. An application may keep Template `8`; optional Template `9`
+starter changes remain a notice. Missing earlier mandatory adoption still blocks
+automatic apply. No database migration or RPC regeneration is required merely
+to update these dependencies.
+
+### Optional subscription adoption
+
+Existing polling and finite streams may stay unchanged. To adopt subscriptions,
+declare an application-owned streaming method and cursor parameter, generate its
+DTOs, wire a Go producer/source and consume its envelopes through `subscribe`.
+See [the subscription guide](SUBSCRIPTIONS.md) for the complete schema and code.
+
+Choose heartbeat/idle intervals, cancellation and connection deadlines for the
+deployment. Pauses suspend the idle watchdog, including an already pending read;
+resuming starts a fresh idle interval. Connection/total deadlines remain active.
+Retain enough history for reconnect delays; the optional Go buffer is in memory
+and cannot restore history after restart. Authorize every source/reconnect,
+persist checkpoints after processing, handle duplicates idempotently and fetch a
+consistent snapshot/cursor when replay expires. The helper resumes its last
+delivered cursor and does not promise exactly-once application processing.
+
+HTTP interrupted-stream and status exceptions refine existing protocol/transport
+base classes; Sidecar exit is now a transport failure. If application code
+classifies errors by their exact concrete type, review that classification.
+Malformed protocol, authorization failures and exhausted restarts remain terminal
+for subscriptions.
+
+### Rollback
+
+Revert any optional callers of the new subscription APIs with their Go/Flutter
+dependencies, metadata and lockfiles to the prior reviewed commit, then resolve
+dependencies and verify the application. The planner refuses downgrades; it is
+not a rollback command. Restore application-owned schema/generated files together
+if subscription adoption changed them. Durable replay storage and checkpoints
+remain application-owned; this release does not migrate or erase them.
+
 ## Framework 0.21.0 to 0.22.0
 
 Version `0.22.0` adds the optional modular starter, responsive navigation,

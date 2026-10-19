@@ -1,9 +1,12 @@
 # Bridra support
 
-Bridra 0.22 is the current pre-1.0 framework line and is maintained on a
-best-effort basis until the next minor line is published. Bridra 0.21 and older
-lines are no longer supported. There is no production support SLA or LTS
-version.
+Bridra is a pre-1.0 framework maintained on a best-effort basis, without a
+production support SLA or LTS commitment.
+
+Before 1.0, only the latest patch of the latest published minor line is eligible
+for security fixes. Older minor lines and superseded patches are unsupported.
+See [GitHub Releases](https://github.com/cluion/bridra/releases) for published
+versions; development branches and unreleased candidates are not supported releases.
 
 A new minor line's support policy takes effect at publication; the previously
 published line remains supported until then.
