@@ -65,6 +65,31 @@ The historical sections below describe each release's full migration scope.
 The current planner filters their classified platform requirements as described
 above; it does not rewrite application-owned files.
 
+## Framework 0.23.1 publication recovery
+
+Use `0.23.1` for the subscription and verification changes described below.
+The `backend/v0.23.0` tag remains immutable, but its publication job was skipped
+before the pub.dev package and GitHub Release were created. `0.23.1` fixes that
+workflow gate while preserving protected approval and source/artifact checks.
+
+After publication, install CLI `0.23.1` and inspect the plan before applying:
+
+```bash
+bridra upgrade --plan --to 0.23.1 --root /path/to/project
+bridra upgrade --apply --to 0.23.1 --root /path/to/project
+```
+
+From `0.22.0`, the planner validates both automatic hops (`0.22.0` to `0.23.0`
+and `0.23.0` to `0.23.1`), then resolves dependencies only at the final target.
+It does not try to install the unpublished intermediate Flutter package.
+Projects already recording `0.23.0` have one automatic dependency transition.
+Earlier mandatory adoption still blocks automatic apply; verification failures
+roll back dependency, lockfile and metadata changes.
+
+No further public API, RPC protocol, metadata schema, template baseline or
+upgrade-report schema change is introduced by `0.23.1`. Existing application
+code, runners, schema and generated files remain application-owned.
+
 ## Framework 0.22.0 to 0.23.0
 
 Version `0.23.0` adds opt-in long-lived subscriptions over existing server streams.
@@ -78,13 +103,9 @@ and Template RPC protocol baseline `1` are unchanged.
 ### Dependency update
 
 The registered dependency transition is automatic when all earlier required
-adoption is complete. After publication, install CLI `0.23.0` and inspect the
-read-only plan before opting into application:
-
-```bash
-bridra upgrade --plan --to 0.23.0 --root /path/to/project
-bridra upgrade --apply --to 0.23.0 --root /path/to/project
-```
+adoption is complete. Use the superseding `0.23.1` CLI and dependency target
+described [above](#framework-0231-publication-recovery); the `0.23.0` Flutter
+package was not published.
 
 Apply updates Go/Flutter dependencies, lockfiles and framework metadata and runs
 the project's verification. It preserves application-owned UI, native runners,

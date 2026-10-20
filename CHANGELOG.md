@@ -3,6 +3,34 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
+## [0.23.1] - 2026-10-20
+
+### Fixed
+
+- Allow protected publication after either valid release verification path.
+  Intentionally skipped verification branches no longer suppress the publication
+  job. Source and candidate success, cancellation checks, environment approval,
+  artifact identity, OIDC and attestations remain required.
+
+### Compatibility
+
+- Supersede the tagged `0.23.0` candidate, whose publication job was skipped
+  before creating its pub.dev package or GitHub Release. Its tag is retained
+  unchanged; `0.23.1` carries the subscription, Doctor and Sidecar fixes below.
+- Register an automatic dependency-only `0.23.0` to `0.23.1` transition.
+  Projects on published `0.22.0` can upgrade directly to `0.23.1`; the planner
+  checks both migration hops and resolves only the final version. Earlier
+  mandatory adoption requirements still apply.
+- Public APIs, application RPC protocol, project metadata schema, template
+  baseline and upgrade-report schema are unchanged from `0.23.0`.
+  See [the upgrade guide](docs/UPGRADING.md#framework-0231-publication-recovery).
+
+### Support
+
+- The latest published `0.23.x` release receives best-effort security fixes until
+  the next minor line is published. The `0.22.x` line remains supported until
+  `0.23.1` is published, then becomes unsupported.
+
 ## [0.23.0] - 2026-10-19
 
 ### Added

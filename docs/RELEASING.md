@@ -266,6 +266,13 @@ the schema-versioned manifest must identify the license as `MIT` and record the
 SBOM digest. Do not move or replace a published tag. Fix a bad release with a new
 patch version.
 
+The publication job explicitly requires successful source and candidate gates
+and a workflow that has not been cancelled. Its status condition must tolerate
+the intentionally skipped verification branch; GitHub otherwise propagates that
+skip through the dependency chain even after the candidate gate succeeds.
+An overall successful workflow with `public-release` skipped is not a published
+release. Check the publication job and public registry/assets separately.
+
 The release candidate intentionally omits `publish_to: 'none'`. When
 `BRIDRA_PUBDEV_AUTOMATION_ENABLED=true`, the protected workflow publishes a
 missing Dart version through pub.dev OIDC and safely skips an already-published
