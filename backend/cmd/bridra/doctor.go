@@ -86,7 +86,7 @@ func (doctorCommand) name() string {
 }
 
 func (doctorCommand) summary() string {
-	return "Check Go, FVM, Flutter, and host build requirements"
+	return "Check application RPC consistency, toolchains, and host build requirements"
 }
 
 func (doctorCommand) usage() string {
@@ -95,7 +95,7 @@ func (doctorCommand) usage() string {
 
 Options:
   --root path  Bridra project root containing .fvmrc (default .)
-  --strict     Treat missing optional host build tools as failures`
+  --strict     Treat warnings, including optional host tools, as failures`
 }
 
 func (item doctorCommand) run(arguments []string, stdout, stderr io.Writer) error {
@@ -110,7 +110,7 @@ func (item doctorCommand) run(arguments []string, stdout, stderr io.Writer) erro
 		fmt.Fprintln(stderr, item.usage())
 	}
 	root := flags.String("root", ".", "Bridra project root containing .fvmrc")
-	strict := flags.Bool("strict", false, "treat host build tool warnings as failures")
+	strict := flags.Bool("strict", false, "treat warnings as failures")
 	if err := flags.Parse(arguments); err != nil {
 		return fmt.Errorf("%w: doctor: %v", errUsage, err)
 	}
@@ -141,7 +141,7 @@ func (item doctorCommand) run(arguments []string, stdout, stderr io.Writer) erro
 		fmt.Fprintf(stdout, "Doctor strict mode failed with %d warning(s).\n", warnings)
 		return fmt.Errorf("%w: strict mode found %d warning(s)", errDoctorFailed, warnings)
 	case warnings > 0:
-		fmt.Fprintf(stdout, "Core checks passed with %d host build warning(s).\n", warnings)
+		fmt.Fprintf(stdout, "Doctor completed with %d warning(s).\n", warnings)
 	default:
 		fmt.Fprintln(stdout, "All checks passed.")
 	}
@@ -150,7 +150,7 @@ func (item doctorCommand) run(arguments []string, stdout, stderr io.Writer) erro
 
 func (item doctorCommand) inspect(root string) doctorReport {
 	report := doctorReport{}
-	platforms := item.checkProjectPlatforms(root, &report)
+	platforms := item.checkProject(root, &report)
 	configuration, configurationOK := item.checkFVMConfiguration(root, &report)
 	item.checkGo(&report)
 	fvmOK := item.checkFVM(&report)
@@ -163,7 +163,7 @@ func (item doctorCommand) inspect(root string) doctorReport {
 	return report
 }
 
-func (item doctorCommand) checkProjectPlatforms(
+func (item doctorCommand) checkProject(
 	root string,
 	report *doctorReport,
 ) []string {
@@ -182,6 +182,13 @@ func (item doctorCommand) checkProjectPlatforms(
 		return projectplatform.CloneAll()
 	}
 	report.add(doctorOK, "Platforms", strings.Join(metadata.Platforms, ", "))
+	if metadata.SchemaVersion == 1 {
+		report.add(doctorWarning, "Application RPC", "not checked: legacy metadata has no protocol version; run bridra upgrade --plan")
+	} else if err := verifyApplicationRPCContract(root, metadata); err != nil {
+		report.add(doctorFailure, "Application RPC", fmt.Sprintf("%v; regenerate contracts and align .bridra/project.json with schema/bridra.json", err))
+	} else {
+		report.add(doctorOK, "Application RPC", fmt.Sprintf("protocol %d matches metadata, schema, Go and Dart", metadata.ProtocolVersion))
+	}
 	return metadata.Platforms
 }
 

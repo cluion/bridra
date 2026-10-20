@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -771,4 +773,58 @@ func readBuildTestManifest(t *testing.T, path string) buildManifest {
 		t.Fatalf("decode manifest: %v", err)
 	}
 	return manifest
+}
+
+func TestBuildSidecarControlsVCSMetadataAcrossDesktopModes(t *testing.T) {
+	targets := []struct {
+		name          string
+		host          string
+		target        buildTarget
+		native        bool
+		architectures []string
+	}{
+		{name: "Linux", host: "linux", target: buildTargetLinux, architectures: []string{"arm64"}},
+		{name: "Windows", host: "windows", target: buildTargetWindows, architectures: []string{"arm64"}},
+		{name: "macOS portable", host: "darwin", target: buildTargetMacOS, architectures: []string{"arm64", "amd64"}},
+		{name: "macOS native", host: "darwin", target: buildTargetMacOS, native: true, architectures: []string{"arm64", "amd64"}},
+	}
+	for _, target := range targets {
+		for _, mode := range []buildMode{buildModeDebug, buildModeProfile, buildModeRelease} {
+			t.Run(target.name+"/"+string(mode), func(t *testing.T) {
+				system := buildTestSystem(target.host, "arm64")
+				var architectures []string
+				system.run = func(spec buildProcessSpec) error {
+					if spec.Name == "xcrun" {
+						return nil
+					}
+					if spec.Name != "go" {
+						t.Fatalf("unexpected command: %#v", spec)
+					}
+					for _, flag := range []string{"-trimpath", "-buildvcs=false"} {
+						if !containsString(spec.Arguments, flag) {
+							t.Fatalf("Go Sidecar must control source paths and VCS metadata: %#v", spec)
+						}
+					}
+					wantCGO := "0"
+					if target.native {
+						wantCGO = "1"
+					}
+					if buildEnvironmentValue(spec.Environment, "CGO_ENABLED") != wantCGO || containsString(spec.Arguments, macosNativeBuildTag) != target.native {
+						t.Fatalf("native build policy changed: %#v", spec)
+					}
+					architectures = append(architectures, buildEnvironmentValue(spec.Environment, "GOARCH"))
+					return nil
+				}
+				_, err := (buildCommand{system: system}).buildSidecar(buildOptions{
+					root: t.TempDir(), target: target.target, mode: mode, macosSidecarNative: target.native,
+				}, t.TempDir(), io.Discard, io.Discard)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !reflect.DeepEqual(architectures, target.architectures) {
+					t.Fatalf("architectures = %v, want %v", architectures, target.architectures)
+				}
+			})
+		}
+	}
 }

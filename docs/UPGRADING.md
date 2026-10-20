@@ -94,6 +94,27 @@ starter changes remain a notice. Missing earlier mandatory adoption still blocks
 automatic apply. No database migration or RPC regeneration is required merely
 to update these dependencies.
 
+### CLI verification and Sidecar build changes
+
+Doctor now shares the upgrade planner's application RPC consistency check.
+Metadata schemas 2 and 3 must record the same protocol as the application schema
+and both generated Go/Dart constants. A mismatch or missing contract now fails
+`doctor` and generated projects' `make verify`. Run generation after changing the
+schema, then explicitly update `.bridra/project.json` to the intended application
+protocol. Custom protocols remain supported; do not replace them with Bridra's
+template baseline or advance the deployed schema baseline just to pass Doctor.
+Legacy metadata schema 1 is reported as unchecked with a warning; migrate it
+before strict verification. Toolchain-only use without metadata is unchanged.
+
+Desktop Sidecar builds now explicitly disable automatic VCS stamping with
+`-buildvcs=false` while retaining `-trimpath`, native-mode selection, signing and
+final manifest checksums. Existing application sources need no migration, but a
+rebuilt Sidecar can have a different checksum and no implicit Git build metadata.
+Keep source provenance in product release evidence. Compare unsigned Sidecars
+only with identical source, dependencies, toolchains and build environment;
+signed Flutter bundles and native CGO artifacts across different SDKs are not
+covered by a cross-environment reproducibility guarantee.
+
 ### Optional subscription adoption
 
 Existing polling and finite streams may stay unchanged. To adopt subscriptions,

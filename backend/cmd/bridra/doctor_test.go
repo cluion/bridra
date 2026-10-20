@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/cluion/bridra/backend/codegen"
+	"github.com/cluion/bridra/backend/internal/releaseinfo"
 )
 
 func TestDoctorPassesWithMatchingPinnedToolchain(t *testing.T) {
@@ -104,7 +108,7 @@ func TestDoctorReportsOptionalToolsWithoutBlockingCoreChecks(t *testing.T) {
 	if !strings.Contains(stdout.String(), "[warn] clang: not found") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
-	if !strings.Contains(stdout.String(), "Core checks passed with 1 host build warning(s).") {
+	if !strings.Contains(stdout.String(), "Doctor completed with 1 warning(s).") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 }
@@ -149,6 +153,11 @@ func TestDoctorSkipsUnselectedHostPlatformTools(t *testing.T) {
 	); err != nil {
 		t.Fatalf("write metadata: %v", err)
 	}
+	var parsed projectMetadata
+	if err := json.Unmarshal([]byte(metadata), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	writeApplicationRPCFixture(t, root, parsed)
 	system := healthyDoctorSystem("clang", "cmake", "ninja", "pkg-config")
 	var stdout bytes.Buffer
 	if err := newApplication(system).run(
@@ -279,4 +288,128 @@ func writeFVMConfiguration(t *testing.T, version string) string {
 		t.Fatalf("write .fvmrc: %v", err)
 	}
 	return root
+}
+
+func TestDoctorChecksApplicationRPCContract(t *testing.T) {
+	tests := []struct {
+		name   string
+		file   string
+		before string
+		after  string
+		remove bool
+		want   string
+	}{
+		{name: "consistent custom protocol", want: "[ok] Application RPC: protocol 4 matches metadata, schema, Go and Dart"},
+		{
+			name:   "metadata mismatch",
+			file:   ".bridra/project.json",
+			before: `"protocolVersion": 4`,
+			after:  `"protocolVersion": 3`,
+			want:   "protocol versions disagree: metadata 3, schema 4, Go 4, Dart 4",
+		},
+		{
+			name:   "schema mismatch",
+			file:   "schema/bridra.json",
+			before: `"protocolVersion": 4`,
+			after:  `"protocolVersion": 5`,
+			want:   "protocol versions disagree: metadata 4, schema 5, Go 4, Dart 4",
+		},
+		{
+			name:   "Go mismatch",
+			file:   codegen.GoProtocolPath,
+			before: "ProtocolVersion = 4",
+			after:  "ProtocolVersion = 3",
+			want:   "protocol versions disagree: metadata 4, schema 4, Go 3, Dart 4",
+		},
+		{
+			name:   "Dart mismatch",
+			file:   codegen.DartClientPath,
+			before: "supportedBackendProtocolVersion = 4;",
+			after:  "supportedBackendProtocolVersion = 3;",
+			want:   "protocol versions disagree: metadata 4, schema 4, Go 4, Dart 3",
+		},
+		{name: "missing schema", file: "schema/bridra.json", remove: true, want: "codegen: open schema"},
+		{name: "missing Go", file: codegen.GoProtocolPath, remove: true, want: "read generated Go protocol"},
+		{name: "missing Dart", file: codegen.DartClientPath, remove: true, want: "read generated Dart protocol"},
+		{name: "invalid schema", file: "schema/bridra.json", before: `"protocolVersion": 4`, after: `"protocolVersion": 0`, want: "protocolVersion"},
+		{
+			name:   "missing Go constant",
+			file:   codegen.GoProtocolPath,
+			before: "const ProtocolVersion = 4",
+			after:  "// absent",
+			want:   "generated Go contract must contain exactly one protocol version",
+		},
+		{
+			name:   "duplicate Dart constant",
+			file:   codegen.DartClientPath,
+			before: "const supportedBackendProtocolVersion = 4;",
+			after:  "const supportedBackendProtocolVersion = 4;\nconst supportedBackendProtocolVersion = 4;",
+			want:   "generated Dart contract must contain exactly one protocol version",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := makeUpgradeProjectRoot(t, currentProjectMetadata(releaseinfo.Version, releaseinfo.ProjectTemplateVersion, 4))
+			writeBuildTestOutput(t, filepath.Join(root, ".fvmrc"), `{"flutter":"3.44.6"}`)
+			if test.file != "" {
+				path := filepath.Join(root, filepath.FromSlash(test.file))
+				if test.remove {
+					if err := os.Remove(path); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					before := readTestFile(t, path)
+					after := bytes.Replace(before, []byte(test.before), []byte(test.after), 1)
+					if bytes.Equal(before, after) {
+						t.Fatal("fixture was not changed")
+					}
+					if err := os.WriteFile(path, after, 0o644); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			metadataBefore := readTestFile(t, filepath.Join(root, ".bridra", "project.json"))
+			var output bytes.Buffer
+			err := (doctorCommand{system: healthyDoctorSystem()}).run([]string{"--root", root}, &output, io.Discard)
+			if test.file == "" {
+				if err != nil {
+					t.Fatalf("doctor: %v\n%s", err, &output)
+				}
+			} else if !errors.Is(err, errDoctorFailed) || !strings.Contains(output.String(), "[fail] Application RPC:") {
+				t.Fatalf("doctor error = %v\n%s", err, &output)
+			}
+			if !strings.Contains(output.String(), test.want) {
+				t.Fatalf("want %q in %s", test.want, &output)
+			}
+			assertFileContents(t, filepath.Join(root, ".bridra", "project.json"), metadataBefore)
+		})
+	}
+}
+
+func TestDoctorAcceptsMetadataV2CustomProtocol(t *testing.T) {
+	root := makeUpgradeProjectRoot(t, currentProjectMetadata("0.15.0", 5, 4))
+	writeBuildTestOutput(t, filepath.Join(root, ".fvmrc"), `{"flutter":"3.44.6"}`)
+	var output bytes.Buffer
+	if err := (doctorCommand{system: healthyDoctorSystem()}).run([]string{"--root", root}, &output, io.Discard); err != nil {
+		t.Fatalf("doctor: %v\n%s", err, &output)
+	}
+	if !strings.Contains(output.String(), "[ok] Application RPC: protocol 4 matches") {
+		t.Fatal(output.String())
+	}
+}
+
+func TestDoctorReportsLegacyContractAsUnchecked(t *testing.T) {
+	root := makeUpgradeProjectRoot(t, validProjectMetadata)
+	writeBuildTestOutput(t, filepath.Join(root, ".fvmrc"), `{"flutter":"3.44.6"}`)
+	var output bytes.Buffer
+	if err := (doctorCommand{system: healthyDoctorSystem()}).run([]string{"--root", root}, &output, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "[warn] Application RPC: not checked: legacy metadata") {
+		t.Fatal(output.String())
+	}
+	output.Reset()
+	if err := (doctorCommand{system: healthyDoctorSystem()}).run([]string{"--root", root, "--strict"}, &output, io.Discard); !errors.Is(err, errDoctorFailed) {
+		t.Fatalf("strict doctor: %v", err)
+	}
 }

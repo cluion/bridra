@@ -118,6 +118,17 @@ available; use strict mode before preparing a desktop release:
 cd backend && go run ./cmd/bridra doctor --root .. --strict
 ```
 
+When `.bridra/project.json` uses metadata schema 2 or 3, Doctor also verifies
+that its application protocol matches `schema/bridra.json` and the generated Go
+and Dart protocol constants. Missing, malformed or inconsistent contracts fail
+Doctor and therefore generated projects' `make verify`. The application protocol
+may differ from Bridra's template baseline; a deployed schema baseline may also
+retain an earlier protocol for compatibility comparisons. Doctor does not rewrite
+any of these files. Regenerate contracts and explicitly align project metadata
+after an intentional application protocol change. Legacy metadata schema 1 has
+no protocol field and produces a warning; strict mode requires its migration.
+Without project metadata, Doctor continues to check the toolchain only.
+
 `make setup` reads the committed `.fvmrc`, installs Flutter 3.44.6, and resolves
 the root application plus `packages/bridra_flutter`. FVM stores SDKs outside this
 repository; the local `.fvm/` link and package lockfiles are ignored.
@@ -518,6 +529,18 @@ token. Debug HTTP builds default to the local emulator/loopback endpoint and
 Every successful build writes a token-free manifest to
 `build/bridra/<target>-<mode>.json`. It records the stable artifact path,
 transport, architecture, content-tree SHA-256, and Sidecar checksum when present.
+
+Desktop Sidecar builds pass `-trimpath -buildvcs=false`, including both
+architectures and the opt-in native macOS mode. They omit automatic Git revision,
+time, dirty-state and main-module version stamping so a checkout and a source
+archive do not differ merely because `.git` exists. Record the source SHA in the
+product's release evidence instead of relying on implicit binary VCS metadata.
+Keep source/dependencies, Go toolchain, build options and environment identical
+when comparing unsigned Sidecars. Native CGO builds additionally depend on the
+C toolchain and SDK; this policy does not promise identical signed app bundles
+or artifacts across different toolchains. The manifest always checksums the
+actual final artifact, including signing changes.
+
 The iOS artifact is unsigned. The macOS command applies an ad-hoc signature after
 embedding its universal Sidecar. It preserves the app entitlements embedded by
 the Flutter/Xcode build and fails if their signed value changes.

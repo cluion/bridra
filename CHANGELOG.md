@@ -22,6 +22,18 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
   pause time. Resume starts a fresh idle interval; cancellation and connection or
   total deadlines remain effective.
 
+### Fixed
+
+- Check application RPC protocol consistency in Doctor using the upgrade
+  planner's shared validation. Metadata schema 2/3, schema and generated Go/Dart
+  constants must agree; custom application protocols remain valid. Generated
+  `make verify` now catches these mismatches. Legacy metadata schema 1 is
+  explicitly unchecked and warns instead of implying contract validation.
+- Disable automatic VCS stamping for desktop Sidecar Go builds, retaining
+  trimmed paths, native macOS build flags, signing and final artifact checksums.
+  Checkout/archive comparisons no longer depend on implicit Git metadata;
+  product release evidence must retain the source revision explicitly.
+
 ### Changed
 
 - Keep support/security policies version-independent, tied to the latest
