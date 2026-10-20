@@ -622,12 +622,12 @@ func (item buildCommand) buildSidecar(
 		var binaries []string
 		for _, architecture := range []string{"arm64", "amd64"} {
 			output := filepath.Join(workDirectory, "bridra_backend_"+architecture)
-			arguments := []string{"build", "-trimpath", "-o", output, "./cmd/sidecar"}
+			arguments := []string{"build", "-trimpath", "-buildvcs=false", "-o", output, "./cmd/sidecar"}
 			cgoEnabled := "0"
 			if options.macosSidecarNative {
 				cgoEnabled = "1"
 				arguments = []string{
-					"build", "-tags", macosNativeBuildTag, "-trimpath", "-o", output, "./cmd/sidecar",
+					"build", "-tags", macosNativeBuildTag, "-trimpath", "-buildvcs=false", "-o", output, "./cmd/sidecar",
 				}
 			}
 			if err := item.execute("Go Sidecar "+architecture, buildProcessSpec{
@@ -664,7 +664,7 @@ func (item buildCommand) buildSidecar(
 	output := filepath.Join(workDirectory, "bridra_backend"+suffix)
 	if err := item.execute("Go Sidecar", buildProcessSpec{
 		Name:        "go",
-		Arguments:   []string{"build", "-trimpath", "-o", output, "./cmd/sidecar"},
+		Arguments:   []string{"build", "-trimpath", "-buildvcs=false", "-o", output, "./cmd/sidecar"},
 		Directory:   backendDirectory,
 		Environment: []string{"CGO_ENABLED=0", "GOOS=" + goos, "GOARCH=" + goarch},
 		Stdout:      stdout,

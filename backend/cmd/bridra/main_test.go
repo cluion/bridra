@@ -69,7 +69,7 @@ func TestHelpDescribesSpecificCommand(t *testing.T) {
 		},
 		{command: "version", usage: "bridra version [--json]"},
 		{command: "upgrade", usage: "bridra upgrade [--plan | --apply] [--to version]"},
-		{command: "release", usage: "bridra release prepare <version> [--root path]"},
+		{command: "release", usage: "bridra release prepare <version> [--date YYYY-MM-DD] [--root path]"},
 		{command: "schema", usage: "bridra schema check --against path [options]"},
 		{command: "doctor", usage: "bridra doctor [--root path] [--strict]"},
 		{command: "diagnose", usage: "bridra diagnose [--root path] [--output path] [--runtime path]"},

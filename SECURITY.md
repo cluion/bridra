@@ -1,21 +1,23 @@
 # Security policy
 
-Bridra 0.22 is a pre-1.0 framework line. Security fixes are provided on a
+Bridra is a pre-1.0 framework. Security fixes are provided on a
 best-effort basis without a production SLA or LTS commitment.
 
 ## Supported versions
 
 | Version | Security support |
 | --- | --- |
-| Latest `0.22.x` patch | Security fixes accepted on a best-effort basis |
-| `0.21.x` and older | Unsupported; upgrade to the latest `0.22.x` patch |
+| Latest patch of the latest published minor line | Security fixes accepted on a best-effort basis |
+| Older minor lines and superseded patches | Unsupported; upgrade to the latest supported patch |
 | `main` | Active development only |
 
 A new minor line's support policy takes effect at publication; the previously
 published line remains supported until then.
 
-Before 1.0, only the latest patch of the current documented minor line is
-eligible for security fixes. Bridra has no LTS line. Each release may announce a
+Before 1.0, only the latest patch of the latest published minor line is eligible
+for security fixes. See [GitHub Releases](https://github.com/cluion/bridra/releases)
+for published versions; development branches and unreleased candidates are not
+supported releases. Bridra has no LTS line. Each release may announce a
 shorter or longer support window in its release notes; otherwise users should
 upgrade to the latest compatible patch.
 

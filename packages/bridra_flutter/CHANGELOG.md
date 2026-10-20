@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.23.0 - 2026-10-19
+
+- Add the opt-in `RpcSubscriptions.subscribe` extension, `RpcSubscriptionPolicy`
+  and `RpcSubscriptionData` for heartbeat-aware, cursor-resumable subscriptions
+  over existing HTTP, Sidecar and Embedded streams. Reconnects use bounded
+  backoff; each connection remains finite while the logical lifetime is optional.
+- Preserve pending-read pause/resume backpressure and stop the idle watchdog
+  while paused. Cancellation and connection/total deadlines remain effective;
+  Embedded pulls also pause and release promptly on cancellation.
+- Expose interrupted HTTP streams and HTTP statuses through
+  `RpcStreamInterruptedException` and `RpcHttpStatusException`, retaining their
+  existing protocol/transport base classes. Classify `SidecarExitedException`
+  as a transport failure; exhausted restart and authorization failures remain
+  terminal for subscriptions.
+- Existing `RpcClient` implementers, generated stream signatures and RPC wire
+  protocol remain compatible. Subscription adoption, durable checkpoints,
+  authorization and expired-cursor resync remain application-owned. A dependency
+  upgrade preserves UI, runners and the adopted template baseline.
+
 ## 0.22.0 - 2026-10-17
 
 - Align package metadata with Bridra 0.22.0 and optional Project Template `9`.

@@ -14,11 +14,16 @@ param(
     [string]$Task = "run",
     [string]$Version,
     [switch]$Final,
-    [switch]$SharedChecksInCore
+    [switch]$SharedChecksInCore,
+    [ValidateNotNullOrEmpty()]
+    [string]$ReleaseDate
 )
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
+if ($ReleaseDate -and $Task -ne "release-prepare") {
+    throw "-ReleaseDate is only valid for release-prepare"
+}
 
 function Write-CommandTiming {
     param(
@@ -256,6 +261,9 @@ function Invoke-ReleaseCommand {
             throw "-Version is required for release-prepare"
         }
         $arguments += $Version
+        if ($ReleaseDate) {
+            $arguments += @("--date", $ReleaseDate)
+        }
     }
     elseif ($Version) {
         $arguments += @("--version", $Version)

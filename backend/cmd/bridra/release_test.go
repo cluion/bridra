@@ -113,7 +113,7 @@ func TestReleaseFinalCheckRequiresDatedChangelogs(t *testing.T) {
 		if !strings.Contains(stdout.String(), "Changelogs: finalized") {
 			t.Fatalf("stdout = %q", stdout.String())
 		}
-		if !strings.Contains(stdout.String(), "Support policy: latest 0.1.x patch") {
+		if !strings.Contains(stdout.String(), "Support policy: latest patch of the latest published minor line") {
 			t.Fatalf("stdout = %q", stdout.String())
 		}
 	})
@@ -141,25 +141,25 @@ func TestReleaseFinalCheckRejectsSupportPolicyDrift(t *testing.T) {
 		want        string
 	}{
 		{
-			name:        "support current release",
+			name:        "support eligibility rule",
 			path:        "SUPPORT.md",
-			old:         "Bridra 0.1 is the current",
-			replacement: "Bridra 0.0 is the current",
-			want:        "SUPPORT.md current release line is 0.0, expected 0.1",
+			old:         "only the latest patch",
+			replacement: "all patches",
+			want:        "SUPPORT.md: eligibility rule is missing or inconsistent",
 		},
 		{
-			name:        "security current release",
+			name:        "security eligibility rule",
 			path:        "SECURITY.md",
-			old:         "Bridra 0.1 is a pre-1.0",
-			replacement: "Bridra 0.0 is a pre-1.0",
-			want:        "SECURITY.md current release line is 0.0, expected 0.1",
+			old:         "only the latest patch",
+			replacement: "all patches",
+			want:        "SECURITY.md: eligibility rule is missing or inconsistent",
 		},
 		{
 			name:        "security supported versions",
 			path:        "SECURITY.md",
-			old:         "Latest `0.1.x` patch",
-			replacement: "Latest `0.0.x` patch",
-			want:        "SECURITY.md supported versions table is 0.0, expected 0.1",
+			old:         "Latest patch of the latest published minor line",
+			replacement: "Every published release",
+			want:        "SECURITY.md: supported versions table is missing or inconsistent",
 		},
 		{
 			name:        "changelog support section",
@@ -202,7 +202,7 @@ func TestReleaseFinalCheckUsesMinorSupportLineForPatchRelease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("release final patch check: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "Support policy: latest 0.14.x patch") {
+	if !strings.Contains(stdout.String(), "Support policy: latest patch of the latest published minor line") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 }
@@ -284,6 +284,7 @@ func TestReleaseCommandRejectsInvalidVersionsAndUsage(t *testing.T) {
 		{"prepare", "0.0.9", "--root", root},
 		{"prepare", "--root", root},
 		{"check", "--version", "0.01.0", "--root", root},
+		{"check", "--date=2026-07-24", "--root", root},
 		{"unknown"},
 	} {
 		err := (releaseCommand{}).run(arguments, &bytes.Buffer{}, &bytes.Buffer{})
@@ -292,6 +293,10 @@ func TestReleaseCommandRejectsInvalidVersionsAndUsage(t *testing.T) {
 		}
 	}
 }
+
+const releaseTestSupportPolicy = "Before 1.0, only the latest patch of the latest published minor line is eligible for security fixes.\n\n" +
+	"A new minor line's support policy takes effect at publication; the previously published line remains supported until then.\n\n" +
+	"See [GitHub Releases](https://github.com/cluion/bridra/releases); development branches and unreleased candidates are not supported releases.\n"
 
 func releaseTestRoot(t *testing.T, version, changelogStatus string) string {
 	t.Helper()
@@ -316,11 +321,12 @@ func releaseTestRoot(t *testing.T, version, changelogStatus string) string {
 			"- Latest `" + releaseLine + ".x` patch is supported.\n",
 		"packages/bridra_flutter/CHANGELOG.md": "# Changelog\n\n## " + version +
 			" - " + changelogStatus + "\n\n- Existing change.\n",
-		"SUPPORT.md": "# Support\n\nBridra " + releaseLine +
-			" is the current pre-1.0 framework line.\n",
-		"SECURITY.md": "# Security policy\n\nBridra " + releaseLine +
-			" is a pre-1.0 framework line.\n\n| Version | Security support |\n" +
-			"| --- | --- |\n| Latest `" + releaseLine + ".x` patch | Supported |\n",
+		"SUPPORT.md": "# Support\n\n" + releaseTestSupportPolicy,
+		"SECURITY.md": "# Security policy\n\n" + releaseTestSupportPolicy +
+			"\n| Version | Security support |\n| --- | --- |\n" +
+			"| Latest patch of the latest published minor line | Security fixes accepted on a best-effort basis |\n" +
+			"| Older minor lines and superseded patches | Unsupported; upgrade to the latest supported patch |\n" +
+			"| `main` | Active development only |\n",
 	}
 	for _, path := range releaseTestDocumentationPaths {
 		files[path] = "Source version: VERSION\nHistorical Bridra " + version + " remains unchanged.\n"

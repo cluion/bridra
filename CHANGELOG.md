@@ -3,7 +3,7 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
-## [Unreleased]
+## [0.23.0] - 2026-10-19
 
 ### Added
 
@@ -18,9 +18,31 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
   paused stream on cancellation. Distinguish premature stream EOF and HTTP status
   errors so subscriptions retry outages while preserving terminal protocol and
   authorization failures.
+- Suspend a subscription's idle watchdog even when a read is already pending at
+  pause time. Resume starts a fresh idle interval; cancellation and connection or
+  total deadlines remain effective.
+
+### Fixed
+
+- Check application RPC protocol consistency in Doctor using the upgrade
+  planner's shared validation. Metadata schema 2/3, schema and generated Go/Dart
+  constants must agree; custom application protocols remain valid. Generated
+  `make verify` now catches these mismatches. Legacy metadata schema 1 is
+  explicitly unchecked and warns instead of implying contract validation.
+- Disable automatic VCS stamping for desktop Sidecar Go builds, retaining
+  trimmed paths, native macOS build flags, signing and final artifact checksums.
+  Checkout/archive comparisons no longer depend on implicit Git metadata;
+  product release evidence must retain the source revision explicitly.
 
 ### Changed
 
+- Keep support/security policies version-independent, tied to the latest
+  published minor line. Release checks still require the policy's eligibility,
+  publication boundary and supported/unsupported claims.
+- Accept an explicit `release prepare --date YYYY-MM-DD` (Make `RELEASE_DATE`,
+  PowerShell `-ReleaseDate`) to synchronize both changelog dates while preserving
+  notes and historical entries. Final checks reject invalid or differing dates;
+  omitting the option retains the `Unreleased` workflow.
 - Combine CI verification and coverage into one race-enabled test pass, select
   representative checks for ordinary application/CLI changes, and retain complete
   platform/runtime verification for releases and high-risk shared changes.
@@ -30,6 +52,31 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
   protected publication, OIDC and provenance/SBOM attestations.
 - Concentrate final-SHA release validation in tag CI and public installation
   acceptance in one fresh external consumer rather than repeated local rehearsals.
+- Reuse complete, recent, trusted PR platform/coverage verification only when its
+  tested merge tree exactly matches the tag. Missing, partial or mismatched
+  evidence falls back to full verification. Exact-tag package dry-run,
+  reproducible builds and protected publication remain mandatory.
+
+### Compatibility
+
+- Go subscription producers/replay buffers and Flutter `RpcSubscriptions.subscribe`
+  are additive APIs. Existing `RpcClient` implementers and generated streaming
+  methods remain compatible; subscription envelopes are opt-in application data.
+- The registered `0.22.0` to `0.23.0` dependency transition is automatic after
+  earlier required adoption is complete. It preserves application-owned code,
+  schema, runners, protocol and the adopted template baseline. New projects still
+  use Template `9`; RPC protocol baseline `1`, project metadata schema `3` and
+  CLI upgrade-report schema `5` are unchanged.
+- Resume uses the last delivered cursor, not a durable processing acknowledgment.
+  Applications own authorization, persistent replay/checkpoints, idempotent
+  handling and explicit snapshot/resync after cursor expiry. See
+  [the upgrade guide](docs/UPGRADING.md#framework-0220-to-0230).
+
+### Support
+
+- The latest `0.23.x` release receives best-effort security fixes until the next
+  minor line is published. The `0.22.x` line remains supported until this release
+  is published, then becomes unsupported.
 
 ## [0.22.0] - 2026-10-17
 
