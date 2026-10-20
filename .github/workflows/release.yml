@@ -94,6 +94,8 @@ jobs:
 
   public-release:
     needs: [source, candidate]
+    # The unused verification branch is skipped in either valid release path.
+    if: ${{ !cancelled() && needs.source.result == 'success' && needs.candidate.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: public-release

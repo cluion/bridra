@@ -7,9 +7,11 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 import zipfile
@@ -333,6 +335,47 @@ class PublicationGateTests(unittest.TestCase):
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_publication_condition_handles_skipped_ancestors_without_bypassing_gates(self):
+        # Evaluate the actual job predicate over both release paths and failed
+        # gates. This checks its boolean contract, not GitHub's job scheduler.
+        workflow = (Path(__file__).resolve().parent.parent /
+                    '.github/workflows/release.yml').read_text()
+        job = re.split(r'\n  [a-z][\w-]*:\n',
+                       workflow.split('\n  public-release:\n', 1)[1])[0]
+        self.assertIn('    needs: [source, candidate]\n', job)
+        self.assertIn('    environment: public-release\n', job)
+        conditions = re.findall(r'^    if: (.+)$', job, re.MULTILINE)
+        self.assertEqual(len(conditions), 1)
+        expression = conditions[0].removeprefix('${{').removesuffix('}}').strip()
+        # A predicate without a status function still has implicit success(),
+        # which blocks both paths because one ancestor was deliberately skipped.
+        self.assertRegex(expression, r'\b(?:always|cancelled|failure|success)\(\)')
+        expression = expression.replace('&&', 'and').replace('||', 'or')
+        expression = re.sub(r'!(?!=)', 'not ', expression)
+        for reuse in (True, False):
+            for cancelled in (False, True):
+                for source in ('success', 'failure', 'cancelled', 'skipped', ''):
+                    for candidate in ('success', 'failure', 'cancelled', 'skipped', ''):
+                        results = {
+                            'source': source, 'candidate': candidate,
+                            'verify': 'skipped' if reuse else 'success',
+                            'package': 'success' if reuse else 'skipped',
+                        }
+                        context = {
+                            'needs': SimpleNamespace(**{
+                                key: SimpleNamespace(result=value)
+                                for key, value in results.items()}),
+                            'always': lambda: True,
+                            'cancelled': lambda: cancelled,
+                            'success': lambda: all(value == 'success' for value in results.values()),
+                            'failure': lambda: 'failure' in results.values(),
+                        }
+                        with self.subTest(reuse=reuse, cancelled=cancelled,
+                                          source=source, candidate=candidate):
+                            self.assertEqual(
+                                eval(expression, {'__builtins__': {}}, context),
+                                not cancelled and source == candidate == 'success')
+
     def test_publication_protection_and_shared_exact_tag_packaging_remain(self):
         root = Path(__file__).resolve().parent.parent
         workflow = (root/'.github/workflows/release.yml').read_text()

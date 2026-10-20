@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.23.1 - 2026-10-20
+
+- Carry the subscription APIs and fixes described in `0.23.0`, whose publication
+  workflow skipped the pub.dev upload. The original Git tag remains unchanged.
+- Fix the protected publication gate without changing public Dart APIs or RPC
+  payloads. Use `0.23.1` as the dependency target when upgrading from `0.22.0`.
+
 ## 0.23.0 - 2026-10-19
 
 - Add the opt-in `RpcSubscriptions.subscribe` extension, `RpcSubscriptionPolicy`
