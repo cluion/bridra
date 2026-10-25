@@ -97,7 +97,6 @@ class _StarterAppState extends State<StarterApp> {
         listenable: _workspace,
         builder: (context, _) => AppShell(
           desktopWindowControls: widget.desktopWindowControls,
-          productName: widget.productName,
           destination: _destination,
           onDestinationChanged: _navigate,
           onBack: _historyIndex > 0 ? _goBack : null,

@@ -20,22 +20,28 @@ Workspace contains a working greeting request/response flow. Runtime displays
 the same connection's health, Guide provides copyable development commands, and
 Settings offers System/Light/Dark appearance controls.
 Navigation, sidebar collapse and appearance changes retain the connection and
-request draft. The top toolbar places Back, Forward and animated sidebar
-controls after the application name, followed by the current page title on the
-same row. The header shares the sidebar background. The toggle stays available
+request draft. The top toolbar keeps Back, Forward and the sidebar toggle at the
+left, without repeating the application name. A short divider separates them
+from the page title. Expanded desktop navigation aligns this heading
+with the main content; collapsed and overlay navigation move it beside the
+buttons. Only the heading moves, following the sidebar animation and honoring
+reduced motion. The header shares the sidebar
+background. The toggle stays available
 at every size: it expands the icon sidebar on desktops and opens an overlay
 below the header in narrow windows. Section history remains in memory.
 Settings opens inside the main content card and participates in Back/Forward
 history. The sidebar keeps it at the bottom, with an icon and label when expanded
-and a tooltip when compact. Narrow windows also expose Settings in bottom
-navigation and the overlay sidebar. Backend health details remain in Runtime;
+and a tooltip when compact. Narrow desktop windows use the overlay sidebar
+without a duplicate bottom navigation bar; Android and iOS retain bottom
+navigation with all four sections. Settings remains accessible through the
+overlay on every platform. Backend health details remain in Runtime;
 there is no toolbar/sidebar status badge. Appearance defaults to System and
 follows device changes; explicit appearance and sidebar choices last for the
 current process.
 Add application-owned persistence or routing when needed.
 
 {{if or (hasPlatform "windows") (hasPlatform "linux")}}Windows/Linux use the same toolbar for minimize, maximize/restore and close,
-without a separate native title row. Drag the product/page title area to move the
+without a separate native title row. Drag the page-title area to move the
 window, or double-click it to maximize/restore. Resize edges and keyboard-focusable
 window buttons remain available. The application-owned adapter lives in
 `lib/ui/window/desktop_window.dart` and uses `window_manager`; its initialization
@@ -74,8 +80,9 @@ portable typography should bundle appropriately licensed fonts.
 
 {{end}}
 {{if hasPlatform "macos"}}The macOS starter draws its interface into a transparent title bar, retaining
-native window controls and dragging. The toolbar places the app name and
-navigation controls beside the native buttons. Window styling lives in
+native window controls and dragging. Toolbar controls stay beside the native
+buttons in both sidebar states; only the page heading follows the main content.
+Window styling lives in
 `macos/Runner/MainFlutterWindow.swift`.
 
 On macOS, `make macos-native-test` verifies the native lifecycle bridge used to
