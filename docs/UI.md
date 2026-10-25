@@ -14,7 +14,7 @@ lib/
   ui/
     theme/app_theme.dart            Light/dark themes and Linux CJK fallback
     layout/app_shell.dart           Adaptive sidebar and section navigation
-    layout/window_toolbar.dart      Product/page titles, back/forward and sidebar controls
+    layout/window_toolbar.dart      Page title, back/forward and sidebar controls
     window/desktop_window.dart       Desktop bootstrap, drag regions and window buttons
     widgets/section.dart            Shared panel surfaces
     widgets/app_toast.dart          Floating, nonblocking copy confirmations
@@ -60,10 +60,11 @@ The shell uses the available window size:
 - At least 760 logical pixels wide and 480 high: a 64-pixel icon sidebar by
   default. The toolbar toggle expands it to 240 pixels at any desktop width.
 - At least 1100 wide: a 240-pixel sidebar with full-row navigation selection and
-  a fixed Settings destination at the bottom. The top toolbar remains fixed
-  while the sidebar animates between 240 and 64 pixels.
-- Smaller or shorter windows: bottom navigation for all four sections and
-  vertically stacked content.
+  a fixed Settings destination at the bottom. Navigation controls stay at the
+  left while the page heading aligns with the expanded main content.
+- Smaller or shorter windows: vertically stacked content. Desktop platforms use
+  the toolbar's overlay sidebar without a duplicate bottom navigation bar;
+  Android and iOS retain bottom navigation for all four sections.
   The same toolbar toggle opens and closes an overlay sidebar below the header;
   selecting a section, pressing Escape or tapping the scrim also closes it.
 - The request/response area uses two columns only when its own available width
@@ -72,7 +73,8 @@ The shell uses the available window size:
 The sidebar's bottom Settings destination opens a page inside the main content
 card, with the same Back/Forward history as other sections. It currently offers
 System, Light and Dark appearance through radio choices. Narrow windows expose
-Settings in bottom navigation and in the overlay sidebar. System is the default
+Settings in the overlay sidebar; Android and iOS also expose it in bottom
+navigation. System is the default
 and follows changes to the device appearance.
 The explicit appearance and sidebar choices last for the current process;
 applications own any preference persistence. Theme colors, field styles, buttons and Linux font
@@ -83,18 +85,27 @@ Runtime retains backend health details, while Workspace still reports request
 and connection failures. The navigation list scrolls independently
 when the available height or enlarged text requires more room.
 
-The top toolbar contains the application name, Back, Forward and the sidebar
-toggle in that order, followed by the current page title on the same row. The
-header shares the sidebar background. The header and sidebar have no separator
-lines. The row is 56 logical pixels high on macOS and 60 on other platforms.
+The top toolbar contains Back, Forward and the sidebar toggle in that order,
+followed by a short divider and current page title on the same row.
+The application name is
+retained as window metadata rather than repeated in the toolbar. The
+header shares the sidebar background. The header's bottom and sidebar's right
+edges have no separator lines. The row is 56 logical pixels high on macOS and
+60 on other platforms.
 Toolbar content is vertically centered in that row, with the content card
 starting directly below it. macOS sizes the native titlebar to the same height
 so the window buttons remain fully inside their containers, aligns their
 centers with the row and restores the alignment when AppKit repositions the buttons or
 their containers, including after window activation, updates, resizing or leaving
 fullscreen. macOS reserves the leading 88 logical
-pixels for native window controls, placing the name beside the green button; other platforms
-use normal leading spacing. There is no separate brand icon. Back and Forward
+pixels for native window controls. Navigation buttons stay beside those controls
+at every sidebar state; other platforms use normal leading spacing. Expanded
+desktop navigation aligns the page divider with the main content's leading edge,
+while collapsed and overlay navigation place it directly after the buttons.
+The page heading's 220-millisecond transition follows the sidebar's curve and
+honors reduced motion. Switching to overlay navigation resets only the heading
+inset so narrow windows retain all controls. There is no separate brand
+icon. Back and Forward
 follow local section visits, disable at history boundaries, and keep input and
 responses alive. Revisiting the current section adds no entry; selecting a new
 section after going back clears the forward branch. History keeps the most
@@ -126,7 +137,7 @@ On Windows and Linux, the entrypoint initializes the application-owned
 title bar and uses the existing 60-pixel toolbar for minimize, maximize/restore
 and close controls on the right. The buttons have tooltips, semantic labels and
 keyboard focus. Native window events update the maximize/restore state; closing
-uses the platform's normal close request. Product and page-title areas support
+uses the platform's normal close request. The page-title area supports
 dragging and double-click maximize/restore, while navigation buttons keep their
 own interactions. Resize edges remain available through the virtual window
 frame. The minimum native window size is 320 by 240 logical pixels, and narrow
@@ -144,7 +155,8 @@ Windows Developer Mode or an elevated development session.
 Backend health details live in Runtime; the toolbar and sidebar have no status
 badge. Settings sits near the bottom with an 8-pixel inset. Expanded sidebars
 show its icon and label; compact sidebars show its icon with a tooltip.
-A temporary narrow window uses compact or bottom navigation without resetting
+A temporary narrow window uses compact or overlay navigation, with bottom
+navigation retained on Android and iOS, without resetting
 the user's collapsed preference. The toolbar toggle remains
 visible and usable at every size. Open overlays close when returning to a desktop
 layout. Very short overlays scroll all navigation, including Settings, together.

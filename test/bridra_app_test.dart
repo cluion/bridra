@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -24,7 +25,7 @@ class ExitingBackend extends FakeBackend {
 
 void main() {
   testWidgets(
-    'places the macOS app name and toolbar beside native window controls',
+    'places compact macOS toolbar controls beside native window controls',
     (tester) async {
       tester.view.physicalSize = const Size(600, 700);
       tester.view.devicePixelRatio = 1;
@@ -32,18 +33,19 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       await tester.pumpWidget(BridraApp(connector: () async => FakeBackend()));
       await tester.pumpAndSettle();
-      expect(
-        tester.getTopLeft(find.text('Bridra')).dx,
-        greaterThanOrEqualTo(88),
-      );
+      expect(find.byKey(const Key('toolbar-product-name')), findsNothing);
       expect(
         tester.getTopLeft(find.byKey(const Key('navigation-back'))).dx,
-        greaterThan(tester.getTopLeft(find.text('Bridra')).dx),
+        88,
+      );
+      expect(
+        tester.getTopLeft(find.byKey(const Key('toolbar-page-divider'))).dx -
+            tester.getTopRight(find.byKey(const Key('sidebar-toggle'))).dx,
+        closeTo(16, 0.01),
       );
       final row = find.byKey(const Key('toolbar-row'));
       expect(tester.getSize(row).height, 56);
       for (final key in [
-        'toolbar-product-name',
         'navigation-back',
         'navigation-forward',
         'sidebar-toggle',
@@ -76,11 +78,31 @@ void main() {
       await tester.pumpAndSettle();
       final toggle = find.byKey(const Key('sidebar-toggle'));
       final navigation = find.byKey(const Key('desktop-navigation'));
+      final back = find.byKey(const Key('navigation-back'));
+      final title = find.byKey(const Key('toolbar-page-title'));
+      final backPosition = tester.getTopLeft(back);
+      final titlePosition = tester.getTopLeft(title);
       expect(tester.getSize(navigation).width, 64);
       expect(toggle.hitTestable(), findsOneWidget);
       await tester.tap(toggle);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 110));
+      final intermediateTitleX = tester.getTopLeft(title).dx;
+      expect(tester.getTopLeft(back), backPosition);
       await tester.pumpAndSettle();
       expect(tester.getSize(navigation).width, 240);
+      expect(tester.getTopLeft(back), backPosition);
+      expect(
+        tester.getTopLeft(find.byKey(const Key('toolbar-page-divider'))).dx,
+        240,
+      );
+      expect(
+        intermediateTitleX,
+        allOf(
+          greaterThan(titlePosition.dx),
+          lessThan(tester.getTopLeft(title).dx),
+        ),
+      );
       expect(find.byKey(const Key('workspace-heading')), findsNothing);
       for (final mode in ['dark', 'light']) {
         await tester.tap(find.byKey(const Key('destination-settings')));
@@ -97,7 +119,6 @@ void main() {
         final row = find.byKey(const Key('toolbar-row'));
         expect(tester.getSize(row).height, 60);
         for (final key in [
-          'toolbar-product-name',
           'navigation-back',
           'navigation-forward',
           'sidebar-toggle',
@@ -112,6 +133,8 @@ void main() {
       await tester.tap(toggle);
       await tester.pumpAndSettle();
       expect(tester.getSize(navigation).width, 64);
+      expect(tester.getTopLeft(back), backPosition);
+      expect(tester.getTopLeft(title), titlePosition);
       expect(tester.takeException(), isNull);
     },
   );
@@ -132,6 +155,13 @@ void main() {
       final toggle = find.byKey(const Key('sidebar-toggle'));
       final overlay = find.byKey(const Key('navigation-overlay'));
       final title = find.byKey(const Key('toolbar-page-title'));
+      final mobile =
+          defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS;
+      expect(
+        find.byKey(const Key('mobile-navigation')),
+        mobile ? findsOneWidget : findsNothing,
+      );
       expect(toggle.hitTestable(), findsOneWidget);
       await tester.tap(toggle);
       await tester.pumpAndSettle();
@@ -168,6 +198,13 @@ void main() {
       expect(backend.greetCalls, 1);
       expect(tester.takeException(), isNull);
     },
+    variant: TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.iOS,
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+      TargetPlatform.linux,
+    }),
   );
 
   testWidgets(
@@ -291,7 +328,10 @@ void main() {
     await tester.pumpWidget(BridraApp(connector: () async => FakeBackend()));
     await tester.pumpAndSettle();
 
-    expect(find.text('Bridra'), findsOneWidget);
+    expect(
+      tester.widget<MaterialApp>(find.byType(MaterialApp)).title,
+      'Bridra',
+    );
     expect(find.text('Request playground'), findsOneWidget);
     expect(find.byKey(const Key('runtime-status')), findsNothing);
     expect(
@@ -800,6 +840,12 @@ void main() {
     expect(
       tester.getSize(find.byKey(const Key('desktop-navigation'))).width,
       64,
+    );
+    expect(tester.getTopLeft(find.byKey(const Key('navigation-back'))).dx, 24);
+    expect(
+      tester.getTopLeft(find.byKey(const Key('toolbar-page-divider'))).dx -
+          tester.getTopRight(find.byKey(const Key('sidebar-toggle'))).dx,
+      16,
     );
     expect(tester.takeException(), isNull);
   });

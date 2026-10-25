@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -26,7 +27,6 @@ enum AppDestination {
 class AppShell extends StatefulWidget {
   const AppShell({
     super.key,
-    required this.productName,
     required this.destination,
     required this.onDestinationChanged,
     required this.onBack,
@@ -37,7 +37,6 @@ class AppShell extends StatefulWidget {
     this.desktopWindowControls = false,
   });
 
-  final String productName;
   final AppDestination destination;
   final ValueChanged<AppDestination> onDestinationChanged;
   final VoidCallback? onBack;
@@ -73,6 +72,9 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final mobile =
+        defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
     return LayoutBuilder(
       builder: (context, constraints) {
         final sidebar =
@@ -105,8 +107,13 @@ class _AppShellState extends State<AppShell> {
                   children: [
                     WindowToolbar(
                       desktopWindowControls: widget.desktopWindowControls,
-                      productName: widget.productName,
                       pageTitle: widget.destination.label,
+                      sidebarWidth: sidebar
+                          ? extended
+                                ? _expandedSidebarWidth
+                                : _collapsedSidebarWidth
+                          : 0,
+                      animationDuration: animationDuration,
                       onBack: widget.onBack == null
                           ? null
                           : () {
@@ -246,7 +253,7 @@ class _AppShellState extends State<AppShell> {
                 ),
               ),
             ),
-            bottomNavigationBar: sidebar
+            bottomNavigationBar: sidebar || !mobile
                 ? null
                 : NavigationBar(
                     key: const Key('mobile-navigation'),

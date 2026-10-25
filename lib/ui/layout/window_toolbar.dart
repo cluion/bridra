@@ -6,20 +6,22 @@ import '../window/desktop_window.dart';
 class WindowToolbar extends StatelessWidget {
   const WindowToolbar({
     super.key,
-    required this.productName,
     required this.pageTitle,
     required this.onBack,
     required this.onForward,
     required this.sidebarExpanded,
+    required this.sidebarWidth,
+    required this.animationDuration,
     required this.onSidebarToggled,
     this.desktopWindowControls = false,
   });
 
-  final String productName;
   final String pageTitle;
   final VoidCallback? onBack;
   final VoidCallback? onForward;
   final bool sidebarExpanded;
+  final double sidebarWidth;
+  final Duration animationDuration;
   final VoidCallback onSidebarToggled;
   final bool desktopWindowControls;
 
@@ -42,20 +44,12 @@ class WindowToolbar extends StatelessWidget {
               : 24.0;
           final buttonSize = mac || compact ? 36.0 : 44.0;
           final trailing = custom ? 8.0 : 12.0;
-          final productGap = compact ? 8.0 : 12.0;
           final pageGap = compact ? 8.0 : 16.0;
-          final controlsWidth = custom ? 3 * buttonSize + 8 : 0.0;
-          final titleWidth =
-              ((constraints.maxWidth -
-                          leading -
-                          trailing -
-                          productGap -
-                          pageGap -
-                          controlsWidth -
-                          3 * buttonSize) *
-                      0.4)
-                  .clamp(0.0, 160.0)
-                  .toDouble();
+          final pageInset = sidebarExpanded && sidebarWidth > 0
+              ? (sidebarWidth - leading - 3 * buttonSize)
+                    .clamp(pageGap, double.infinity)
+                    .toDouble()
+              : pageGap;
           return SizedBox(
             key: const Key('toolbar-row'),
             height: mac ? 56 : 60,
@@ -63,30 +57,6 @@ class WindowToolbar extends StatelessWidget {
               padding: EdgeInsets.only(left: leading, right: trailing),
               child: Row(
                 children: [
-                  ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: titleWidth),
-                    child: WindowDragRegion(
-                      enabled: custom,
-                      child: SizedBox(
-                        height: double.infinity,
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Tooltip(
-                            message: productName,
-                            child: Text(
-                              productName,
-                              key: const Key('toolbar-product-name'),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.titleSmall
-                                  ?.copyWith(fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: productGap),
                   _ToolbarButton(
                     key: const Key('navigation-back'),
                     size: buttonSize,
@@ -110,25 +80,45 @@ class WindowToolbar extends StatelessWidget {
                     icon: Icons.view_sidebar_outlined,
                     onPressed: onSidebarToggled,
                   ),
-                  SizedBox(width: pageGap),
                   Expanded(
-                    child: WindowDragRegion(
-                      key: const Key('toolbar-drag-region'),
-                      enabled: custom,
-                      child: SizedBox(
-                        height: double.infinity,
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Tooltip(
-                            message: pageTitle,
-                            child: Text(
-                              pageTitle,
-                              key: const Key('toolbar-page-title'),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.titleMedium
-                                  ?.copyWith(fontWeight: FontWeight.w600),
-                            ),
+                    child: AnimatedPadding(
+                      // Reset the title inset when navigation becomes an overlay.
+                      key: ValueKey(sidebarWidth > 0),
+                      duration: animationDuration,
+                      curve: Curves.easeInOutCubic,
+                      padding: EdgeInsets.only(left: pageInset),
+                      child: WindowDragRegion(
+                        key: const Key('toolbar-drag-region'),
+                        enabled: custom,
+                        child: SizedBox(
+                          height: double.infinity,
+                          child: Row(
+                            children: [
+                              SizedBox(
+                                key: const Key('toolbar-page-divider'),
+                                width: 1,
+                                height: 20,
+                                child: ColoredBox(
+                                  color: Theme.of(context).dividerColor,
+                                ),
+                              ),
+                              SizedBox(width: pageGap),
+                              Expanded(
+                                child: Tooltip(
+                                  message: pageTitle,
+                                  child: Text(
+                                    pageTitle,
+                                    key: const Key('toolbar-page-title'),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
