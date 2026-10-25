@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.23.2 - 2026-10-25
+
+- Align package metadata with the starter toolbar and narrow desktop navigation
+  fixes in Bridra `0.23.2`. These changes belong to generated applications; the
+  public Dart runtime APIs and RPC payloads are unchanged.
+- Dependency upgrades preserve application-owned UI, native runners, protocol and
+  the adopted template baseline. Adopt the optional starter layout explicitly;
+  Android and iOS retain bottom navigation in the updated starter.
+
 ## 0.23.1 - 2026-10-20
 
 - Carry the subscription APIs and fixes described in `0.23.0`, whose publication

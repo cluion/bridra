@@ -3,6 +3,35 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
+## [0.23.2] - 2026-10-25
+
+### Fixed
+
+- Keep Back, Forward and the sidebar toggle beside the native window controls
+  when the starter sidebar expands or collapses. Animate only the page heading,
+  align it with expanded content, and remove the repeated app name and page icon.
+- Remove duplicate bottom navigation from narrow desktop windows; the toolbar
+  still opens the overlay sidebar at every size. Android and iOS retain bottom
+  navigation. Preserve section history, request drafts, window actions and reduced
+  motion behavior.
+
+### Compatibility
+
+- Register an automatic dependency-only `0.23.1` to `0.23.2` transition. Earlier
+  registered versions follow every required migration hop and resolve dependencies
+  only at the final target; missing mandatory adoption still blocks automatic apply.
+- Public Go/Dart runtime APIs, RPC payloads, protocol baseline `1`, project
+  metadata schema `3`, Project Template `9` and upgrade-report schema `5` are
+  unchanged. Starter UI adoption is optional and never overwrites existing
+  application-owned files. See [the upgrade guide](docs/UPGRADING.md#framework-0231-to-0232).
+
+### Support
+
+- Only the latest published patch of the `0.23.x` line receives best-effort
+  security fixes until the next minor line is published. `0.23.1` remains the
+  supported patch until `0.23.2` is published, then is superseded. This prepared
+  candidate is not a supported release before publication.
+
 ## [0.23.1] - 2026-10-20
 
 ### Fixed
