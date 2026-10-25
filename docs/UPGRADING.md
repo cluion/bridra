@@ -65,6 +65,65 @@ The historical sections below describe each release's full migration scope.
 The current planner filters their classified platform requirements as described
 above; it does not rewrite application-owned files.
 
+## Framework 0.23.1 to 0.23.2
+
+Version `0.23.2` refines the application-owned starter toolbar and responsive
+navigation. Public Go/Dart runtime APIs, RPC payloads, Template RPC protocol
+baseline `1`, project metadata schema `3`, Project Template `9` and CLI
+upgrade-report schema `5` remain unchanged. No database migration or RPC
+regeneration is required for the dependency update.
+
+### Dependency update
+
+After `0.23.2` is published, install its CLI through the
+[quick start](../README.md#quick-start), then inspect and explicitly apply the plan:
+
+```bash
+bridra upgrade --plan --to 0.23.2 --root /path/to/project
+bridra upgrade --apply --to 0.23.2 --root /path/to/project
+```
+
+The `0.23.1` to `0.23.2` hop is automatic when earlier required adoption is
+complete. A project on `0.22.0` follows `0.22.0` to `0.23.0`, `0.23.1`, then
+`0.23.2`; dependencies resolve only at the final target, without requesting the
+unpublished intermediate `0.23.0` Flutter package. Older registered releases
+retain all applicable mandatory steps rather than skipping them for this patch.
+
+Apply updates Go/Flutter dependencies, lockfiles and framework metadata and runs
+project verification. It preserves application-owned UI, native runners, schema,
+generated contracts, custom application protocol, selected platforms and the
+adopted template baseline. Verification failure rolls back the managed dependency,
+lockfile and metadata changes. Updating dependencies does not update the installed
+CLI or adopt the new starter layout.
+
+### Optional starter adoption
+
+Newly generated projects keep Back, Forward and the sidebar toggle beside the
+native window controls, omit the repeated app name and page icon, and animate
+only the page heading with sidebar expansion. Narrow desktop windows use the
+overlay sidebar without bottom navigation; Android and iOS retain bottom
+navigation. Window metadata still contains the application name.
+
+To adopt these changes in an existing project, generate a disposable project
+with CLI `0.23.2` for the same platforms. Compare its
+`lib/ui/layout/app_shell.dart`, `lib/ui/layout/window_toolbar.dart`,
+`lib/app/starter_app.dart` and associated widget tests with your application.
+Adopt the related edits together: the shell/toolbar no longer take a repeated
+`productName`, and the toolbar now receives sidebar width and animation duration.
+The application's `StarterApp.productName` still supplies window metadata.
+Preserve custom routing, backend connections, window initialization and native
+runners. Verify narrow/expanded layouts, Back/Forward history, sidebar controls,
+appearance and native window actions on the platforms you ship. Template `9`
+remains the baseline; optional visual refinements do not require relabeling it.
+
+### Rollback
+
+Restore the application's previous reviewed dependencies, metadata and lockfiles
+together, then resolve dependencies and verify the project. Restore any explicitly
+adopted UI files from the same prior commit. The upgrade planner refuses
+downgrades; it is not a rollback command. This patch does not migrate or remove
+application data.
+
 ## Framework 0.23.1 publication recovery
 
 Use `0.23.1` for the subscription and verification changes described below.
