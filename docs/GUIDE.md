@@ -944,6 +944,27 @@ uploads, forces the backend offline, then repeats the complete flow after
 reconnect. The script stops only its temporary backend; Emulator lifecycle stays
 with Android Studio or the CI runner.
 
+The smoke script records observed startup milestones and Flutter verbose output.
+The initial stream watchdog still includes APK build, install, and test startup;
+its error alone does not establish that an RPC request reached the backend.
+To retain failure diagnostics locally, set an output directory:
+
+```bash
+BRIDRA_ANDROID_EMULATOR_DIAGNOSTICS_DIR=/tmp/bridra-android-diagnostics \
+  make android-emulator-smoke
+```
+
+Before stopping its Flutter process, the script captures main/system/crash
+Logcat buffers, Activity and process state, ADB forwards, and a screenshot.
+Each diagnostic command has a three-second limit, within a thirty-second
+collection budget. Text files retain at most the last 2 MiB after token
+redaction. Milestone timestamps report when a stage was observed, not its exact
+completion time. CI uploads the directory on smoke failure as
+`android-emulator-diagnostics-<attempt>`, retained for fourteen days. Capture is
+best effort: an unavailable device may leave partial diagnostics. Review logs
+and screenshots before sharing; redaction cannot remove arbitrary app content.
+The existing smoke assertions, watchdog budgets, and failure gate remain in place.
+
 For a physical device, pass a reachable LAN or HTTPS URL:
 
 ```bash
