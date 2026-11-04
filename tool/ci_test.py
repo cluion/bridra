@@ -616,6 +616,27 @@ class WorkflowWiringTests(unittest.TestCase):
         workflow = (Path(__file__).resolve().parent.parent / '.github/workflows/checks.yml').read_text()
         return re.split(r'\n  [a-z][a-z0-9-]*:\n', workflow.split(f'\n  {name}:\n', 1)[1], 1)[0]
 
+    def test_android_failure_artifacts_preserve_the_original_gate_and_budgets(self):
+        body = self.job('android-emulator')
+        self.assertIn('timeout-minutes: 30', body)
+        self.assertIn('id: android_emulator_smoke', body)
+        self.assertIn('BRIDRA_ANDROID_EMULATOR_DIAGNOSTICS_DIR: ${{ runner.temp }}', body)
+        self.assertIn("if: ${{ always() && steps.android_emulator_smoke.outcome == 'failure' }}", body)
+        self.assertIn('name: android-emulator-diagnostics-${{ github.run_attempt }}', body)
+        self.assertIn('retention-days: 14', body)
+        self.assertIn('api-level: 35', body)
+        self.assertIn('disable-animations: true', body)
+        self.assertEqual(body.count('script: make android-emulator-smoke'), 1)
+        self.assertNotIn('continue-on-error', body)
+        self.assertNotIn('retry', body.lower())
+        self.assertIn('android_emulator_smoke_test.py', body)
+        source = Path(__file__).with_name('android_emulator_smoke.sh').read_text()
+        self.assertEqual(source.count("' 3000; then"), 4)
+        self.assertIn('if [ "$attempt" -ge 120 ]; then', source)
+        self.assertIn('if [ "$attempt" -ge 100 ]; then', source)
+        self.assertIn('sleep 0.2', source)
+        self.assertIn('sleep 5', source)
+
     def test_windows_detailed_logging_does_not_filter_native_suites(self):
         windows = self.job('windows-verify')
         self.assertIn('GOFLAGS: -v', windows)

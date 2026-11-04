@@ -140,6 +140,21 @@ ordered Streaming/Progress, interrupted and resumed managed downloads/uploads,
 a backend outage, and the complete flow again after reconnect. Debug and Profile
 manifests allow local cleartext traffic; Release keeps Android's secure default.
 
+Startup milestones and Flutter verbose logs help distinguish build/install and
+test startup from an RPC failure. To retain failure diagnostics, run:
+
+```bash
+BRIDRA_ANDROID_EMULATOR_DIAGNOSTICS_DIR=/tmp/bridra-android-diagnostics \
+  make android-emulator-smoke
+```
+
+Before stopping Flutter, capture attempts collect main/system/crash Logcat,
+Activity/process state, ADB forwards, and a screenshot. Collection is bounded to
+three seconds per command and thirty seconds overall; each text file retains at
+most the last 2 MiB after token redaction. Unavailable devices may yield partial
+files. Review logs and screenshots before sharing. Existing smoke assertions
+and watchdog budgets are unchanged; no automatic retry is added.
+
 {{end}}{{if hasPlatform "ios"}}On macOS with full Xcode, exercise the generated iOS app and real Go HTTP
 backend in a Simulator or on a trusted physical iPhone:
 

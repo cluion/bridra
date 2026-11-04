@@ -709,6 +709,7 @@ func TestStarterUIMatchesReferenceApplication(t *testing.T) {
 		"integration_test/http_smoke_test.dart",
 		"macos/Runner/MainFlutterWindow.swift",
 		"macos/RunnerTests/RunnerTests.swift",
+		"tool/android_emulator_smoke.sh",
 	} {
 		reference, err := os.ReadFile(filepath.Join(repositoryRoot(t), relative))
 		if err != nil {

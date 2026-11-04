@@ -860,7 +860,8 @@ The GitHub Actions workflow is configured to build and verify:
 
 - Linux, Android, and Web on Ubuntu
 - a real Android Emulator HTTP recovery, Streaming／Progress, and resumable
-  transfer gate on Ubuntu with KVM acceleration
+  transfer gate on Ubuntu with KVM acceleration, observed startup milestones,
+  and bounded diagnostics captured before Emulator shutdown and uploaded on failure
 - macOS plus real iOS Simulator Health／Greeting, Streaming／Progress, and
   resumable managed download/upload HTTP round trips on macOS, with bounded
   total/no-progress watchdogs and uploaded failure diagnostics
