@@ -477,6 +477,11 @@ created with only desktop targets.
 | Windows | Matching-architecture MSVC Native Tools prompt, Windows SDK with C++/WinRT, extracted Microsoft.Web.WebView2 SDK | Directory with the app and native host executables, requires Microsoft Edge WebView2 Runtime |
 | Linux | C compiler, pkg-config and development packages for GTK 4, WebKitGTK 6.0 and libsoup 3 | Directory with the app and native host executables, requires the matching shared libraries |
 
+Run `bridra doctor --strict` on the build host to check the native tools for
+its selected desktop target. For a project with vendored Go dependencies,
+the launcher build uses Go's normal vendor selection. Keep the generated
+`backend/vendor/` with the project when packaging on an offline host.
+
 On Windows set `BRIDRA_WEBVIEW2_SDK` to the extracted SDK directory containing
 `build/native/`, or restore Microsoft.Web.WebView2 1.0.4314.35 to the local
 NuGet cache. Keep all files inside each desktop output together. The CLI

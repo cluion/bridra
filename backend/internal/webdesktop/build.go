@@ -207,13 +207,21 @@ func buildLauncher(c Config, work, output string) error {
 	if err := errors.Join(t.Execute(f, c), f.Close()); err != nil {
 		return err
 	}
-	args := []string{"build", "-overlay=" + overlayPath, "-buildvcs=false", "-mod=readonly", "-trimpath", "-o", output}
+	args := []string{"build", "-overlay=" + overlayPath, "-buildvcs=false", "-trimpath", "-o", output}
 	if c.Target == "windows" {
 		args = append(args, "-ldflags=-H=windowsgui")
 	}
 	cmd := exec.Command("go", append(args, mainPath)...)
 	cmd.Dir = backend
 	cmd.Env = append(cmd.Environ(), "GOOS="+runtime.GOOS, "GOARCH="+runtime.GOARCH)
+	if workspace := os.Getenv("GOWORK"); filepath.IsAbs(workspace) {
+		// Resolve directory aliases consistently with the overlay. The work file itself can be a symlink.
+		dir, err := filepath.EvalSymlinks(filepath.Dir(workspace))
+		if err != nil {
+			return fmt.Errorf("resolve Go workspace directory: %w", err)
+		}
+		cmd.Env = append(cmd.Env, "GOWORK="+filepath.Join(dir, filepath.Base(workspace)))
+	}
 	if message, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("build desktop backend: %w: %s", err, message)
 	}

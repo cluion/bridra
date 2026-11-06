@@ -160,6 +160,7 @@ func (item doctorCommand) inspect(root string) doctorReport {
 				report.add(doctorOK, tool, "available")
 			}
 		}
+		item.checkWebHost(metadata.Platforms, &report)
 		return report
 	}
 	configuration, configurationOK := item.checkFVMConfiguration(root, &report)
