@@ -65,6 +65,69 @@ The historical sections below describe each release's full migration scope.
 The current planner filters their classified platform requirements as described
 above; it does not rewrite application-owned files.
 
+## Framework 0.23.2 to 0.24.0
+
+Version `0.24.0` adds Vue and React starters for websites and desktop apps.
+Existing Flutter projects can take the framework dependency update independently.
+
+### Existing Flutter projects
+
+After publication, install the `0.24.0` CLI and run the planner from the
+application root. Review the reported steps before applying them.
+
+```bash
+go install github.com/cluion/bridra/backend/cmd/bridra@v0.24.0
+bridra upgrade --plan --json --to 0.24.0
+```
+
+The `0.23.2` to `0.24.0` step is automatic when earlier required adoption is
+complete. If the report shows `"applyAvailable": true`, apply the plan
+and confirm the subsequent plan reports `current`.
+
+```bash
+bridra upgrade --apply --to 0.24.0
+bridra upgrade --plan --to 0.24.0
+```
+
+Apply synchronizes Go and Flutter dependencies, lockfiles and framework
+metadata, then runs the project's `make verify`. Flutter projects continue to
+use metadata schema `3` and keep their selected platforms, application-owned
+UI, RPC contract and adopted template baseline. New Flutter projects still
+use Project Template `9` and start at RPC protocol `1`.
+
+### Optional Android startup diagnostics
+
+If your project runs the Android Emulator smoke test, compare its
+`tool/android_emulator_smoke.sh` with the script in a disposable Android
+starter generated with CLI `0.24.0`. Adopt the diagnostic changes alongside
+your project's existing assertions and watchdog settings. On failure, the
+updated script can retain Flutter startup logs and collect bounded device
+diagnostics before shutdown. To select a local output directory, run:
+
+```bash
+BRIDRA_ANDROID_EMULATOR_DIAGNOSTICS_DIR="$PWD/build/android-diagnostics" \
+  make android-emulator-smoke
+```
+
+### New Vue and React projects
+
+Create a separate project with `--ui vue` or `--ui react`. Select
+`--platforms web,macos,windows,linux` to share one frontend build across the
+website and desktop targets. These starters use metadata schema `4` and a
+generated TypeScript client for unary RPC. The upgrade planner reports
+`web_ui_upgrade_unavailable` for Web UI projects. To verify a new project,
+run `bridra generate --check`, build the frontend once and pass the SHA-256
+from `bridra build web` to each native build. See the
+[desktop packaging guide](GUIDE.md#package-a-web-ui-for-desktop).
+
+### Rollback
+
+A failed apply restores its managed dependency, lockfile and metadata
+changes. To roll back a completed update, restore the previous reviewed
+`backend/go.mod`, `backend/go.sum`, `pubspec.yaml`, `pubspec.lock` and
+`.bridra/project.json` together. Restore any separately adopted Android
+script from the same revision, then rerun `make verify`.
+
 ## Framework 0.23.1 to 0.23.2
 
 Version `0.23.2` refines the application-owned starter toolbar and responsive

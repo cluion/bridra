@@ -809,6 +809,34 @@ func TestCurrentUpgradeCatalogIncludesAutomaticCreateHotfix(t *testing.T) {
 	}
 }
 
+func TestUpgradeToWebStarterReleaseKeepsAndroidDiagnosticsOptional(t *testing.T) {
+	for _, template := range []int{8, 9} {
+		t.Run(fmt.Sprintf("template-%d", template), func(t *testing.T) {
+			root := makeUpgradeProjectRoot(t, upgradeMetadataForPlatforms(t, "0.23.2", template, []string{"android"}))
+			before := releaseTestSnapshot(t, root)
+			var stdout bytes.Buffer
+			err := testUpgradeCommand().run([]string{"--plan", "--json", "--to", "0.24.0", "--root", root}, &stdout, &bytes.Buffer{})
+			if !errors.Is(err, errUpgradeRequired) {
+				t.Fatalf("upgrade error = %v", err)
+			}
+			var report upgradeReport
+			if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+				t.Fatal(err)
+			}
+			if !report.ApplyAvailable || len(report.Steps) != 1 || !report.Steps[0].Automatic ||
+				report.Steps[0].ID != "framework-0.23.2-to-0.24.0" ||
+				report.Project.TemplateVersion != template || report.Project.ProtocolVersion != 3 ||
+				report.Target.ProjectMetadataVersion != 3 || report.Target.TemplateVersion != 9 ||
+				report.Target.TemplateProtocolVersion != 1 {
+				t.Fatalf("Flutter upgrade plan = %#v", report)
+			}
+			if releaseTestSnapshot(t, root) != before {
+				t.Fatal("plan modified the application")
+			}
+		})
+	}
+}
+
 func TestCurrentUpgradeCatalogIncludesAutomaticConcurrentRPCRelease(t *testing.T) {
 	path, available, err := currentUpgradeCatalog().migrationPath("0.1.1", "0.2.0")
 	if err != nil {
