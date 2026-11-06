@@ -139,7 +139,7 @@ make verify
 make run
 ```
 
-The six-platform scope remains the default. Use `--platforms desktop`,
+Flutter is the default UI and selects all six platforms. Use `--platforms desktop`,
 `--platforms mobile`, or a custom list such as `--platforms macos,web` when the
 product intentionally supports a smaller set. The selected scope is committed
 in `.bridra/project.json` and drives generated runners, targets, and checks.
@@ -148,6 +148,37 @@ The generated project owns its Flutter UI, Go application layers, current RPC
 schema, immutable deployed-schema baseline, native runners, and tests. Framework
 packages remain versioned dependencies, so application code can evolve
 independently. `make verify` checks the current schema against that baseline.
+
+### Create a Vue or React application
+
+With the CLI built from this checkout, select a frontend with `--ui vue` or
+`--ui react`. Both starters target the web by default and use Go, Node.js and
+npm. The frontend calls the project's Go backend through the TypeScript client
+generated from `schema/bridra.json`.
+
+```bash
+bridra create portal --module example.com/portal/backend --ui vue
+cd portal
+(cd frontend && npm ci && npm run build)
+bridra build web
+```
+
+`npm run build` compiles the frontend into `frontend/dist/`. `bridra build web`
+packages those exact files into `build/bridra/web/<sha256>/dist/` and writes
+`manifest.json` alongside it. Keep the packaged directory and its manifest
+together to verify the same assets in another target.
+
+Serve the packaged files at the website root. Route same-origin `/rpc` to an
+authenticated gateway which validates the user's session and supplies the
+backend credential on the server. Keep that credential out of frontend code
+and static assets. See [HTTP security](docs/HTTP_SECURITY.md).
+
+To use that same dist on desktop, select the targets at creation with
+`--platforms web,macos,windows,linux`. Copy the web package directory to the
+same project-relative path on each build host. Run
+`bridra build <target> --web-dist-sha256 <sha256>` there. The command verifies
+and copies the packaged files, then builds the project’s Go backend and native
+WebView host. See [desktop build requirements](docs/GUIDE.md#package-a-web-ui-for-desktop).
 
 ## Everyday commands
 

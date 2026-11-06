@@ -356,7 +356,7 @@ publication.
 
 ## Create a Bridra project
 
-`bridra create` builds a Flutter application and Go backend in a staging
+`bridra create` defaults to Flutter. It builds the application and Go backend in a staging
 directory, verifies the generated Go consumer, resolves Flutter
 dependencies, and only then atomically publishes the destination:
 
@@ -393,7 +393,7 @@ go run ./cmd/bridra create hello_app \
   --directory ../hello_app
 ```
 
-The generated starter includes:
+The Flutter starter includes:
 
 - Flutter runners for the selected platforms
 - Go Sidecar and HTTP server entrypoints
@@ -422,6 +422,83 @@ read-only plan; `--to` selects a known target and the CLI refuses incomplete
 cross-version paths without modifying any project file. `--apply` is available
 only when every step is automatic; it synchronizes Go, Flutter, lockfiles, and
 metadata, runs full verification, and restores the managed files on failure.
+
+### Vue and React starters
+
+Choose `--ui vue` or `--ui react` when creating the project. Both presets use
+the same Go HTTP backend template, schema and TypeScript transport. They
+default to the `web` target. Run `bridra generate` after editing the schema
+and `bridra generate --check` to detect stale Go or TypeScript files. The
+initial Web client supports unary RPC methods.
+
+Compile the selected frontend once, then package its static files:
+
+```bash
+bridra create portal --ui react --module example.com/portal/backend
+cd portal
+(cd frontend && npm ci && npm run build)
+bridra build web
+```
+
+The build prints the packaged `dist/` path, a tree SHA-256 and the path to a
+manifest of per-file SHA-256 values. Repackaging the same bytes yields the
+same digest. Preserve the directory with its manifest to reuse it for desktop
+packaging. The generated README includes a working loopback preview with
+Caddy. For deployment, serve those files at the website root and route
+`/rpc` through an authenticated same-origin gateway.
+
+Web UI projects use project metadata schema 4. Existing Flutter projects
+keep their UI and selected platforms. Web UI development uses Vite, and
+automatic Web UI project upgrades are pending.
+
+#### Package a Web UI for desktop
+
+Create a project with `--platforms web,macos,windows,linux` to enable the
+website and all three desktop targets. After `bridra build web`, distribute
+the **entire** `build/bridra/web/<sha256>/` directory alongside the same
+project sources to each build host. Supply the digest printed by the web
+build to the command for that OS:
+
+```text
+bridra build macos   --web-dist-sha256 <sha256>
+bridra build windows --web-dist-sha256 <sha256>
+bridra build linux   --web-dist-sha256 <sha256>
+```
+
+Each build needs Go and the CLI. The pinned build reads the saved manifest and
+dist without invoking Node or accessing `frontend/dist/`. Missing files, extra
+files or changes to their bytes fail the build. Without a pin, the CLI
+snapshots the current compiled frontend first. This also works for projects
+created with only desktop targets.
+
+| Build host | Native build tools | Runnable output |
+| --- | --- | --- |
+| macOS | Xcode command-line tools with Swift and the macOS SDK | Ad-hoc signed `.app` using WKWebView, macOS 13+ |
+| Windows | Matching-architecture MSVC Native Tools prompt, Windows SDK with C++/WinRT, extracted Microsoft.Web.WebView2 SDK | Directory with the app and native host executables, requires Microsoft Edge WebView2 Runtime |
+| Linux | C compiler, pkg-config and development packages for GTK 4, WebKitGTK 6.0 and libsoup 3 | Directory with the app and native host executables, requires the matching shared libraries |
+
+Run `bridra doctor --strict` on the build host to check the native tools for
+its selected desktop target. For a project with vendored Go dependencies,
+the launcher build uses Go's normal vendor selection. Keep the generated
+`backend/vendor/` with the project when packaging on an offline host.
+
+On Windows set `BRIDRA_WEBVIEW2_SDK` to the extracted SDK directory containing
+`build/native/`, or restore Microsoft.Web.WebView2 1.0.4314.35 to the local
+NuGet cache. Keep all files inside each desktop output together. The CLI
+prints a package SHA-256 for the complete target and a dist SHA-256 shared with
+the website. These runnable outputs are for local use; public distribution
+requires platform-specific signing or installer preparation.
+
+The launcher runs the project's `backend/app` in-process. It serves the
+packaged files and same-origin unary RPC on a randomly assigned loopback port.
+The native host exchanges a private one-time launch proof for an HttpOnly
+session cookie. The backend credential stays inside the launcher and closing
+the native window shuts down the local server. Website deployments keep their
+own server-side authentication gateway.
+
+The native window uses the project name. Use hash-based routing for a starter
+with several views and keep frontend assets at the origin root. The desktop
+gateway serves packaged files and opens `/` as its application document.
 
 ## Scaffold application components
 
@@ -504,7 +581,7 @@ development defaults, not production authentication or transport security.
 
 ## Build application artifacts
 
-`bridra build` is the shared build policy used by the Make and Windows PowerShell
+For Flutter projects, `bridra build` is the shared build policy used by the Make and Windows PowerShell
 entrypoints. Desktop targets bundle a Go Sidecar; Android, iOS, and Web compile an
 HTTP endpoint into Flutter:
 

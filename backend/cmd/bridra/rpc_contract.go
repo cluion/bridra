@@ -18,6 +18,10 @@ var generatedDartProtocolPattern = regexp.MustCompile(
 	`(?m)^const supportedBackendProtocolVersion = ([1-9][0-9]*);\r?$`,
 )
 
+var generatedTypeScriptProtocolPattern = regexp.MustCompile(
+	`(?m)^export const protocolVersion = ([1-9][0-9]*);\r?$`,
+)
+
 func verifyApplicationRPCContract(root string, metadata projectMetadata) error {
 	schema, err := codegen.LoadSchema(filepath.Join(root, "schema", "bridra.json"))
 	if err != nil {
@@ -31,23 +35,27 @@ func verifyApplicationRPCContract(root string, metadata projectMetadata) error {
 	if err != nil {
 		return err
 	}
-	dartVersion, err := loadGeneratedProtocolVersion(
-		filepath.Join(root, filepath.FromSlash(codegen.DartClientPath)),
-		"Dart",
-		generatedDartProtocolPattern,
+	clientPath, clientLanguage, pattern := codegen.DartClientPath, "Dart", generatedDartProtocolPattern
+	if metadata.isWebUI() {
+		clientPath, clientLanguage, pattern = codegen.TypeScriptClientPath, "TypeScript", generatedTypeScriptProtocolPattern
+	}
+	clientVersion, err := loadGeneratedProtocolVersion(
+		filepath.Join(root, filepath.FromSlash(clientPath)),
+		clientLanguage,
+		pattern,
 	)
 	if err != nil {
 		return err
 	}
 	if metadata.ProtocolVersion != schema.ProtocolVersion ||
 		metadata.ProtocolVersion != goVersion ||
-		metadata.ProtocolVersion != dartVersion {
+		metadata.ProtocolVersion != clientVersion {
 		return fmt.Errorf(
-			"protocol versions disagree: metadata %d, schema %d, Go %d, Dart %d",
+			"protocol versions disagree: metadata %d, schema %d, Go %d, %s %d",
 			metadata.ProtocolVersion,
 			schema.ProtocolVersion,
 			goVersion,
-			dartVersion,
+			clientLanguage, clientVersion,
 		)
 	}
 	return nil

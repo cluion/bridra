@@ -1,0 +1,11 @@
+:root { color-scheme: light dark; font: 16px/1.5 system-ui, sans-serif; }
+body { margin: 0; }
+main { box-sizing: border-box; max-width: 40rem; margin: 8vh auto; padding: 1.5rem; }
+h1 { font-size: 1.5rem; }
+label { display: block; margin-top: 1.5rem; }
+input, button { padding: .5rem .75rem; font: inherit; }
+input { width: min(100% - 2rem, 18rem); }
+button { cursor: pointer; }
+button:disabled { cursor: wait; }
+form { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .375rem; }
+pre { overflow-wrap: anywhere; white-space: pre-wrap; }

@@ -233,8 +233,12 @@ func (item devCommand) resolveOptions(options devOptions) (devOptions, error) {
 		return devOptions{}, fmt.Errorf("dev: resolve project root: %w", err)
 	}
 	options.root = filepath.Clean(absoluteRoot)
-	if _, err := loadProjectMetadata(options.root); err != nil {
+	metadata, err := loadProjectMetadata(options.root)
+	if err != nil {
 		return devOptions{}, fmt.Errorf("%w: project metadata: %w", errDevInvalid, err)
+	}
+	if metadata.isWebUI() {
+		return devOptions{}, fmt.Errorf("%w: bridra dev does not support Web UI projects yet; see the generated README for browser development", errDevInvalid)
 	}
 	for _, required := range []string{".fvmrc", "pubspec.yaml"} {
 		information, err := item.system.stat(filepath.Join(options.root, required))

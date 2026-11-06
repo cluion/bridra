@@ -105,7 +105,7 @@ func TestUpgradeCheckReportsOlderAndNewerContracts(t *testing.T) {
 		{
 			name: "newer metadata schema",
 			metadata: `{
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "projectName": "example",
   "goModule": "example.test/app",
   "frameworkModule": "github.com/cluion/bridra/backend",

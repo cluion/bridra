@@ -244,6 +244,15 @@ func evaluateUpgrade(
 		},
 		Target: target,
 	}
+	if metadata.isWebUI() {
+		report.PlanAvailable = false
+		report.markUnsupported(upgradeDiagnostic{
+			Level: "unsupported", Code: "web_ui_upgrade_unavailable",
+			Message: "Automatic upgrades for Web UI projects are not available yet.",
+		})
+		report.finalize()
+		return report, nil
+	}
 	if metadata.SchemaVersion > target.ProjectMetadataVersion {
 		report.PlanAvailable = false
 		report.markUnsupported(newerVersionDiagnostic(
@@ -383,7 +392,7 @@ func loadUpgradeProjectMetadata(root string) (projectMetadata, error) {
 		SchemaVersion int `json:"schemaVersion"`
 	}
 	if err := json.Unmarshal(contents, &header); err != nil ||
-		header.SchemaVersion <= releaseinfo.ProjectMetadataVersion {
+		header.SchemaVersion <= releaseinfo.WebProjectMetadataVersion {
 		return loadProjectMetadata(root)
 	}
 	var metadata projectMetadata

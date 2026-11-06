@@ -15,15 +15,33 @@ import (
 
 var errProjectInvalid = errors.New("invalid Bridra project")
 
+type projectUI struct {
+	Mode   string `json:"mode"`
+	Preset string `json:"preset"`
+	Dist   string `json:"dist"`
+}
+
 type projectMetadata struct {
-	SchemaVersion    int      `json:"schemaVersion"`
-	ProjectName      string   `json:"projectName"`
-	GoModule         string   `json:"goModule"`
-	FrameworkModule  string   `json:"frameworkModule"`
-	FrameworkVersion string   `json:"frameworkVersion,omitempty"`
-	TemplateVersion  int      `json:"templateVersion,omitempty"`
-	ProtocolVersion  int      `json:"protocolVersion,omitempty"`
-	Platforms        []string `json:"platforms,omitempty"`
+	UI               *projectUI `json:"ui,omitempty"`
+	SchemaVersion    int        `json:"schemaVersion"`
+	ProjectName      string     `json:"projectName"`
+	GoModule         string     `json:"goModule"`
+	FrameworkModule  string     `json:"frameworkModule"`
+	FrameworkVersion string     `json:"frameworkVersion,omitempty"`
+	TemplateVersion  int        `json:"templateVersion,omitempty"`
+	ProtocolVersion  int        `json:"protocolVersion,omitempty"`
+	Platforms        []string   `json:"platforms,omitempty"`
+}
+
+func (metadata projectMetadata) isWebUI() bool {
+	return metadata.SchemaVersion == releaseinfo.WebProjectMetadataVersion && metadata.UI != nil && metadata.UI.Mode == "web"
+}
+
+func validateWebPlatforms(platforms []string) error {
+	if projectplatform.Contains(platforms, projectplatform.IOS) || projectplatform.Contains(platforms, projectplatform.Android) {
+		return errors.New("mobile targets require --ui flutter")
+	}
+	return nil
 }
 
 func loadProjectMetadata(root string) (projectMetadata, error) {
@@ -67,8 +85,9 @@ func decodeProjectMetadata(contents []byte) (projectMetadata, error) {
 			errProjectInvalid,
 		)
 	}
-	if metadata.SchemaVersion != 1 && metadata.SchemaVersion != 2 &&
-		metadata.SchemaVersion != releaseinfo.ProjectMetadataVersion {
+	switch metadata.SchemaVersion {
+	case 1, 2, releaseinfo.ProjectMetadataVersion, releaseinfo.WebProjectMetadataVersion:
+	default:
 		return projectMetadata{}, fmt.Errorf(
 			"%w: unsupported project metadata version %d",
 			errProjectInvalid,
@@ -104,7 +123,15 @@ func decodeProjectMetadata(contents []byte) (projectMetadata, error) {
 			)
 		}
 	}
-	if metadata.SchemaVersion < releaseinfo.ProjectMetadataVersion {
+	if metadata.SchemaVersion == releaseinfo.WebProjectMetadataVersion {
+		if !metadata.isWebUI() || (metadata.UI.Preset != "vue" && metadata.UI.Preset != "react") ||
+			metadata.UI.Dist != "frontend/dist" {
+			return projectMetadata{}, fmt.Errorf("%w: metadata v4 requires ui.mode web, preset vue or react, and dist frontend/dist", errProjectInvalid)
+		}
+	} else if metadata.UI != nil {
+		return projectMetadata{}, fmt.Errorf("%w: ui requires project metadata version 4", errProjectInvalid)
+	}
+	if metadata.SchemaVersion <= 2 {
 		metadata.Platforms = projectplatform.CloneAll()
 	} else {
 		platforms, err := projectplatform.Normalize(metadata.Platforms)
@@ -114,6 +141,11 @@ func decodeProjectMetadata(contents []byte) (projectMetadata, error) {
 				errProjectInvalid,
 				err,
 			)
+		}
+		if metadata.isWebUI() {
+			if err := validateWebPlatforms(platforms); err != nil {
+				return projectMetadata{}, fmt.Errorf("%w: platforms: %v", errProjectInvalid, err)
+			}
 		}
 		metadata.Platforms = platforms
 	}

@@ -59,3 +59,22 @@ func TestLoadProjectMetadataDefaultsLegacyPlatformsAndValidatesSchemaThree(t *te
 		t.Fatalf("duplicate platforms error = %v", err)
 	}
 }
+
+func TestWebProjectMetadataPreservesPlatformsAndRejectsIncompatibleContracts(t *testing.T) {
+	const web = `{"schemaVersion":4,"projectName":"p","goModule":"example.test/p","frameworkModule":"example.test/framework","frameworkVersion":"1.2.3","protocolVersion":1,"templateVersion":9,"platforms":["linux","web"],"ui":{"mode":"web","preset":"vue","dist":"frontend/dist"}}`
+	metadata, err := decodeProjectMetadata([]byte(web))
+	if err != nil || !metadata.isWebUI() || !reflect.DeepEqual(metadata.Platforms, []string{"linux", "web"}) {
+		t.Fatalf("metadata: %#v, %v", metadata, err)
+	}
+	for _, edit := range [][2]string{
+		{`"schemaVersion":4`, `"schemaVersion":3`},
+		{`"mode":"web"`, `"mode":"native"`},
+		{`"preset":"vue"`, `"preset":"other"`},
+		{`"frontend/dist"`, `"../dist"`},
+		{`["linux","web"]`, `["android","web"]`},
+	} {
+		if _, err := decodeProjectMetadata([]byte(strings.Replace(web, edit[0], edit[1], 1))); !errors.Is(err, errProjectInvalid) {
+			t.Fatalf("accepted invalid metadata %v: %v", edit, err)
+		}
+	}
+}

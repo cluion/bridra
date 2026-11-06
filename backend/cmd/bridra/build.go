@@ -17,6 +17,7 @@ import (
 
 	"github.com/cluion/bridra/backend/framework"
 	"github.com/cluion/bridra/backend/internal/projectplatform"
+	"github.com/cluion/bridra/backend/internal/webdist"
 )
 
 var (
@@ -85,6 +86,7 @@ type buildCommand struct {
 type buildOptions struct {
 	root                     string
 	target                   buildTarget
+	webDistSHA256            string
 	mode                     buildMode
 	backendURL               string
 	token                    string
@@ -145,7 +147,7 @@ func (buildCommand) name() string {
 }
 
 func (buildCommand) summary() string {
-	return "Build a validated Flutter artifact and its Go backend"
+	return "Build a Flutter artifact or package a Web UI dist"
 }
 
 func (buildCommand) usage() string {
@@ -159,14 +161,20 @@ Targets:
 Options:
   --root path                         Bridra project root (default .)
   --mode value                        debug, profile, or release (default release)
+  --web-dist-sha256 SHA256            Use this packaged Web UI snapshot for a desktop build
   --backend-url URL                   HTTP RPC endpoint compiled into Flutter
   --token value                       HTTP RPC token compiled into Flutter
   --macos-sidecar-native              Build a Foundation-enabled macOS Sidecar
   --macos-sidecar-entitlements path   Entitlements for a bundled macOS Sidecar
 
 Linux builds require Linux, macOS and iOS builds require macOS, and Windows
-builds require Windows. Profile and release HTTP builds require an HTTPS /rpc
-URL and an explicit token. iOS output is unsigned.`
+builds require Windows. Flutter profile and release HTTP builds require an
+HTTPS /rpc URL and an explicit token. iOS output is unsigned.
+
+Vue and React projects support release builds for web, linux, macos, and windows. Build the
+frontend first (npm ci && npm run build in frontend/). Bridra packages the
+existing frontend/dist without running npm. To reuse the exact web package,
+pass its SHA-256 to the desktop build on the matching OS.`
 }
 
 func (item buildCommand) run(arguments []string, stdout, stderr io.Writer) error {
@@ -183,6 +191,7 @@ func (item buildCommand) run(arguments []string, stdout, stderr io.Writer) error
 	}
 	root := flags.String("root", ".", "Bridra project root")
 	mode := flags.String("mode", string(buildModeRelease), "debug, profile, or release")
+	webDistSHA := flags.String("web-dist-sha256", "", "pinned web package digest for desktop builds")
 	backendURL := flags.String("backend-url", "", "HTTP RPC endpoint")
 	token := flags.String("token", "", "HTTP RPC token")
 	macosSidecarNative := flags.Bool(
@@ -198,6 +207,15 @@ func (item buildCommand) run(arguments []string, stdout, stderr io.Writer) error
 	if err := flags.Parse(flagArguments); err != nil {
 		return fmt.Errorf("%w: build: %v", errUsage, err)
 	}
+	var emptyPin bool
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "web-dist-sha256" && *webDistSHA == "" {
+			emptyPin = true
+		}
+	})
+	if emptyPin {
+		return fmt.Errorf("%w: --web-dist-sha256 requires a digest", errBuildInvalid)
+	}
 	if target == "" && flags.NArg() == 1 {
 		target = buildTarget(flags.Arg(0))
 	} else if flags.NArg() != 0 {
@@ -206,6 +224,7 @@ func (item buildCommand) run(arguments []string, stdout, stderr io.Writer) error
 
 	options, err := item.resolveOptions(buildOptions{
 		root:                     *root,
+		webDistSHA256:            *webDistSHA,
 		target:                   target,
 		mode:                     buildMode(*mode),
 		backendURL:               *backendURL,
@@ -237,23 +256,6 @@ func (item buildCommand) resolveOptions(options buildOptions) (buildOptions, err
 		return buildOptions{}, fmt.Errorf("%w: project metadata: %w", errBuildInvalid, err)
 	}
 	options.metadata = metadata
-	for _, required := range []string{".fvmrc", "pubspec.yaml", "backend/cmd/sidecar"} {
-		information, statErr := item.system.stat(filepath.Join(options.root, filepath.FromSlash(required)))
-		if statErr != nil {
-			return buildOptions{}, fmt.Errorf(
-				"%w: %s is unavailable: %w",
-				errBuildInvalid,
-				required,
-				statErr,
-			)
-		}
-		if required == "backend/cmd/sidecar" && !information.IsDir() {
-			return buildOptions{}, fmt.Errorf("%w: %s must be a directory", errBuildInvalid, required)
-		}
-		if required != "backend/cmd/sidecar" && information.IsDir() {
-			return buildOptions{}, fmt.Errorf("%w: %s must be a file", errBuildInvalid, required)
-		}
-	}
 
 	options.target = buildTarget(strings.ToLower(strings.TrimSpace(string(options.target))))
 	if !validBuildTarget(options.target) {
@@ -276,6 +278,43 @@ func (item buildCommand) resolveOptions(options buildOptions) (buildOptions, err
 			errBuildInvalid,
 		)
 	}
+	if options.webDistSHA256 != "" && (!metadata.isWebUI() || !desktopBuildTarget(options.target) || !webdist.ValidDigest(options.webDistSHA256)) {
+		return buildOptions{}, fmt.Errorf("%w: --web-dist-sha256 requires a Vue or React desktop target and a lowercase SHA-256 digest", errBuildInvalid)
+	}
+	if metadata.isWebUI() {
+		if (!desktopBuildTarget(options.target) && options.target != buildTargetWeb) || options.mode != buildModeRelease {
+			return buildOptions{}, fmt.Errorf("%w: Web UI packaging supports web and desktop release builds", errBuildInvalid)
+		}
+		if options.backendURL != "" || options.token != "" || options.macosSidecarNative || options.macosSidecarEntitlements != "" {
+			return buildOptions{}, fmt.Errorf("%w: Web UI projects use same-origin /rpc; Flutter backend and Sidecar options are unsupported", errBuildInvalid)
+		}
+		if err := validateBuildHost(options.target, item.system.goos); err != nil {
+			return buildOptions{}, err
+		}
+		if desktopBuildTarget(options.target) && !projectNamePattern.MatchString(metadata.ProjectName) {
+			return buildOptions{}, fmt.Errorf("%w: invalid Web UI project name", errBuildInvalid)
+		}
+		options.transport = buildTransportHTTP
+		return options, nil
+	}
+	for _, required := range []string{".fvmrc", "pubspec.yaml", "backend/cmd/sidecar"} {
+		information, statErr := item.system.stat(filepath.Join(options.root, filepath.FromSlash(required)))
+		if statErr != nil {
+			return buildOptions{}, fmt.Errorf(
+				"%w: %s is unavailable: %w",
+				errBuildInvalid,
+				required,
+				statErr,
+			)
+		}
+		if required == "backend/cmd/sidecar" && !information.IsDir() {
+			return buildOptions{}, fmt.Errorf("%w: %s must be a directory", errBuildInvalid, required)
+		}
+		if required != "backend/cmd/sidecar" && information.IsDir() {
+			return buildOptions{}, fmt.Errorf("%w: %s must be a file", errBuildInvalid, required)
+		}
+	}
+
 	if err := validateBuildHost(options.target, item.system.goos); err != nil {
 		return buildOptions{}, err
 	}
@@ -478,6 +517,13 @@ func (item buildCommand) build(options buildOptions, stdout, stderr io.Writer) (
 	fmt.Fprintf(stdout, "Target: %s\n", options.target)
 	fmt.Fprintf(stdout, "Mode: %s\n", options.mode)
 	fmt.Fprintf(stdout, "Transport: %s\n", options.transport)
+
+	if options.metadata.isWebUI() {
+		if desktopBuildTarget(options.target) {
+			return buildWebDesktop(options, stdout)
+		}
+		return buildWebDist(options, stdout)
+	}
 
 	workDirectory := ""
 	sidecarSource := ""

@@ -8,7 +8,8 @@ import (
 
 const (
 	SchemaVersion             = 1
-	ProjectMetadataVersion    = 3
+	ProjectMetadataVersion    = 3 // Flutter project format and upgrade catalog.
+	WebProjectMetadataVersion = 4
 	ProjectTemplateVersion    = 9
 	GoModule                  = "github.com/cluion/bridra/backend"
 	CLIInstallPath            = GoModule + "/cmd/bridra"

@@ -192,6 +192,7 @@ func TestCreateSupportsDesktopAndCustomPlatformSelection(t *testing.T) {
 				"--module", "example.test/acme/selected",
 				"--bridra-root", repositoryRoot(t),
 				"--directory", destination,
+				"--ui", "flutter",
 				"--platforms", test.selection,
 			}, &bytes.Buffer{}, &bytes.Buffer{})
 			if err != nil {
@@ -204,7 +205,7 @@ func TestCreateSupportsDesktopAndCustomPlatformSelection(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read metadata: %v", err)
 			}
-			if !strings.Contains(string(metadata), test.wantMetadata) {
+			if !strings.Contains(string(metadata), test.wantMetadata) || !strings.Contains(string(metadata), `"schemaVersion": 3`) {
 				t.Fatalf("metadata = %s", metadata)
 			}
 			makefile, err := os.ReadFile(filepath.Join(destination, "Makefile"))
@@ -290,7 +291,7 @@ func TestCreateDefaultsToVersionedPublishedDependencies(t *testing.T) {
 
 func TestReleasedBridraSourceMatchesRepositoryMetadata(t *testing.T) {
 	released := releasedBridraSource()
-	local, err := loadBridraSource(repositoryRoot(t))
+	local, err := loadBridraSource(repositoryRoot(t), "flutter")
 	if err != nil {
 		t.Fatalf("load local source: %v", err)
 	}
@@ -329,7 +330,7 @@ func TestLoadBridraSourceRejectsFlutterPackageVersionMismatch(t *testing.T) {
 	); err != nil {
 		t.Fatalf("write pubspec: %v", err)
 	}
-	_, err := loadBridraSource(root)
+	_, err := loadBridraSource(root, "flutter")
 	if !errors.Is(err, errCreateInvalid) || !strings.Contains(err.Error(), "does not match CLI version") {
 		t.Fatalf("load source error = %v", err)
 	}
@@ -519,4 +520,79 @@ func testCreateSystem(
 func containsArguments(arguments []string, expected ...string) bool {
 	joined := strings.Join(arguments, " ")
 	return strings.Contains(joined, strings.Join(expected, " "))
+}
+
+func TestCreateWebStartersWithoutFlutter(t *testing.T) {
+	for _, ui := range []string{"vue", "react"} {
+		t.Run(ui, func(t *testing.T) {
+			root := t.TempDir()
+			// A local Go dependency override can be a checkout without Flutter files.
+			writeBuildTestOutput(t, filepath.Join(root, "framework", "backend", "go.mod"), "module github.com/cluion/bridra/backend\n")
+			destination := filepath.Join(root, "portal")
+			var calls []string
+			system := testCreateSystem(func(_ context.Context, dir, name string, args ...string) ([]byte, error) {
+				calls = append(calls, strings.Join(append([]string{name}, args...), " "))
+				if name != "go" || filepath.Base(dir) != "backend" {
+					t.Fatalf("unexpected %s in %s", name, dir)
+				}
+				return nil, nil
+			})
+			args := []string{"portal", "--module", "example.test/portal", "--ui", ui, "--directory", destination,
+				"--bridra-root", filepath.Join(root, "framework")}
+			var out bytes.Buffer
+			if err := (createCommand{system}).run(args, &out, &out); err != nil {
+				t.Fatalf("create: %v, %s", err, &out)
+			}
+			if strings.Join(calls, ",") != "go mod tidy,go test ./..." || !strings.Contains(out.String(), "npm ci") {
+				t.Fatalf("commands %v, output %s", calls, &out)
+			}
+			metadata, err := loadProjectMetadata(destination)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if metadata.SchemaVersion != 4 || !metadata.isWebUI() || metadata.UI.Preset != ui ||
+				metadata.UI.Dist != "frontend/dist" || strings.Join(metadata.Platforms, ",") != "web" {
+				t.Fatalf("unexpected project metadata: %#v", metadata)
+			}
+			for _, relative := range []string{".fvmrc", "pubspec.yaml", "lib", "tool/gomobile"} {
+				if _, err := os.Lstat(filepath.Join(destination, relative)); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("unexpected Flutter scaffold %s: %v", relative, err)
+				}
+			}
+			if err := verifyApplicationRPCContract(destination, metadata); err != nil {
+				t.Fatal(err)
+			}
+			report := (doctorCommand{healthyDoctorSystem("fvm")}).inspect(destination)
+			for _, check := range report.checks {
+				if check.status == doctorFailure || check.name == "FVM" || check.name == "Flutter" {
+					t.Fatalf("unexpected doctor check: %#v", check)
+				}
+			}
+			cmd := newUpgradeCommand()
+			out.Reset()
+			err = cmd.run([]string{"--json", "--apply", "--root", destination}, &out, &out)
+			if !errors.Is(err, errUpgradeUnsupported) || !strings.Contains(out.String(), "web_ui_upgrade_unavailable") {
+				t.Fatalf("Web UI upgrade: %v, %s", err, &out)
+			}
+		})
+	}
+}
+
+func TestCreateRejectsUnsupportedWebChoicesBeforeStaging(t *testing.T) {
+	root := t.TempDir()
+	system := testCreateSystem(func(context.Context, string, string, ...string) ([]byte, error) {
+		t.Fatal("unexpected subprocess")
+		return nil, nil
+	})
+	system.mkdirTemp = func(string, string) (string, error) {
+		t.Fatal("unexpected staging")
+		return "", nil
+	}
+	for _, pair := range [][2]string{{"unknown", "web"}, {"", "web"}, {"vue", "mobile"}, {"react", "web,ios"}} {
+		err := (createCommand{system}).run([]string{"app", "--module", "example.test/app", "--ui", pair[0],
+			"--platforms", pair[1], "--directory", filepath.Join(root, "app")}, &bytes.Buffer{}, &bytes.Buffer{})
+		if !errors.Is(err, errCreateInvalid) {
+			t.Fatalf("ui/platforms %v: %v", pair, err)
+		}
+	}
 }
