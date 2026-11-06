@@ -361,7 +361,7 @@ func (item createCommand) create(options createOptions, stdout io.Writer) (resul
 	} else if projectplatform.Contains(options.selectedPlatforms, projectplatform.Web) {
 		fmt.Fprintln(stdout, "  cd frontend\n  npm ci\n  npm run build\n  cd ..\n  bridra build web")
 	} else {
-		fmt.Fprintln(stdout, "  Desktop packaging for Web UIs is not available yet.")
+		fmt.Fprintf(stdout, "  cd frontend\n  npm ci\n  npm run build\n  cd ..\n  On a matching host: bridra build <%s>\n", strings.Join(options.selectedPlatforms, "|"))
 	}
 	return nil
 }

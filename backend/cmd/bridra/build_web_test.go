@@ -44,7 +44,10 @@ func TestBuildWebUIPackagesSameOriginDistWithoutFlutter(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, args := range [][]string{
-				{"linux"},
+				{"windows"},
+				{"linux", "--web-dist-sha256", "broken"},
+				{"linux", "--web-dist-sha256="},
+				{"web", "--web-dist-sha256", strings.Repeat("a", 64)},
 				{"web", "--token", "not-public"},
 				{"web", "--backend-url", "https://external.invalid/rpc"},
 				{"web", "--mode", "debug"},
@@ -54,6 +57,9 @@ func TestBuildWebUIPackagesSameOriginDistWithoutFlutter(t *testing.T) {
 				if !errors.Is(err, errBuildInvalid) {
 					t.Errorf("build %v: got %v", args, err)
 				}
+			}
+			if err := cmd.run([]string{"linux", "--root", root, "--web-dist-sha256", strings.Repeat("a", 64)}, io.Discard, io.Discard); !errors.Is(err, errBuildArtifact) || !strings.Contains(err.Error(), "open web snapshot") {
+				t.Fatalf("a selected desktop target must require the pinned snapshot: %v", err)
 			}
 		})
 	}

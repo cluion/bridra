@@ -72,7 +72,7 @@ func TestDesktopOnlyWebStarterDescribesAvailableBuild(t *testing.T) {
 		t.Fatal(err)
 	}
 	readme := string(readProjectTemplateTestFile(t, filepath.Join(root, "README.md")))
-	if strings.Contains(readme, "bridra build web") || !strings.Contains(readme, "npm run build") {
-		t.Fatal("desktop-only web starter must document the frontend build and omit unsupported packaging instructions")
+	if strings.Contains(readme, "bridra build web") || !strings.Contains(readme, "npm run build") || !strings.Contains(readme, "bridra build windows") {
+		t.Fatal("desktop-only starter must document its selected native build and compiled frontend")
 	}
 }

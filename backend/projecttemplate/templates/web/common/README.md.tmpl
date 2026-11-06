@@ -14,7 +14,28 @@ cd ..{{if hasPlatform "web"}}
 bridra build web{{end}}
 ```
 
-{{if hasPlatform "web"}}The last command packages the existing `frontend/dist/` under `build/bridra/web/` with a SHA-256 manifest. Keep that dist and manifest together to identify the exact frontend for later packaging.{{else}}The compiled frontend is in `frontend/dist/`. The selected desktop targets can use this build for browser preview. Native desktop packaging for this UI is pending.{{end}}
+{{if hasPlatform "web"}}The last command packages the existing `frontend/dist/` under `build/bridra/web/` with a SHA-256 manifest. Keep the dist and manifest together.{{else}}The compiled frontend is in `frontend/dist/`.{{end}}
+{{if or (hasPlatform "macos") (hasPlatform "windows") (hasPlatform "linux")}}
+## Build the desktop application
+
+On the matching OS, run one of the following commands from the project root.
+{{if hasPlatform "web"}}Copy the complete `build/bridra/web/<sha256>/` snapshot here first. Replace
+`<sha256>` with the digest printed by `bridra build web`.{{else}}The CLI snapshots
+the compiled frontend and includes its SHA-256 in the desktop build output.{{end}}
+
+```text
+{{if hasPlatform "macos"}}bridra build macos{{if hasPlatform "web"}} --web-dist-sha256 <sha256>{{end}}
+{{end}}{{if hasPlatform "windows"}}bridra build windows{{if hasPlatform "web"}} --web-dist-sha256 <sha256>{{end}}
+{{end}}{{if hasPlatform "linux"}}bridra build linux{{if hasPlatform "web"}} --web-dist-sha256 <sha256>{{end}}
+{{end}}```
+
+{{if hasPlatform "macos"}}macOS needs the Xcode command-line tools. Open the resulting `.app`.
+{{end}}{{if hasPlatform "windows"}}Windows needs an MSVC Native Tools prompt, Windows SDK, and WebView2 SDK.
+Set `BRIDRA_WEBVIEW2_SDK` to the extracted SDK. The app uses the installed Edge WebView2 Runtime.
+{{end}}{{if hasPlatform "linux"}}Linux needs a C compiler, pkg-config and development packages for GTK 4, WebKitGTK 6.0 and libsoup 3.
+{{end}}Keep all files in the printed artifact together. The native window uses the
+packaged Go backend and a private per-launch session.
+{{end}}
 
 For local UI development run `npx vite` from `frontend/`. To exercise authenticated operations in a browser, serve the UI and the RPC endpoint on the same origin as described below.
 

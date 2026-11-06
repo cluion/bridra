@@ -1,0 +1,42 @@
+package main
+
+import (
+	"context"
+	"crypto/rand"
+	"errors"
+	"fmt"
+	"os"
+	"time"
+
+	{{printf "%q" (printf "%s/app" .GoModule)}}
+	{{printf "%q" (printf "%s/framework" .FrameworkModule)}}
+	host {{printf "%q" (printf "%s/bridra_desktop_runtime" .GoModule)}}
+)
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, "desktop:", err)
+		os.Exit(1)
+	}
+}
+
+func run() (result error) {
+	token := rand.Text()
+	application, err := app.Build(app.Config{Token: token, Logs: os.Stderr, Runtime: "Go desktop server"},
+		framework.NewFileTransferServiceProvider(framework.DefaultFileTransferOptions()))
+	if err != nil { return err }
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		result = errors.Join(result, application.Shutdown(ctx))
+	}()
+	principal, err := framework.NewPrincipal("bridra-desktop-client")
+	if err != nil { return err }
+	auth, err := framework.NewStaticTokenAuthenticator(token, principal)
+	if err != nil { return err }
+	limiter, err := framework.NewMemoryRateLimiter(framework.DefaultMemoryRateLimiterOptions())
+	if err != nil { return err }
+	return host.Run({{printf "%q" .Name}}, token, &framework.HTTPHandler{
+		Router: application.Router(), Authenticator: auth, RateLimiter: limiter, Errors: os.Stderr,
+	})
+}
