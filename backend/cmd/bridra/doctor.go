@@ -94,7 +94,7 @@ func (doctorCommand) usage() string {
   bridra doctor [--root path] [--strict]
 
 Options:
-  --root path  Bridra project root containing .fvmrc (default .)
+  --root path  Bridra project root (default .)
   --strict     Treat warnings, including optional host tools, as failures`
 }
 
@@ -109,7 +109,7 @@ func (item doctorCommand) run(arguments []string, stdout, stderr io.Writer) erro
 	flags.Usage = func() {
 		fmt.Fprintln(stderr, item.usage())
 	}
-	root := flags.String("root", ".", "Bridra project root containing .fvmrc")
+	root := flags.String("root", ".", "Bridra project root")
 	strict := flags.Bool("strict", false, "treat warnings as failures")
 	if err := flags.Parse(arguments); err != nil {
 		return fmt.Errorf("%w: doctor: %v", errUsage, err)
@@ -150,7 +150,18 @@ func (item doctorCommand) run(arguments []string, stdout, stderr io.Writer) erro
 
 func (item doctorCommand) inspect(root string) doctorReport {
 	report := doctorReport{}
-	platforms := item.checkProject(root, &report)
+	metadata := item.checkProject(root, &report)
+	if metadata.isWebUI() {
+		item.checkGo(&report)
+		for _, tool := range []string{"node", "npm"} {
+			if _, err := item.system.lookPath(tool); err != nil {
+				report.add(doctorWarning, tool, "not found; needed to compile frontend sources")
+			} else {
+				report.add(doctorOK, tool, "available")
+			}
+		}
+		return report
+	}
 	configuration, configurationOK := item.checkFVMConfiguration(root, &report)
 	item.checkGo(&report)
 	fvmOK := item.checkFVM(&report)
@@ -159,27 +170,27 @@ func (item doctorCommand) inspect(root string) doctorReport {
 	} else {
 		report.add(doctorFailure, "Flutter", "not checked because .fvmrc or FVM is unavailable")
 	}
-	item.checkHost(platforms, &report)
+	item.checkHost(metadata.Platforms, &report)
 	return report
 }
 
 func (item doctorCommand) checkProject(
 	root string,
 	report *doctorReport,
-) []string {
+) projectMetadata {
 	path := filepath.Join(root, ".bridra", "project.json")
 	contents, err := item.system.readFile(path)
 	if os.IsNotExist(err) {
-		return projectplatform.CloneAll()
+		return projectMetadata{Platforms: projectplatform.CloneAll()}
 	}
 	if err != nil {
 		report.add(doctorFailure, "Platforms", fmt.Sprintf("cannot read %s: %v", path, err))
-		return projectplatform.CloneAll()
+		return projectMetadata{Platforms: projectplatform.CloneAll()}
 	}
 	metadata, err := decodeProjectMetadata(contents)
 	if err != nil {
 		report.add(doctorFailure, "Platforms", err.Error())
-		return projectplatform.CloneAll()
+		return projectMetadata{Platforms: projectplatform.CloneAll()}
 	}
 	report.add(doctorOK, "Platforms", strings.Join(metadata.Platforms, ", "))
 	if metadata.SchemaVersion == 1 {
@@ -187,9 +198,13 @@ func (item doctorCommand) checkProject(
 	} else if err := verifyApplicationRPCContract(root, metadata); err != nil {
 		report.add(doctorFailure, "Application RPC", fmt.Sprintf("%v; regenerate contracts and align .bridra/project.json with schema/bridra.json", err))
 	} else {
-		report.add(doctorOK, "Application RPC", fmt.Sprintf("protocol %d matches metadata, schema, Go and Dart", metadata.ProtocolVersion))
+		language := "Dart"
+		if metadata.isWebUI() {
+			language = "TypeScript"
+		}
+		report.add(doctorOK, "Application RPC", fmt.Sprintf("protocol %d matches metadata, schema, Go and %s", metadata.ProtocolVersion, language))
 	}
-	return metadata.Platforms
+	return metadata
 }
 
 func (item doctorCommand) checkFVMConfiguration(

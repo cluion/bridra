@@ -82,7 +82,7 @@ func (createCommand) name() string {
 }
 
 func (createCommand) summary() string {
-	return "Create a Flutter application with a Go backend"
+	return "Create a Flutter, Vue, or React application with a Go backend"
 }
 
 func (createCommand) usage() string {
@@ -93,12 +93,14 @@ Required:
   --module path       Go module for the generated backend
 
 Options:
-  --bridra-root path  Add local Go and Flutter dependency overrides
+  --ui value          flutter (default), vue, or react
+  --bridra-root path  Use local Bridra dependencies
   --directory path    Destination directory (default <name>)
   --display-name text Product display name (default derived from <name>)
   --description text  Project description
   --organization id   Reverse-domain application organization (default com.example)
-  --platforms value   all, desktop, mobile, or a comma-separated platform list (default all)
+  --platforms value   all, desktop, mobile, or a comma-separated platform list
+                      Defaults to all for Flutter and web for Vue/React; mobile requires Flutter
 
 Default dependencies:
   %s %s
@@ -126,9 +128,17 @@ func (item createCommand) run(arguments []string, stdout, stderr io.Writer) erro
 	bridraRoot := flags.String("bridra-root", "", "local Bridra dependency overrides")
 	directory := flags.String("directory", "", "destination directory")
 	displayName := flags.String("display-name", "", "product display name")
-	description := flags.String("description", "A Go-powered Flutter application.", "project description")
+	ui := flags.String("ui", "flutter", "UI starter")
+	var description string
+	flags.Func("description", "project description", func(value string) error {
+		if strings.TrimSpace(value) == "" {
+			return errors.New("description cannot be empty")
+		}
+		description = value
+		return nil
+	})
 	organization := flags.String("organization", "com.example", "reverse-domain application organization")
-	platforms := flags.String("platforms", "all", "platform preset or comma-separated list")
+	platforms := flags.String("platforms", "", "platform preset or comma-separated list")
 	if err := flags.Parse(flagArguments); err != nil {
 		return fmt.Errorf("%w: %v", errUsage, err)
 	}
@@ -144,7 +154,8 @@ func (item createCommand) run(arguments []string, stdout, stderr io.Writer) erro
 		bridraRoot:   *bridraRoot,
 		directory:    *directory,
 		displayName:  *displayName,
-		description:  *description,
+		ui:           *ui,
+		description:  description,
 		organization: *organization,
 		platforms:    *platforms,
 	})
@@ -155,6 +166,7 @@ func (item createCommand) run(arguments []string, stdout, stderr io.Writer) erro
 }
 
 type createOptions struct {
+	ui                string
 	projectName       string
 	module            string
 	bridraRoot        string
@@ -183,8 +195,13 @@ func (item createCommand) resolveOptions(options createOptions) (createOptions, 
 			errCreateInvalid,
 		)
 	}
-	if strings.TrimSpace(options.description) == "" {
-		return createOptions{}, fmt.Errorf("%w: description cannot be empty", errCreateInvalid)
+	switch options.ui {
+	case "flutter", "vue", "react":
+	default:
+		return createOptions{}, fmt.Errorf("%w: --ui must be flutter, vue, or react", errCreateInvalid)
+	}
+	if options.description == "" {
+		options.description = "A Go-powered " + humanizeProjectName(options.ui) + " application."
 	}
 	if options.displayName == "" {
 		options.displayName = humanizeProjectName(options.projectName)
@@ -195,9 +212,23 @@ func (item createCommand) resolveOptions(options createOptions) (createOptions, 
 	if strings.ContainsAny(options.displayName, "\r\n\x00") {
 		return createOptions{}, fmt.Errorf("%w: display name must be a single line", errCreateInvalid)
 	}
-	selectedPlatforms, err := projectplatform.Resolve(options.platforms)
+	selection := options.platforms
+	if options.ui != "flutter" {
+		switch strings.ToLower(strings.TrimSpace(selection)) {
+		case "":
+			selection = projectplatform.Web
+		case "all":
+			selection = "linux,macos,windows,web"
+		}
+	}
+	selectedPlatforms, err := projectplatform.Resolve(selection)
 	if err != nil {
 		return createOptions{}, fmt.Errorf("%w: --platforms: %v", errCreateInvalid, err)
+	}
+	if options.ui != "flutter" {
+		if err := validateWebPlatforms(selectedPlatforms); err != nil {
+			return createOptions{}, fmt.Errorf("%w: --platforms: %v", errCreateInvalid, err)
+		}
 	}
 	options.selectedPlatforms = selectedPlatforms
 	if options.directory == "" {
@@ -230,7 +261,7 @@ func (item createCommand) resolveOptions(options createOptions) (createOptions, 
 			return createOptions{}, fmt.Errorf("create: resolve Bridra root: %w", resolveErr)
 		}
 		sourceRoot = filepath.Clean(sourceRoot)
-		localSource, loadErr := loadBridraSource(sourceRoot)
+		localSource, loadErr := loadBridraSource(sourceRoot, options.ui)
 		if loadErr != nil {
 			return createOptions{}, loadErr
 		}
@@ -265,38 +296,13 @@ func (item createCommand) create(options createOptions, stdout io.Writer) (resul
 	}()
 
 	fmt.Fprintf(stdout, "Creating %s in %s\n", options.projectName, options.directory)
-	bootstrapFVM := []byte(fmt.Sprintf(
-		"{\n  \"flutter\": %q\n}\n",
-		options.source.flutterSDKVersion,
-	))
-	if err := os.WriteFile(filepath.Join(staging, ".fvmrc"), bootstrapFVM, 0o644); err != nil {
-		return fmt.Errorf("create: write staging .fvmrc: %w", err)
-	}
-	if err := item.execute(
-		staging,
-		"fvm",
-		"flutter", "create", "--no-pub",
-		"--project-name", options.projectName,
-		"--org", options.organization,
-		"--platforms", strings.Join(options.selectedPlatforms, ","),
-		".",
-	); err != nil {
-		return fmt.Errorf("create: Flutter runners: %w", err)
-	}
-	// These files belong to Flutter's new-project scaffold, not an existing app.
-	// Remove them so application-owned Bridra seeds can be written once.
-	for _, relative := range []string{"lib/main.dart", "test/widget_test.dart"} {
-		if err := os.Remove(filepath.Join(staging, filepath.FromSlash(relative))); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("create: replace Flutter scaffold %s: %w", relative, err)
+	if options.ui == "flutter" {
+		if err := item.createFlutterRunners(staging, options); err != nil {
+			return err
 		}
 	}
-	if err := applyNativeDisplayName(staging, options); err != nil {
-		return fmt.Errorf("create: native display name: %w", err)
-	}
-	if err := applyMacOSLoopbackEntitlements(staging, options); err != nil {
-		return fmt.Errorf("create: macOS single-instance entitlements: %w", err)
-	}
 	if err := projecttemplate.Render(staging, projecttemplate.Config{
+		UI:                   options.ui,
 		ProjectName:          options.projectName,
 		DisplayName:          options.displayName,
 		Description:          options.description,
@@ -332,22 +338,66 @@ func (item createCommand) create(options createOptions, stdout io.Writer) (resul
 	if err := item.execute(filepath.Join(staging, "backend"), "go", "test", "./..."); err != nil {
 		return fmt.Errorf("create: verify Go consumer: %w", err)
 	}
-	if err := item.execute(staging, "fvm", "flutter", "pub", "get"); err != nil {
-		return fmt.Errorf("create: resolve Flutter dependencies: %w", err)
-	}
-	if err := item.execute(
-		staging,
-		"fvm",
-		"dart", "format", "lib", "test", "integration_test",
-	); err != nil {
-		return fmt.Errorf("create: format Flutter sources: %w", err)
+	if options.ui == "flutter" {
+		if err := item.execute(staging, "fvm", "flutter", "pub", "get"); err != nil {
+			return fmt.Errorf("create: resolve Flutter dependencies: %w", err)
+		}
+		if err := item.execute(
+			staging,
+			"fvm",
+			"dart", "format", "lib", "test", "integration_test",
+		); err != nil {
+			return fmt.Errorf("create: format Flutter sources: %w", err)
+		}
 	}
 	if err := item.system.rename(staging, options.directory); err != nil {
 		return fmt.Errorf("create: publish staged project: %w", err)
 	}
 	committed = true
 	fmt.Fprintf(stdout, "Created %s.\n\n", options.displayName)
-	fmt.Fprintf(stdout, "Next:\n  cd %s\n  make doctor\n  make verify\n", options.directory)
+	fmt.Fprintf(stdout, "Next:\n  cd %s\n", options.directory)
+	if options.ui == "flutter" {
+		fmt.Fprintln(stdout, "  make doctor\n  make verify")
+	} else if projectplatform.Contains(options.selectedPlatforms, projectplatform.Web) {
+		fmt.Fprintln(stdout, "  cd frontend\n  npm ci\n  npm run build\n  cd ..\n  bridra build web")
+	} else {
+		fmt.Fprintln(stdout, "  Desktop packaging for Web UIs is not available yet.")
+	}
+	return nil
+}
+
+func (item createCommand) createFlutterRunners(staging string, options createOptions) error {
+	bootstrapFVM := []byte(fmt.Sprintf(
+		"{\n  \"flutter\": %q\n}\n",
+		options.source.flutterSDKVersion,
+	))
+	if err := os.WriteFile(filepath.Join(staging, ".fvmrc"), bootstrapFVM, 0o644); err != nil {
+		return fmt.Errorf("create: write staging .fvmrc: %w", err)
+	}
+	if err := item.execute(
+		staging,
+		"fvm",
+		"flutter", "create", "--no-pub",
+		"--project-name", options.projectName,
+		"--org", options.organization,
+		"--platforms", strings.Join(options.selectedPlatforms, ","),
+		".",
+	); err != nil {
+		return fmt.Errorf("create: Flutter runners: %w", err)
+	}
+	// These files belong to Flutter's new-project scaffold, not an existing app.
+	// Remove them so application-owned Bridra seeds can be written once.
+	for _, relative := range []string{"lib/main.dart", "test/widget_test.dart"} {
+		if err := os.Remove(filepath.Join(staging, filepath.FromSlash(relative))); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("create: replace Flutter scaffold %s: %w", relative, err)
+		}
+	}
+	if err := applyNativeDisplayName(staging, options); err != nil {
+		return fmt.Errorf("create: native display name: %w", err)
+	}
+	if err := applyMacOSLoopbackEntitlements(staging, options); err != nil {
+		return fmt.Errorf("create: macOS single-instance entitlements: %w", err)
+	}
 	return nil
 }
 
@@ -407,12 +457,18 @@ func releasedBridraSource() bridraSource {
 	}
 }
 
-func loadBridraSource(root string) (bridraSource, error) {
+func loadBridraSource(root, ui string) (bridraSource, error) {
 	source := releasedBridraSource()
 	goPath := filepath.Join(root, "backend")
 	goModule, err := readGoModule(filepath.Join(goPath, "go.mod"))
 	if err != nil {
 		return bridraSource{}, err
+	}
+	source.goModule = goModule
+	source.goPath = goPath
+	source.localDependencies = true
+	if ui != "flutter" {
+		return source, nil
 	}
 	flutterPath := filepath.Join(root, "packages", "bridra_flutter")
 	flutterPackageVersion, err := readPubspecVersion(filepath.Join(flutterPath, "pubspec.yaml"))
@@ -442,13 +498,10 @@ func loadBridraSource(root string) (bridraSource, error) {
 	if strings.TrimSpace(configuration.Flutter) == "" {
 		return bridraSource{}, fmt.Errorf("%w: Bridra .fvmrc has no Flutter version", errCreateInvalid)
 	}
-	source.goModule = goModule
-	source.goPath = goPath
 	source.flutterName = flutterName
 	source.flutterPath = flutterPath
 	source.dartImport = "package:" + flutterName + "/bridra_flutter.dart"
 	source.flutterSDKVersion = strings.TrimSpace(configuration.Flutter)
-	source.localDependencies = true
 	return source, nil
 }
 

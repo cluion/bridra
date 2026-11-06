@@ -356,7 +356,7 @@ publication.
 
 ## Create a Bridra project
 
-`bridra create` builds a Flutter application and Go backend in a staging
+`bridra create` defaults to Flutter. It builds the application and Go backend in a staging
 directory, verifies the generated Go consumer, resolves Flutter
 dependencies, and only then atomically publishes the destination:
 
@@ -393,7 +393,7 @@ go run ./cmd/bridra create hello_app \
   --directory ../hello_app
 ```
 
-The generated starter includes:
+The Flutter starter includes:
 
 - Flutter runners for the selected platforms
 - Go Sidecar and HTTP server entrypoints
@@ -422,6 +422,34 @@ read-only plan; `--to` selects a known target and the CLI refuses incomplete
 cross-version paths without modifying any project file. `--apply` is available
 only when every step is automatic; it synchronizes Go, Flutter, lockfiles, and
 metadata, runs full verification, and restores the managed files on failure.
+
+### Vue and React starters
+
+Choose `--ui vue` or `--ui react` when creating the project. Both presets use
+the same Go HTTP backend template, schema and TypeScript transport. They
+default to the `web` target. Run `bridra generate` after editing the schema
+and `bridra generate --check` to detect stale Go or TypeScript files. The
+initial Web client supports unary RPC methods.
+
+Compile the selected frontend once, then package its static files:
+
+```bash
+bridra create portal --ui react --module example.com/portal/backend
+cd portal
+(cd frontend && npm ci && npm run build)
+bridra build web
+```
+
+The build prints the packaged `dist/` path, a tree SHA-256 and the path to a
+manifest of per-file SHA-256 values. Repackaging the same bytes yields the
+same digest. Preserve the directory with its manifest to reuse it for desktop
+packaging. The generated README includes a working loopback preview with
+Caddy. For deployment, serve those files at the website root and route
+`/rpc` through an authenticated same-origin gateway.
+
+Web UI projects use project metadata schema 4. Existing Flutter projects
+keep their UI and selected platforms. Native packaging, `bridra dev` and
+`bridra upgrade` for Web UI projects are outside this first implementation.
 
 ## Scaffold application components
 
@@ -504,7 +532,7 @@ development defaults, not production authentication or transport security.
 
 ## Build application artifacts
 
-`bridra build` is the shared build policy used by the Make and Windows PowerShell
+For Flutter projects, `bridra build` is the shared build policy used by the Make and Windows PowerShell
 entrypoints. Desktop targets bundle a Go Sidecar; Android, iOS, and Web compile an
 HTTP endpoint into Flutter:
 

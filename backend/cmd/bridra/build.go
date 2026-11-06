@@ -145,7 +145,7 @@ func (buildCommand) name() string {
 }
 
 func (buildCommand) summary() string {
-	return "Build a validated Flutter artifact and its Go backend"
+	return "Build a Flutter artifact or package a Web UI dist"
 }
 
 func (buildCommand) usage() string {
@@ -165,8 +165,12 @@ Options:
   --macos-sidecar-entitlements path   Entitlements for a bundled macOS Sidecar
 
 Linux builds require Linux, macOS and iOS builds require macOS, and Windows
-builds require Windows. Profile and release HTTP builds require an HTTPS /rpc
-URL and an explicit token. iOS output is unsigned.`
+builds require Windows. Flutter profile and release HTTP builds require an
+HTTPS /rpc URL and an explicit token. iOS output is unsigned.
+
+Vue and React projects support release builds for the web target. Build the
+frontend first (npm ci && npm run build in frontend/). Bridra packages the
+existing frontend/dist and writes its SHA-256 manifest without running npm.`
 }
 
 func (item buildCommand) run(arguments []string, stdout, stderr io.Writer) error {
@@ -237,23 +241,6 @@ func (item buildCommand) resolveOptions(options buildOptions) (buildOptions, err
 		return buildOptions{}, fmt.Errorf("%w: project metadata: %w", errBuildInvalid, err)
 	}
 	options.metadata = metadata
-	for _, required := range []string{".fvmrc", "pubspec.yaml", "backend/cmd/sidecar"} {
-		information, statErr := item.system.stat(filepath.Join(options.root, filepath.FromSlash(required)))
-		if statErr != nil {
-			return buildOptions{}, fmt.Errorf(
-				"%w: %s is unavailable: %w",
-				errBuildInvalid,
-				required,
-				statErr,
-			)
-		}
-		if required == "backend/cmd/sidecar" && !information.IsDir() {
-			return buildOptions{}, fmt.Errorf("%w: %s must be a directory", errBuildInvalid, required)
-		}
-		if required != "backend/cmd/sidecar" && information.IsDir() {
-			return buildOptions{}, fmt.Errorf("%w: %s must be a file", errBuildInvalid, required)
-		}
-	}
 
 	options.target = buildTarget(strings.ToLower(strings.TrimSpace(string(options.target))))
 	if !validBuildTarget(options.target) {
@@ -276,6 +263,34 @@ func (item buildCommand) resolveOptions(options buildOptions) (buildOptions, err
 			errBuildInvalid,
 		)
 	}
+	if metadata.isWebUI() {
+		if options.target != buildTargetWeb || options.mode != buildModeRelease {
+			return buildOptions{}, fmt.Errorf("%w: Web UI packaging currently supports only 'build web --mode release'", errBuildInvalid)
+		}
+		if options.backendURL != "" || options.token != "" || options.macosSidecarNative || options.macosSidecarEntitlements != "" {
+			return buildOptions{}, fmt.Errorf("%w: Web UI projects use same-origin /rpc; Flutter backend and Sidecar options are unsupported", errBuildInvalid)
+		}
+		options.transport = buildTransportHTTP
+		return options, nil
+	}
+	for _, required := range []string{".fvmrc", "pubspec.yaml", "backend/cmd/sidecar"} {
+		information, statErr := item.system.stat(filepath.Join(options.root, filepath.FromSlash(required)))
+		if statErr != nil {
+			return buildOptions{}, fmt.Errorf(
+				"%w: %s is unavailable: %w",
+				errBuildInvalid,
+				required,
+				statErr,
+			)
+		}
+		if required == "backend/cmd/sidecar" && !information.IsDir() {
+			return buildOptions{}, fmt.Errorf("%w: %s must be a directory", errBuildInvalid, required)
+		}
+		if required != "backend/cmd/sidecar" && information.IsDir() {
+			return buildOptions{}, fmt.Errorf("%w: %s must be a file", errBuildInvalid, required)
+		}
+	}
+
 	if err := validateBuildHost(options.target, item.system.goos); err != nil {
 		return buildOptions{}, err
 	}
@@ -478,6 +493,10 @@ func (item buildCommand) build(options buildOptions, stdout, stderr io.Writer) (
 	fmt.Fprintf(stdout, "Target: %s\n", options.target)
 	fmt.Fprintf(stdout, "Mode: %s\n", options.mode)
 	fmt.Fprintf(stdout, "Transport: %s\n", options.transport)
+
+	if options.metadata.isWebUI() {
+		return buildWebDist(options, stdout)
+	}
 
 	workDirectory := ""
 	sidecarSource := ""

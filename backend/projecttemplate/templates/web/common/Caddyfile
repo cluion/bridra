@@ -1,0 +1,49 @@
+{
+	admin off
+	persist_config off
+}
+
+http://127.0.0.1:8090 {
+	bind 127.0.0.1
+	root * {$BRIDRA_PREVIEW_DIST:frontend/dist}
+	basic_auth {
+		dev {$BRIDRA_PREVIEW_HASH}
+	}
+
+	header {
+		X-Content-Type-Options nosniff
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+	}
+
+	handle /rpc {
+		@sameOrigin {
+			method POST
+			header Origin http://127.0.0.1:8090
+		}
+		handle @sameOrigin {
+			reverse_proxy 127.0.0.1:8081 {
+				header_up Authorization "Bearer {env.BRIDRA_BACKEND_TOKEN}"
+				header_up -Origin
+				header_up -Cookie
+			}
+		}
+		respond 403
+	}
+	handle /rpc/* {
+		respond 404
+	}
+	handle {
+		@page {
+			method GET HEAD
+			header Accept *text/html*
+			not path /assets/* *.*
+		}
+		handle @page {
+			try_files {path} /index.html
+			file_server
+		}
+		handle {
+			file_server
+		}
+	}
+}

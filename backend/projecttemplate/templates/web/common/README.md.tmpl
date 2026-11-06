@@ -1,0 +1,54 @@
+# {{.DisplayName}}
+
+This project uses {{if eq .UI "vue"}}Vue{{else}}React{{end}} for its UI and Go for its RPC backend.
+
+## Build the frontend
+
+With Node.js 22.12+ or a supported newer LTS, npm, Go, and the Bridra CLI on your PATH:
+
+```sh
+cd frontend
+npm ci
+npm run build
+cd ..{{if hasPlatform "web"}}
+bridra build web{{end}}
+```
+
+{{if hasPlatform "web"}}The last command packages the existing `frontend/dist/` under `build/bridra/web/` with a SHA-256 manifest. Keep that dist and manifest together to identify the exact frontend for later packaging.{{else}}The compiled frontend is in `frontend/dist/`. The selected desktop targets can use this build for browser preview. Native desktop packaging for this UI is pending.{{end}}
+
+For local UI development run `npx vite` from `frontend/`. To exercise authenticated operations in a browser, serve the UI and the RPC endpoint on the same origin as described below.
+
+## Connect the backend
+
+From `backend/`, start `go run ./cmd/server --listen 127.0.0.1:8081` with a private `BRIDRA_BACKEND_TOKEN` supplied through the server environment. For a website, serve the packaged dist at the origin root. Route `POST /rpc` through your server-side authentication layer to the Go server. Validate the user's application session, authorize the operation, and check the request origin/CSRF policy before attaching the backend bearer. Never put this token in the frontend bundle or a Vite environment variable. Requests without a valid session should receive HTTP 401.
+
+The frontend uses same-origin cookies and calls relative `/rpc`. The starter includes health and greeting examples, and the generated TypeScript client supports unary RPC. Use `bridra generate` from the project root after editing `schema/bridra.json`. Use `bridra generate --check` to verify generated files.
+
+## Try the protected website locally
+
+The optional Caddy 2 configuration at the project root serves the built website
+on loopback. It uses the browser's built-in password prompt for a local preview.
+For a deployed application, use your own user sessions and authorization rules.
+
+After building the website, run from the project root with Caddy and OpenSSL
+available. The first command prompts for a preview password. Sign in as `dev`
+with that password when opening `http://127.0.0.1:8090/`.
+
+```sh
+(
+  set -eu
+  BRIDRA_PREVIEW_HASH=$(caddy hash-password)
+  BRIDRA_BACKEND_TOKEN=$(openssl rand -hex 32)
+  export BRIDRA_PREVIEW_HASH BRIDRA_BACKEND_TOKEN
+  mkdir -p build
+  (cd backend && go build -o ../build/preview-backend ./cmd/server)
+  ./build/preview-backend --listen 127.0.0.1:8081 &
+  backend_pid=$!
+  trap 'kill "$backend_pid" 2>/dev/null || true; wait "$backend_pid" 2>/dev/null || true' EXIT
+  caddy run --config Caddyfile
+)
+```
+
+Use Ctrl+C to stop the preview. The configuration serves `frontend/dist` by
+default.{{if hasPlatform "web"}} Set `BRIDRA_PREVIEW_DIST` to the artifact path printed by
+`bridra build web` to open a specific packaged version.{{end}}

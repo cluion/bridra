@@ -29,6 +29,7 @@ var ErrInvalidConfiguration = errors.New("project template: invalid configuratio
 var templateFiles embed.FS
 
 type Config struct {
+	UI                   string
 	ProjectName          string
 	DisplayName          string
 	Description          string
@@ -60,6 +61,7 @@ type ManifestFile struct {
 	Destination string   `json:"destination"`
 	Mode        string   `json:"mode"`
 	Ownership   string   `json:"ownership,omitempty"`
+	Shared      bool     `json:"shared,omitempty"`
 	Platforms   []string `json:"platforms,omitempty"`
 }
 
@@ -102,17 +104,52 @@ func LoadManifest() (Manifest, error) {
 	return manifest, nil
 }
 
+// Web starters reuse the same schema, Go backend and metadata templates as Flutter.
+func filesForUI(ui string) ([]ManifestFile, error) {
+	manifest, err := LoadManifest()
+	if err != nil {
+		return nil, err
+	}
+	if ui == "flutter" {
+		return manifest.Files, nil
+	}
+	var files []ManifestFile
+	for _, file := range manifest.Files {
+		if file.Shared {
+			files = append(files, file)
+		}
+	}
+	addStarterFiles := func(folder string, paths ...string) {
+		for _, path := range paths {
+			files = append(files, ManifestFile{
+				Source: "web/" + folder + "/" + path, Destination: strings.TrimSuffix(path, ".tmpl"),
+				Mode: "0644", Ownership: "application",
+			})
+		}
+	}
+	addStarterFiles("common", ".gitignore.tmpl", "README.md.tmpl", "Caddyfile",
+		"frontend/index.html.tmpl", "frontend/src/actions.ts", "frontend/src/style.css")
+	addStarterFiles(ui, "frontend/package.json", "frontend/package-lock.json",
+		"frontend/vite.config.js")
+	if ui == "vue" {
+		addStarterFiles(ui, "frontend/src/main.js", "frontend/src/App.vue")
+	} else {
+		addStarterFiles(ui, "frontend/src/main.jsx")
+	}
+	return files, nil
+}
+
 func Render(root string, config Config) error {
 	var err error
 	config, err = normalizeConfig(config)
 	if err != nil {
 		return err
 	}
-	manifest, err := LoadManifest()
+	files, err := filesForUI(config.UI)
 	if err != nil {
 		return err
 	}
-	for _, file := range manifest.Files {
+	for _, file := range files {
 		if !manifestFileSelected(file, config.Platforms) {
 			continue
 		}
@@ -130,6 +167,7 @@ func Render(root string, config Config) error {
 	}
 	outputs, err := codegen.GenerateWithOptions(schema, codegen.Options{
 		GoFrameworkImport: config.BridraGoModule + "/framework",
+		TypeScript:        config.UI != "flutter",
 		DartRuntimeImport: config.BridraDartImport,
 	})
 	if err != nil {
@@ -184,26 +222,29 @@ func renderFile(root string, file ManifestFile, config Config) error {
 	if err != nil {
 		return fmt.Errorf("project template: read %s: %w", file.Source, err)
 	}
-	parsed, err := template.New(file.Source).
-		Option("missingkey=error").
-		Funcs(template.FuncMap{
-			"quote": strconv.Quote,
-			"dartString": func(value string) string {
-				return strings.ReplaceAll(strconv.Quote(value), "$", `\$`)
-			},
-			"hasPlatform": func(platform string) bool {
-				return projectplatform.Contains(config.Platforms, platform)
-			},
-		}).
-		Parse(string(source))
-	if err != nil {
-		return fmt.Errorf("project template: parse %s: %w", file.Source, err)
+	contents := source
+	if strings.HasSuffix(file.Source, ".tmpl") {
+		parsed, err := template.New(file.Source).
+			Option("missingkey=error").
+			Funcs(template.FuncMap{
+				"quote": strconv.Quote,
+				"dartString": func(value string) string {
+					return strings.ReplaceAll(strconv.Quote(value), "$", `\$`)
+				},
+				"hasPlatform": func(platform string) bool {
+					return projectplatform.Contains(config.Platforms, platform)
+				},
+			}).
+			Parse(string(source))
+		if err != nil {
+			return fmt.Errorf("project template: parse %s: %w", file.Source, err)
+		}
+		var rendered bytes.Buffer
+		if err := parsed.Execute(&rendered, config); err != nil {
+			return fmt.Errorf("project template: render %s: %w", file.Source, err)
+		}
+		contents = rendered.Bytes()
 	}
-	var rendered bytes.Buffer
-	if err := parsed.Execute(&rendered, config); err != nil {
-		return fmt.Errorf("project template: render %s: %w", file.Source, err)
-	}
-	contents := rendered.Bytes()
 	if strings.HasSuffix(file.Destination, ".go") {
 		formatted, formatErr := format.Source(contents)
 		if formatErr != nil {
@@ -243,15 +284,23 @@ func renderFile(root string, file ManifestFile, config Config) error {
 }
 
 func normalizeConfig(config Config) (Config, error) {
+	if config.UI == "" {
+		config.UI = "flutter"
+	}
+	if config.UI != "flutter" && config.UI != "vue" && config.UI != "react" {
+		return Config{}, fmt.Errorf("%w: unsupported UI %q", ErrInvalidConfiguration, config.UI)
+	}
 	values := map[string]string{
 		"project name": config.ProjectName, "display name": config.DisplayName,
 		"organization": config.Organization, "Go module": config.GoModule,
 		"Bridra Go module": config.BridraGoModule, "Bridra Go version": config.BridraGoVersion,
-		"Bridra Flutter package": config.BridraFlutterPackage,
-		"Bridra Flutter version": config.BridraFlutterVersion,
-		"Bridra Dart import":     config.BridraDartImport,
-		"Flutter version":        config.FlutterVersion,
-		"framework version":      config.FrameworkVersion,
+		"framework version": config.FrameworkVersion,
+	}
+	if config.UI == "flutter" {
+		values["Bridra Flutter package"] = config.BridraFlutterPackage
+		values["Bridra Flutter version"] = config.BridraFlutterVersion
+		values["Bridra Dart import"] = config.BridraDartImport
+		values["Flutter version"] = config.FlutterVersion
 	}
 	for name, value := range values {
 		if strings.TrimSpace(value) == "" {
@@ -268,7 +317,7 @@ func normalizeConfig(config Config) (Config, error) {
 		if strings.TrimSpace(config.BridraGoPath) == "" {
 			return Config{}, fmt.Errorf("%w: Bridra Go path is required in local dependency mode", ErrInvalidConfiguration)
 		}
-		if strings.TrimSpace(config.BridraFlutterPath) == "" {
+		if config.UI == "flutter" && strings.TrimSpace(config.BridraFlutterPath) == "" {
 			return Config{}, fmt.Errorf("%w: Bridra Flutter path is required in local dependency mode", ErrInvalidConfiguration)
 		}
 	} else if strings.TrimSpace(config.BridraGoPath) != "" ||
@@ -279,13 +328,20 @@ func normalizeConfig(config Config) (Config, error) {
 		)
 	}
 	if len(config.Platforms) == 0 {
-		config.Platforms = projectplatform.CloneAll()
+		if config.UI == "flutter" {
+			config.Platforms = projectplatform.CloneAll()
+		} else {
+			config.Platforms = []string{"web"}
+		}
 	} else {
 		platforms, err := projectplatform.Normalize(config.Platforms)
 		if err != nil {
 			return Config{}, fmt.Errorf("%w: platforms: %v", ErrInvalidConfiguration, err)
 		}
 		config.Platforms = platforms
+	}
+	if config.UI != "flutter" && (projectplatform.Contains(config.Platforms, "android") || projectplatform.Contains(config.Platforms, "ios")) {
+		return Config{}, fmt.Errorf("%w: Web UI does not support mobile platforms", ErrInvalidConfiguration)
 	}
 	config.PlatformSummary = projectplatform.Summary(config.Platforms)
 	return config, nil

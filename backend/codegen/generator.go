@@ -31,6 +31,7 @@ type Output struct {
 
 type Options struct {
 	GoFrameworkImport string
+	TypeScript        bool
 	DartRuntimeImport string
 }
 
@@ -76,13 +77,23 @@ func GenerateWithOptions(schema Schema, options Options) ([]Output, error) {
 		return nil, err
 	}
 
-	return []Output{
+	outputs := []Output{
 		{Path: GoProtocolPath, Content: protocol},
 		{Path: GoRoutesPath, Content: routes},
 		{Path: GoRequestsPath, Content: requests},
 		{Path: GoResponsesPath, Content: responses},
-		{Path: DartClientPath, Content: renderDartClient(schema, options.DartRuntimeImport)},
-	}, nil
+	}
+	if options.TypeScript {
+		client, err := renderTypeScriptClient(schema)
+		if err != nil {
+			return nil, err
+		}
+		return append(outputs,
+			Output{Path: TypeScriptClientPath, Content: client},
+			Output{Path: typeScriptRuntimePath, Content: []byte(typeScriptRuntime)},
+		), nil
+	}
+	return append(outputs, Output{Path: DartClientPath, Content: renderDartClient(schema, options.DartRuntimeImport)}), nil
 }
 
 func renderGoProtocol(schema Schema) []byte {

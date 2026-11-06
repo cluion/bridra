@@ -32,7 +32,7 @@ func (generateCommand) name() string {
 }
 
 func (generateCommand) summary() string {
-	return "Generate Go and Dart APIs from a Bridra schema"
+	return "Generate Go and UI APIs from a Bridra schema"
 }
 
 func (generateCommand) usage() string {
@@ -46,7 +46,7 @@ Options:
   --dart-runtime-import  Dart import URI for the Bridra runtime package
   --check                Fail when generated files are stale
 
-Generated Dart is canonicalized with the project-pinned FVM Dart SDK.`
+Vue and React projects generate a TypeScript client. Flutter projects use the project-pinned FVM Dart SDK.`
 }
 
 func (item generateCommand) run(arguments []string, stdout, stderr io.Writer) error {
@@ -80,12 +80,35 @@ func (item generateCommand) run(arguments []string, stdout, stderr io.Writer) er
 		return fmt.Errorf("%w: generate: unexpected arguments: %v", errUsage, flags.Args())
 	}
 
+	webUI := false
+	contents, err := os.ReadFile(filepath.Join(*root, ".bridra", "project.json"))
+	if err == nil {
+		metadata, err := decodeProjectMetadata(contents)
+		if err != nil {
+			return fmt.Errorf("generate: %w", err)
+		}
+		webUI = metadata.isWebUI()
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("generate: read project metadata: %w", err)
+	}
+	if webUI {
+		explicitSchema := false
+		flags.Visit(func(f *flag.Flag) {
+			if f.Name == "schema" {
+				explicitSchema = true
+			}
+		})
+		if !explicitSchema {
+			*schemaPath = filepath.Join(*root, "schema", "bridra.json")
+		}
+	}
 	schema, err := codegen.LoadSchema(*schemaPath)
 	if err != nil {
 		return fmt.Errorf("generate: %w", err)
 	}
 	outputs, err := codegen.GenerateWithOptions(schema, codegen.Options{
 		GoFrameworkImport: *frameworkImport,
+		TypeScript:        webUI,
 		DartRuntimeImport: *dartRuntimeImport,
 	})
 	if err != nil {

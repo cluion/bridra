@@ -1,5 +1,6 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": {{if eq .UI "flutter"}}3{{else}}4,
+  "ui": {"mode": "web", "preset": {{quote .UI}}, "dist": "frontend/dist"}{{end}},
   "projectName": "{{.ProjectName}}",
   "goModule": "{{.GoModule}}",
   "frameworkModule": "{{.BridraGoModule}}",
