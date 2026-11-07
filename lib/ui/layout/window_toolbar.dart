@@ -13,6 +13,7 @@ class WindowToolbar extends StatelessWidget {
     required this.sidebarWidth,
     required this.animationDuration,
     required this.onSidebarToggled,
+    this.onThemeToggled,
     this.desktopWindowControls = false,
   });
 
@@ -23,6 +24,7 @@ class WindowToolbar extends StatelessWidget {
   final double sidebarWidth;
   final Duration animationDuration;
   final VoidCallback onSidebarToggled;
+  final VoidCallback? onThemeToggled;
   final bool desktopWindowControls;
 
   @override
@@ -124,6 +126,18 @@ class WindowToolbar extends StatelessWidget {
                       ),
                     ),
                   ),
+                  if (onThemeToggled != null && constraints.maxWidth >= 600)
+                    _ToolbarButton(
+                      key: const Key('appearance-toggle'),
+                      size: buttonSize,
+                      label: Theme.of(context).brightness == Brightness.dark
+                          ? 'Switch to light appearance'
+                          : 'Switch to dark appearance',
+                      icon: Theme.of(context).brightness == Brightness.dark
+                          ? Icons.light_mode_outlined
+                          : Icons.dark_mode_outlined,
+                      onPressed: onThemeToggled,
+                    ),
                   if (custom) ...[
                     const SizedBox(width: 8),
                     DesktopWindowButtons(buttonSize: buttonSize),

@@ -1,0 +1,243 @@
+import 'package:{{.ProjectName}}/app/starter_app.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import 'support/fake_backend.dart';
+
+Future<void> openGallery(WidgetTester tester, FakeBackend backend) async {
+  await tester.pumpWidget(StarterApp(connector: () async => backend));
+  await tester.pumpAndSettle();
+  final destination = find.byKey(const Key('destination-components'));
+  if (destination.hitTestable().evaluate().isEmpty) {
+    if (find.byType(NavigationBar).evaluate().isNotEmpty) {
+      await tester.tap(find.byIcon(Icons.grid_view_outlined));
+    } else {
+      await tester.tap(find.byKey(const Key('sidebar-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(destination);
+    }
+  } else {
+    await tester.tap(destination);
+  }
+  await tester.pump(const Duration(milliseconds: 350));
+}
+
+Future<void> galleryTab(WidgetTester tester, String tab) async {
+  final target = find.byKey(Key('components-tab-$tab'));
+  await tester.ensureVisible(target);
+  await tester.pump(const Duration(milliseconds: 250));
+  await tester.tap(target);
+  await tester.pump(const Duration(milliseconds: 350));
+}
+
+void main() {
+  testWidgets(
+    'edits gallery controls and preserves their state across navigation',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final backend = FakeBackend();
+      await openGallery(tester, backend);
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.byKey(const Key('gallery-loading-button')),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(find.text('Please enter a valid email address.'), findsOneWidget);
+      final email = find.byKey(const Key('gallery-email'));
+      await tester.ensureVisible(email);
+      await tester.enterText(email, 'preview@example.test');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Please enter a valid email address.'), findsNothing);
+      final name = find.byKey(const Key('gallery-name'));
+      await tester.ensureVisible(name);
+      await tester.enterText(name, 'Saved preview');
+      final role = find.byKey(const Key('gallery-role'));
+      await tester.ensureVisible(role);
+      await tester.tap(role);
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.tap(find.text('Developer').hitTestable());
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pump();
+      expect(
+        tester.widget<DropdownMenu<String>>(role).initialSelection,
+        'Developer',
+      );
+      final checkbox = find.byKey(const Key('gallery-checkbox'));
+      await tester.ensureVisible(checkbox);
+      await tester.tap(checkbox);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(tester.widget<CheckboxListTile>(checkbox).value, isTrue);
+      final toggle = find.byKey(const Key('gallery-switch'));
+      await tester.ensureVisible(toggle);
+      await tester.tap(toggle);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(tester.widget<SwitchListTile>(toggle).value, isFalse);
+      await tester.tap(find.byKey(const Key('destination-workspace')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('destination-components')));
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(tester.widget<TextField>(name).controller!.text, 'Saved preview');
+      expect(tester.widget<CheckboxListTile>(checkbox).value, isTrue);
+      expect(backend.healthCalls, 1);
+      expect(backend.greetCalls, 0);
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+  );
+
+  testWidgets('confirms a dialog, selects a menu action and chooses a date', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await openGallery(tester, FakeBackend());
+    await galleryTab(tester, 'overlays');
+    await tester.tap(find.byKey(const Key('gallery-dialog')));
+    await tester.pumpAndSettle();
+    expect(find.text('Confirm demo action'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('gallery-dialog-confirm')));
+    await tester.pumpAndSettle();
+    expect(find.text('Demo action confirmed'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('dismiss-toast')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('gallery-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit draft').hitTestable());
+    await tester.pumpAndSettle();
+    expect(find.text('Edit draft'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('gallery-popover')));
+    await tester.pumpAndSettle();
+    expect(find.text('Display options'), findsOneWidget);
+    await tester.tap(find.text('Show details'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,
+      isFalse,
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.text('Display options'), findsNothing);
+    await tester.tap(find.byKey(const Key('gallery-date')));
+    await tester.pumpAndSettle();
+    expect(find.byType(DatePickerDialog), findsOneWidget);
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    expect(find.byType(DatePickerDialog), findsNothing);
+    expect(
+      tester.widget<Text>(find.byKey(const Key('gallery-date-result'))).data,
+      startsWith('Selected date:'),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('selects and sorts table rows and restores an empty table', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await openGallery(tester, FakeBackend());
+    await galleryTab(tester, 'data');
+    await tester.tap(find.text('Alex Morgan'));
+    await tester.pumpAndSettle();
+    expect(find.text('1 selected'), findsOneWidget);
+    await tester.tap(find.text('Member'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<DataTable>(find.byKey(const Key('gallery-table')))
+          .sortAscending,
+      isFalse,
+    );
+    await tester.tap(find.byKey(const Key('gallery-table-state')));
+    await tester.pumpAndSettle();
+    expect(find.text('No members to show'), findsOneWidget);
+    expect(find.text('0 selected'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('gallery-table-state')));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<DataTable>(find.byKey(const Key('gallery-table')))
+          .rows
+          .length,
+      3,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('shows feedback notifications and an interactive empty state', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await openGallery(tester, FakeBackend());
+    await galleryTab(tester, 'feedback');
+    final toast = find.byKey(const Key('gallery-toast'));
+    await tester.ensureVisible(toast);
+    await tester.tap(toast);
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('This is a preview notification.'), findsOneWidget);
+    final empty = find.byKey(const Key('gallery-empty-action'));
+    await tester.ensureVisible(empty);
+    await tester.tap(empty);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('Sample item added'), findsOneWidget);
+    await tester.tap(empty);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('No items yet'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('destination-workspace')));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'fits every gallery category in narrow enlarged and desktop appearances',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(320, 900);
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      tester.platformDispatcher.accessibilityFeaturesTestValue =
+          FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+      addTearDown(
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      await openGallery(tester, FakeBackend());
+      for (final size in const [Size(320, 900), Size(1280, 900)]) {
+        tester.view.physicalSize = size;
+        for (final brightness in Brightness.values) {
+          tester.platformDispatcher.platformBrightnessTestValue = brightness;
+          await tester.pumpAndSettle();
+          for (final tab in ['controls', 'feedback', 'overlays', 'data']) {
+            await galleryTab(tester, tab);
+            expect(
+              tester.takeException(),
+              isNull,
+              reason: '$size / $brightness / $tab',
+            );
+          }
+        }
+      }
+    },
+    variant: TargetPlatformVariant({
+      TargetPlatform.macOS,
+      TargetPlatform.android,
+    }),
+  );
+}

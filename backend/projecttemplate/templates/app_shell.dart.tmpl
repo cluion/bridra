@@ -8,14 +8,16 @@ import 'window_toolbar.dart';
 const _expandedSidebarWidth = 240.0;
 const _collapsedSidebarWidth = 64.0;
 const _sidebarHorizontalPadding = 8.0;
+const _contentInset = 12.0;
 
 enum AppDestination {
   workspace('Workspace', Icons.dashboard_outlined, Icons.dashboard_rounded),
   runtime('Runtime', Icons.dns_outlined, Icons.dns_rounded),
   guide('Guide', Icons.menu_book_outlined, Icons.menu_book_rounded),
+  components('Components', Icons.grid_view_outlined, Icons.grid_view_rounded),
   settings('Settings', Icons.settings_outlined, Icons.settings_rounded);
 
-  static const primary = [workspace, runtime, guide];
+  static const primary = [workspace, runtime, guide, components];
 
   const AppDestination(this.label, this.icon, this.selectedIcon);
 
@@ -34,6 +36,8 @@ class AppShell extends StatefulWidget {
     required this.sidebarCollapsed,
     required this.onSidebarCollapsedChanged,
     required this.child,
+    this.productName = 'Bridra',
+    this.onThemeToggled,
     this.desktopWindowControls = false,
   });
 
@@ -44,6 +48,8 @@ class AppShell extends StatefulWidget {
   final bool? sidebarCollapsed;
   final ValueChanged<bool> onSidebarCollapsedChanged;
   final Widget child;
+  final String productName;
+  final VoidCallback? onThemeToggled;
   final bool desktopWindowControls;
 
   @override
@@ -87,6 +93,7 @@ class _AppShellState extends State<AppShell> {
             ? Duration.zero
             : const Duration(milliseconds: 220);
         Widget navigation({required bool expanded}) => _Sidebar(
+          productName: widget.productName,
           extended: expanded,
           destination: widget.destination,
           onDestinationChanged: _navigate,
@@ -106,6 +113,7 @@ class _AppShellState extends State<AppShell> {
                 child: Column(
                   children: [
                     WindowToolbar(
+                      onThemeToggled: widget.onThemeToggled,
                       desktopWindowControls: widget.desktopWindowControls,
                       pageTitle: widget.destination.label,
                       sidebarWidth: sidebar
@@ -169,14 +177,19 @@ class _AppShellState extends State<AppShell> {
                                           color: theme.scaffoldBackgroundColor,
                                           surfaceTintColor: Colors.transparent,
                                           margin: EdgeInsets.fromLTRB(
-                                            sidebar ? 0 : 12,
+                                            sidebar ? 0 : _contentInset,
                                             0,
-                                            12,
-                                            12,
+                                            _contentInset,
+                                            _contentInset,
                                           ),
                                           shape: RoundedRectangleBorder(
                                             borderRadius: BorderRadius.circular(
-                                              20,
+                                              12,
+                                            ),
+                                            side: BorderSide(
+                                              color: theme
+                                                  .colorScheme
+                                                  .outlineVariant,
                                             ),
                                           ),
                                           clipBehavior: Clip.antiAlias,
@@ -278,12 +291,14 @@ class _AppShellState extends State<AppShell> {
 
 class _Sidebar extends StatelessWidget {
   const _Sidebar({
+    required this.productName,
     required this.extended,
     required this.destination,
     required this.onDestinationChanged,
     required this.animationDuration,
   });
 
+  final String productName;
   final bool extended;
   final AppDestination destination;
   final ValueChanged<AppDestination> onDestinationChanged;
@@ -308,6 +323,62 @@ class _Sidebar extends StatelessWidget {
           final short = constraints.maxHeight < 240;
           return Column(
             children: [
+              if (constraints.maxHeight >= 400)
+                SizedBox(
+                  height: 64,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 48,
+                          child: Center(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.primary,
+                                borderRadius: BorderRadius.circular(7),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.all(6),
+                                child: Icon(
+                                  Icons.terminal_rounded,
+                                  size: 16,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onPrimary,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: ClipRect(
+                            child: OverflowBox(
+                              alignment: Alignment.centerLeft,
+                              minWidth: 160,
+                              maxWidth: 160,
+                              child: AnimatedOpacity(
+                                opacity: extended ? 1 : 0,
+                                duration: animationDuration,
+                                child: Padding(
+                                  padding: const EdgeInsets.only(left: 6),
+                                  child: Text(
+                                    productName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleMedium,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(
@@ -320,7 +391,7 @@ class _Sidebar extends StatelessWidget {
                     children: [
                       for (final item in AppDestination.primary) ...[
                         destinationButton(item),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 4),
                       ],
                       if (short) destinationButton(AppDestination.settings),
                     ],
@@ -333,7 +404,7 @@ class _Sidebar extends StatelessWidget {
                     _sidebarHorizontalPadding,
                     0,
                     _sidebarHorizontalPadding,
-                    8,
+                    _contentInset,
                   ),
                   child: destinationButton(AppDestination.settings),
                 ),
@@ -370,12 +441,12 @@ class _SidebarDestination extends StatelessWidget {
         key: Key('destination-${destination.name}'),
         onPressed: onPressed,
         style: ButtonStyle(
-          minimumSize: const WidgetStatePropertyAll(Size(0, 52)),
+          minimumSize: const WidgetStatePropertyAll(Size(0, 44)),
           padding: const WidgetStatePropertyAll(
-            EdgeInsets.symmetric(vertical: 14),
+            EdgeInsets.symmetric(vertical: 10),
           ),
           shape: WidgetStatePropertyAll(
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
           ),
           foregroundColor: WidgetStatePropertyAll(
             selected ? colors.onSurface : colors.onSurfaceVariant,
@@ -388,6 +459,8 @@ class _SidebarDestination extends StatelessWidget {
           side: WidgetStateProperty.resolveWith(
             (states) => states.contains(WidgetState.focused)
                 ? BorderSide(color: colors.primary)
+                : selected
+                ? BorderSide(color: colors.outlineVariant)
                 : BorderSide.none,
           ),
         ),
@@ -402,7 +475,7 @@ class _SidebarDestination extends StatelessWidget {
                   width: _collapsedSidebarWidth - 2 * _sidebarHorizontalPadding,
                   child: Icon(
                     destination.icon,
-                    size: 22,
+                    size: 18,
                     semanticLabel: destination.label,
                   ),
                 ),
@@ -422,8 +495,11 @@ class _SidebarDestination extends StatelessWidget {
                               destination.label,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w500,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: selected
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
                               ),
                             ),
                           ),

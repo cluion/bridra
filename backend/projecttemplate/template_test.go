@@ -706,6 +706,7 @@ func TestStarterUIMatchesReferenceApplication(t *testing.T) {
 		"lib/features/runtime/runtime_view.dart",
 		"lib/features/settings/settings_view.dart",
 		"lib/features/guide/guide_view.dart",
+		"lib/features/components/components_view.dart",
 		"integration_test/http_smoke_test.dart",
 		"macos/Runner/MainFlutterWindow.swift",
 		"macos/RunnerTests/RunnerTests.swift",

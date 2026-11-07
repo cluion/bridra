@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../api/backend_gateway.dart';
+import '../features/components/components_view.dart';
 import '../features/guide/guide_view.dart';
 import '../features/runtime/runtime_view.dart';
 import '../features/settings/settings_view.dart';
@@ -96,6 +97,12 @@ class _StarterAppState extends State<StarterApp> {
       home: ListenableBuilder(
         listenable: _workspace,
         builder: (context, _) => AppShell(
+          productName: widget.productName,
+          onThemeToggled: () => setState(() {
+            _themeMode = Theme.of(context).brightness == Brightness.dark
+                ? ThemeMode.light
+                : ThemeMode.dark;
+          }),
           desktopWindowControls: widget.desktopWindowControls,
           destination: _destination,
           onDestinationChanged: _navigate,
@@ -110,6 +117,10 @@ class _StarterAppState extends State<StarterApp> {
               WorkspaceView(model: _workspace),
               RuntimeView(model: _workspace),
               GuideView(platformSummary: widget.platformSummary),
+              TickerMode(
+                enabled: _destination == AppDestination.components,
+                child: const ComponentsView(),
+              ),
               SettingsView(
                 themeMode: _themeMode,
                 onThemeChanged: (value) => setState(() => _themeMode = value),
