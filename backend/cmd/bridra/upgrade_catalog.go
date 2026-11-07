@@ -216,6 +216,12 @@ var registeredUpgradeReleases = []upgradeRelease{
 		TemplateVersion:         9,
 		TemplateProtocolVersion: 1,
 	},
+	{
+		FrameworkVersion:        "0.24.1",
+		ProjectMetadataVersion:  3,
+		TemplateVersion:         9,
+		TemplateProtocolVersion: 1,
+	},
 }
 
 var registeredFrameworkMigrations = []frameworkMigration{
@@ -438,6 +444,13 @@ var registeredFrameworkMigrations = []frameworkMigration{
 		From:        "0.23.2",
 		To:          "0.24.0",
 		Description: "Update the Go and Flutter framework dependencies. Existing Flutter projects keep their UI, runners, adopted template baseline and RPC protocol. Adoption of the Android startup diagnostics is optional.",
+		Automatic:   true,
+	},
+	{
+		ID:          "framework-0.24.0-to-0.24.1",
+		From:        "0.24.0",
+		To:          "0.24.1",
+		Description: "Update the Go and Flutter framework dependencies. The starter theme, component gallery and slider semantics fixes are optional application-owned UI improvements; preserve existing UI, runners, RPC protocol and adopted template baseline.",
 		Automatic:   true,
 	},
 }
