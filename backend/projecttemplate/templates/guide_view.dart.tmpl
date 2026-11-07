@@ -18,80 +18,161 @@ class GuideView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return SingleChildScrollView(
-      key: const PageStorageKey('guide-scroll'),
-      padding: const EdgeInsets.all(24),
+    final commands = Section(
+      padding: 0,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            'A small foundation with room for your application.',
-            style: theme.textTheme.bodyLarge?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
+          const SectionHeading(
+            icon: Icons.terminal_rounded,
+            title: 'Project commands',
+            description: 'Your everyday development workflow.',
           ),
-          const SizedBox(height: 16),
-          Text(platformSummary, style: theme.textTheme.bodyMedium),
-          const SizedBox(height: 28),
-          Section(
+          const Divider(),
+          Padding(
+            padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('Project commands', style: theme.textTheme.titleLarge),
-                const SizedBox(height: 12),
-                for (final command in const [
-                  'make doctor',
-                  'make verify',
-                  'make run',
-                ])
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Row(
-                      children: [
-                        Expanded(child: SelectableText(command)),
-                        IconButton(
-                          tooltip: 'Copy $command',
-                          onPressed: () => _copy(context, command),
-                          icon: Icon(
-                            Icons.copy_outlined,
-                            size: 18,
-                            semanticLabel: 'Copy $command',
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-          Section(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('Where things live', style: theme.textTheme.titleLarge),
-                const SizedBox(height: 20),
                 for (final entry in const {
-                  'app/': 'Application composition and local preferences',
-                  'ui/': 'Theme, adaptive layout and shared widgets',
-                  'features/': 'Feature views and presentation state',
-                  'api/': 'Typed gateway and generated RPC contracts',
+                  'make doctor': 'Check your development environment',
+                  'make verify': 'Run the project verification checks',
+                  'make run': 'Start your application locally',
                 }.entries) ...[
-                  Text(entry.key, style: theme.textTheme.titleSmall),
-                  const SizedBox(height: 4),
-                  Text(
-                    entry.value,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+                  Text(entry.value, style: theme.textTheme.labelLarge),
+                  const SizedBox(height: 8),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerLow,
+                      border: Border.all(
+                        color: theme.colorScheme.outlineVariant,
+                      ),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 12, right: 4),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: SelectableText(
+                              entry.key,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontFamily: 'monospace',
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            tooltip: 'Copy ${entry.key}',
+                            onPressed: () => _copy(context, entry.key),
+                            icon: Icon(
+                              Icons.copy_outlined,
+                              size: 16,
+                              semanticLabel: 'Copy ${entry.key}',
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  if (entry.key != 'make run') const SizedBox(height: 20),
                 ],
               ],
             ),
           ),
         ],
       ),
+    );
+    final structure = Section(
+      padding: 0,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SectionHeading(
+            icon: Icons.account_tree_outlined,
+            title: 'Where things live',
+            description: 'A clear home for each part of your application.',
+          ),
+          const Divider(),
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final entry in const {
+                  'lib/app/': 'Application composition and local preferences',
+                  'lib/ui/': 'Theme, adaptive layout and shared widgets',
+                  'lib/features/': 'Feature views and presentation state',
+                  'lib/api/': 'Typed gateway and generated RPC contracts',
+                }.entries) ...[
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Icon(
+                          Icons.folder_outlined,
+                          size: 16,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              entry.key,
+                              style: theme.textTheme.labelLarge?.copyWith(
+                                fontFamily: 'monospace',
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              entry.value,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (entry.key != 'lib/api/') const SizedBox(height: 20),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    return FeaturePage(
+      storageKey: 'guide-scroll',
+      title: 'Project guide',
+      description: 'A small foundation with room for your application.',
+      trailing: AppBadge(label: platformSummary, icon: Icons.devices_outlined),
+      children: [
+        LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth >= 800 &&
+                MediaQuery.textScalerOf(context).scale(14) <= 18) {
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(flex: 5, child: commands),
+                  const SizedBox(width: 20),
+                  Expanded(flex: 4, child: structure),
+                ],
+              );
+            }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [commands, const SizedBox(height: 20), structure],
+            );
+          },
+        ),
+      ],
     );
   }
 }

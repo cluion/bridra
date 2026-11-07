@@ -96,6 +96,12 @@ class _StarterAppState extends State<StarterApp> {
       home: ListenableBuilder(
         listenable: _workspace,
         builder: (context, _) => AppShell(
+          productName: widget.productName,
+          onThemeToggled: () => setState(() {
+            _themeMode = Theme.of(context).brightness == Brightness.dark
+                ? ThemeMode.light
+                : ThemeMode.dark;
+          }),
           desktopWindowControls: widget.desktopWindowControls,
           destination: _destination,
           onDestinationChanged: _navigate,

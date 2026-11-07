@@ -120,7 +120,7 @@ class _AppToastHostState extends State<AppToastHost>
                           elevation: 8,
                           shadowColor: Colors.black.withValues(alpha: 0.16),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(8),
                             side: BorderSide(color: colors.outlineVariant),
                           ),
                           clipBehavior: Clip.antiAlias,
