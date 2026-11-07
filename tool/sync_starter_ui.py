@@ -104,7 +104,7 @@ def test_template(relative):
         "import 'package:{{.ProjectName}}/main.dart';",
     )
     source = source.replace("BridraApp(", "StarterApp(")
-    source = source.replace("find.text('Bridra')", "find.text({{dartString .DisplayName}})")
+    source = source.replace("'Bridra'", "{{dartString .DisplayName}}")
     source = source.replace("import 'repository_version.dart';\n", "")
     source = source.replace("import '../repository_version.dart';\n", "")
     source = source.replace("repositoryFrameworkVersion", "'{{.FrameworkVersion}}'")

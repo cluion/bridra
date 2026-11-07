@@ -328,7 +328,7 @@ void main() {
 
     expect(
       tester.widget<MaterialApp>(find.byType(MaterialApp)).title,
-      'Bridra',
+      {{dartString .DisplayName}},
     );
     expect(find.text('Request playground'), findsOneWidget);
     expect(find.byKey(const Key('runtime-status')), findsNothing);

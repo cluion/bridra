@@ -30,6 +30,7 @@ ios/Runner/Info.plist
 lib/api/backend_gateway.dart
 lib/api/generated/bridra_api.g.dart
 lib/app/starter_app.dart
+lib/features/components/components_view.dart
 lib/features/guide/guide_view.dart
 lib/features/runtime/runtime_view.dart
 lib/features/settings/settings_view.dart
@@ -49,6 +50,8 @@ schema/bridra.baseline.json
 schema/bridra.json
 test/app_theme_test.dart
 test/app_toast_test.dart
+test/components_semantics_test.dart
+test/components_view_test.dart
 test/desktop_window_test.dart
 test/support/fake_backend.dart
 test/widget_test.dart
