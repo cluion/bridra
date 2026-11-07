@@ -3,6 +3,40 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
+## [0.24.0] - 2026-11-07
+
+### Added
+
+- Choose `--ui vue` or `--ui react` with `bridra create` to generate a web
+  frontend and a typed TypeScript client for same-origin unary RPC. Build the
+  frontend with npm, then run `bridra build web` to snapshot its `dist` and
+  write a per-file SHA-256 manifest. Flutter remains the default UI.
+- Package the same snapshot on macOS (WKWebView), Windows (WebView2), or Linux
+  (WebKitGTK) with `bridra build <target> --web-dist-sha256 <digest>`. The
+  native window uses a private per-launch session to call the project's Go
+  backend. Desktop builds respect Go vendoring, and `bridra doctor` checks the
+  native toolchain for the selected target on the current host.
+
+### Fixed
+
+- Preserve startup milestones and bounded device diagnostics when the Android
+  Emulator smoke test fails. The CI job uploads a failure artifact before
+  the logs are lost. Generated Android starters can enable the same capture
+  with `BRIDRA_ANDROID_EMULATOR_DIAGNOSTICS_DIR`.
+
+### Upgrade
+
+- Flutter projects can take the dependency upgrade from `0.23.2` while
+  keeping their UI, runners, and adopted template baseline. New Web UI
+  projects use metadata schema 4. The default RPC protocol remains 1.
+  See the [0.24.0 upgrade guide](docs/UPGRADING.md#framework-0232-to-0240).
+
+### Support
+
+- The latest published patch in `0.23.x` remains eligible for best-effort
+  security fixes until `0.24.0` is published. At publication, eligibility
+  moves to the latest patch in `0.24.x` until the next minor line is released.
+
 ## [0.23.2] - 2026-10-25
 
 ### Fixed
