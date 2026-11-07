@@ -3,6 +3,44 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
+## [0.24.1] - 2026-11-07
+
+### Added
+
+- Add an application-owned Components page to new Flutter starters with
+  interactive controls, validation, disabled/loading states, alerts, progress,
+  notifications, dialogs, menus, popovers, dates and selectable/sortable tables.
+
+### Changed
+
+- Give the Flutter starter's Workspace, Runtime, Guide and Settings pages,
+  sidebar, toolbar and common controls a consistent shadcn-inspired neutral
+  appearance in light and dark themes, without adding a UI package dependency.
+
+### Fixed
+
+- Align input and select heights and the Settings/sidebar edge with the main
+  content. Pause hidden gallery animations and respect reduced-motion settings.
+- Keep slider value indicators in local overlays to prevent orphan semantics
+  updates that could crash the native macOS accessibility bridge.
+- Synchronize gallery files, tests and the generated-tree golden, and use the
+  configured project display name in generated widget-test expectations.
+
+### Upgrade
+
+- Register the automatic `0.24.0` to `0.24.1` dependency transition. Existing
+  Flutter projects retain their UI, native runners, adopted template baseline
+  and RPC protocol; starter UI adoption is optional. Public Go/Dart APIs,
+  Project Template `9`, Flutter metadata schema `3`, Web metadata schema `4`
+  and the default RPC protocol `1` remain unchanged.
+  See the [0.24.1 upgrade guide](docs/UPGRADING.md#framework-0240-to-0241).
+
+### Support
+
+- At publication, `0.24.1` becomes the latest supported patch in `0.24.x` on a
+  best-effort basis until the next minor line is published. Superseded patches
+  and unreleased candidates are unsupported.
+
 ## [0.24.0] - 2026-11-07
 
 ### Added

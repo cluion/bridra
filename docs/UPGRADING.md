@@ -65,6 +65,51 @@ The historical sections below describe each release's full migration scope.
 The current planner filters their classified platform requirements as described
 above; it does not rewrite application-owned files.
 
+## Framework 0.24.0 to 0.24.1
+
+Version `0.24.1` updates the application-owned Flutter starter with consistent
+light/dark themes, a Components gallery, aligned fields/sidebar edges and a
+slider semantics fix. Public Go/Dart runtime APIs and RPC payloads are unchanged.
+Project Template `9`, Flutter metadata schema `3`, Web metadata schema `4` and
+the default RPC protocol `1` remain unchanged.
+
+After publication, install the exact CLI and review the dependency transition:
+
+```bash
+go install github.com/cluion/bridra/backend/cmd/bridra@v0.24.1
+bridra upgrade --plan --json --to 0.24.1
+```
+
+The `0.24.0` to `0.24.1` step is automatic when earlier required adoption is
+complete. If the report shows `"applyAvailable": true`, apply it and confirm
+the resulting plan reports `current`:
+
+```bash
+bridra upgrade --apply --to 0.24.1
+bridra upgrade --plan --to 0.24.1
+```
+
+Apply updates dependency manifests, lockfiles and framework metadata, then runs
+the project's `make verify`. It preserves UI, native runners, schema/generated
+contracts, custom RPC protocol and the adopted template baseline. A failed
+resolution or verification restores the managed dependency files and metadata.
+
+### Optional starter UI adoption
+
+New Flutter projects receive the updated starter. Existing projects can review
+the application-owned `lib/ui/`, `lib/features/` and `lib/app/` changes and their
+tests before adopting any of them. A dependency upgrade does not install the
+gallery or overwrite a customized UI. The gallery uses local sample data and
+does not send application RPC requests.
+
+Automatic Web UI upgrades remain unavailable; this patch does not change the
+existing manual update boundary for Vue/React projects.
+
+To roll back a completed dependency update, restore the previous managed
+manifests, lockfiles and framework metadata from version control, resolve
+dependencies and run the application's verification. Revert optional UI
+adoption through the application's own commits separately.
+
 ## Framework 0.23.2 to 0.24.0
 
 Version `0.24.0` adds Vue and React starters for websites and desktop apps.

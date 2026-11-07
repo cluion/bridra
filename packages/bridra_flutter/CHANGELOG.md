@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.24.1 - 2026-11-07
+
+- Align package metadata with the Flutter starter's shadcn-inspired themes,
+  interactive component gallery, layout and slider semantics fixes. These
+  changes belong to generated applications; public Dart runtime APIs and RPC
+  payloads are unchanged.
+- Dependency upgrades preserve application-owned UI, native runners, RPC
+  protocol and adopted template baseline. New projects receive the updated
+  starter; existing projects can adopt its UI explicitly.
+
 ## 0.24.0 - 2026-11-07
 
 - Align the Dart package with Bridra's Vue and React starter release. Existing
