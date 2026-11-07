@@ -531,9 +531,12 @@ void main() {
     );
     await tester.tap(find.byIcon(Icons.settings_outlined));
     await tester.pumpAndSettle();
+    final navigation = tester.widget<NavigationBar>(find.byType(NavigationBar));
     expect(
-      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
-      3,
+      (navigation.destinations[navigation.selectedIndex]
+              as NavigationDestination)
+          .label,
+      'Settings',
     );
     expect(
       tester.widget<Text>(find.byKey(const Key('toolbar-page-title'))).data,

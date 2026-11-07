@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../api/backend_gateway.dart';
+import '../features/components/components_view.dart';
 import '../features/guide/guide_view.dart';
 import '../features/runtime/runtime_view.dart';
 import '../features/settings/settings_view.dart';
@@ -116,6 +117,10 @@ class _StarterAppState extends State<StarterApp> {
               WorkspaceView(model: _workspace),
               RuntimeView(model: _workspace),
               GuideView(platformSummary: widget.platformSummary),
+              TickerMode(
+                enabled: _destination == AppDestination.components,
+                child: const ComponentsView(),
+              ),
               SettingsView(
                 themeMode: _themeMode,
                 onThemeChanged: (value) => setState(() => _themeMode = value),

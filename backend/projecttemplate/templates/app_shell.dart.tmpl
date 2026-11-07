@@ -14,9 +14,10 @@ enum AppDestination {
   workspace('Workspace', Icons.dashboard_outlined, Icons.dashboard_rounded),
   runtime('Runtime', Icons.dns_outlined, Icons.dns_rounded),
   guide('Guide', Icons.menu_book_outlined, Icons.menu_book_rounded),
+  components('Components', Icons.grid_view_outlined, Icons.grid_view_rounded),
   settings('Settings', Icons.settings_outlined, Icons.settings_rounded);
 
-  static const primary = [workspace, runtime, guide];
+  static const primary = [workspace, runtime, guide, components];
 
   const AppDestination(this.label, this.icon, this.selectedIcon);
 

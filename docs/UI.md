@@ -24,6 +24,7 @@ lib/
       workspace_view_model.dart     Connection/request state and gateway ownership
     runtime/runtime_view.dart       Live health presentation
     guide/guide_view.dart           Project guidance and command copying
+    components/components_view.dart Interactive component gallery and sample states
     settings/settings_view.dart     System, Light and Dark appearance controls
   api/
     backend_gateway.dart            Application gateway and transport composition
@@ -64,7 +65,7 @@ The shell uses the available window size:
   left while the page heading aligns with the expanded main content.
 - Smaller or shorter windows: vertically stacked content. Desktop platforms use
   the toolbar's overlay sidebar without a duplicate bottom navigation bar;
-  Android and iOS retain bottom navigation for all four sections.
+  Android and iOS retain bottom navigation for all five sections.
   The same toolbar toggle opens and closes an overlay sidebar below the header;
   selecting a section, pressing Escape or tapping the scrim also closes it.
 - The request/response area uses two columns only when its own available width
@@ -137,7 +138,7 @@ the response panel presents waiting, progress, failure and success states with
 the actual middleware pipeline. Narrow layouts stack the panels vertically.
 
 Runtime, Guide and Settings use `FeaturePage` for the same responsive page
-padding and heading hierarchy. All four features share `SectionHeading` for
+padding and heading hierarchy. All five features share `SectionHeading` for
 panel titles, descriptions and icons. Runtime presents its live connection
 status, transport, framework version and RPC protocol above the reported
 application pipeline; disconnected fields use waiting or unavailable values.
@@ -208,6 +209,33 @@ announces through a semantic live region, and leaves focus and underlying
 controls available. Reduced motion makes entry and dismissal immediate. The host
 cancels its expiry timer when disposed; it is an application-owned UI widget.
 
+## Component gallery
+
+Components is an application-owned reference page, included in newly generated
+Flutter starters. It groups interactive examples into four tabs:
+
+- Controls: button variants, loading and disabled actions, editable/read-only
+  fields, live email validation, enabled/disabled selects, checkboxes including
+  a mixed state, switches, radio groups and sliders.
+- Feedback: badges, informational/success/warning/error alerts, determinate and
+  indeterminate progress, a toast action and an interactive empty state.
+- Overlays: a confirmation dialog, an action menu, a dismissible options popover,
+  a tooltip and a date picker that displays the selected date.
+- Data: sample rows with selection, sorting, status badges, horizontal scrolling
+  on narrow windows and a toggle between populated and empty tables.
+
+Examples retain their state while navigating between starter pages and never
+send application RPC requests. The shell pauses gallery tickers when another
+page is active; reduced motion uses static loading previews. This gallery is a
+bounded set of examples, rather than a complete implementation of shadcn/ui.
+Application owners can extend or remove it alongside their product UI.
+
+The slider examples each own a local overlay so their value indicators remain
+inside the same semantics subtree. This avoids orphan updates in Flutter 3.44's
+desktop accessibility bridge. `components_semantics_test.dart` checks serialized
+node reachability during initial layout, slider interaction, navigation and
+appearance changes.
+
 ## Adding a feature
 
 1. Add a feature directory containing its view and presentation state.
@@ -224,7 +252,7 @@ Maintainers edit the reference UI and tests, then run
 `python3 tool/sync_starter_ui.py` to update the embedded Dart templates. Use
 `--check` for a read-only drift check. This tool only writes the repository's
 known embedded templates; it never changes generated consumer projects.
-The project-template parity regression keeps the twelve shared UI modules and
+The project-template parity regression keeps the shared UI modules and
 macOS window bootstrap and native window regressions in the reference application
 and generated starter aligned. The native alignment regression checks the actual
 displayed application window after launch, native button/container repositioning,

@@ -20,10 +20,13 @@ UI_FILES = {
     "features/runtime/runtime_view.dart": "runtime_view.dart.tmpl",
     "features/settings/settings_view.dart": "settings_view.dart.tmpl",
     "features/guide/guide_view.dart": "guide_view.dart.tmpl",
+    "features/components/components_view.dart": "components_view.dart.tmpl",
 }
 TEST_FILES = {
     "integration_test/http_smoke_test.dart": "http_smoke_test.dart.tmpl",
     "test/bridra_app_test.dart": "widget_test.dart.tmpl",
+    "test/components_view_test.dart": "components_view_test.dart.tmpl",
+    "test/components_semantics_test.dart": "components_semantics_test.dart.tmpl",
     "test/workspace_view_model_test.dart": "workspace_view_model_test.dart.tmpl",
     "test/app_theme_test.dart": "app_theme_test.dart.tmpl",
     "test/app_toast_test.dart": "app_toast_test.dart.tmpl",

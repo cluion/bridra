@@ -118,6 +118,27 @@ abstract final class AppTheme {
         borderRadius: BorderRadius.circular(6),
         borderSide: BorderSide(color: colors.outline, width: 2),
       ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(6),
+        borderSide: BorderSide(color: colors.error),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(6),
+        borderSide: BorderSide(color: colors.error, width: 2),
+      ),
+    );
+    final menus = MenuStyle(
+      backgroundColor: WidgetStatePropertyAll(canvas),
+      surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+      shadowColor: WidgetStatePropertyAll(
+        Colors.black.withValues(alpha: dark ? 0.3 : 0.12),
+      ),
+      elevation: const WidgetStatePropertyAll(6),
+      padding: const WidgetStatePropertyAll(EdgeInsets.all(4)),
+      side: WidgetStatePropertyAll(BorderSide(color: border)),
+      shape: WidgetStatePropertyAll(
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
     );
     return base.copyWith(
       textTheme: text,
@@ -132,23 +153,16 @@ abstract final class AppTheme {
             minHeight: 32,
           ),
         ),
-        menuStyle: MenuStyle(
-          backgroundColor: WidgetStatePropertyAll(canvas),
-          surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
-          shadowColor: WidgetStatePropertyAll(
-            Colors.black.withValues(alpha: dark ? 0.3 : 0.12),
-          ),
-          elevation: const WidgetStatePropertyAll(6),
-          padding: const WidgetStatePropertyAll(EdgeInsets.all(4)),
-          side: WidgetStatePropertyAll(BorderSide(color: border)),
-          shape: WidgetStatePropertyAll(
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          ),
-        ),
+        menuStyle: menus,
       ),
+      menuTheme: MenuThemeData(style: menus),
       menuButtonTheme: MenuButtonThemeData(
         style: ButtonStyle(
-          foregroundColor: WidgetStatePropertyAll(foreground),
+          foregroundColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.disabled)
+                ? colors.onSurfaceVariant.withValues(alpha: 0.5)
+                : foreground,
+          ),
           textStyle: WidgetStatePropertyAll(text.bodyMedium),
           minimumSize: const WidgetStatePropertyAll(Size(0, 44)),
           padding: const WidgetStatePropertyAll(
@@ -193,6 +207,118 @@ abstract final class AppTheme {
           foregroundColor: colors.onSurfaceVariant,
           shape: shape,
         ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: foreground,
+          minimumSize: const Size(0, 44),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          textStyle: text.labelLarge,
+          shape: shape,
+        ),
+      ),
+      checkboxTheme: CheckboxThemeData(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(3)),
+        side: BorderSide(color: colors.outline),
+        fillColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.disabled)) return muted;
+          return states.contains(WidgetState.selected) ? foreground : canvas;
+        }),
+        checkColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.disabled)
+              ? colors.onSurfaceVariant
+              : canvas,
+        ),
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.disabled)) return colors.outline;
+          return states.contains(WidgetState.selected)
+              ? canvas
+              : colors.onSurfaceVariant;
+        }),
+        trackColor: WidgetStateProperty.resolveWith(
+          (states) =>
+              states.contains(WidgetState.selected) &&
+                  !states.contains(WidgetState.disabled)
+              ? foreground
+              : muted,
+        ),
+        trackOutlineColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected)
+              ? Colors.transparent
+              : border,
+        ),
+        trackOutlineWidth: const WidgetStatePropertyAll(1),
+      ),
+      sliderTheme: SliderThemeData(
+        trackHeight: 4,
+        activeTrackColor: foreground,
+        inactiveTrackColor: border,
+        thumbColor: foreground,
+        overlayColor: foreground.withValues(alpha: 0.08),
+        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+      ),
+      progressIndicatorTheme: ProgressIndicatorThemeData(
+        color: foreground,
+        linearTrackColor: border,
+        circularTrackColor: border,
+      ),
+      tabBarTheme: TabBarThemeData(
+        indicator: BoxDecoration(
+          color: canvas,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: border),
+        ),
+        indicatorSize: TabBarIndicatorSize.tab,
+        dividerColor: Colors.transparent,
+        labelColor: foreground,
+        unselectedLabelColor: colors.onSurfaceVariant,
+        labelStyle: text.labelLarge,
+        unselectedLabelStyle: text.labelLarge,
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: canvas,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(color: border),
+        ),
+        titleTextStyle: text.titleLarge,
+        contentTextStyle: text.bodyMedium,
+        actionsPadding: const EdgeInsets.all(16),
+      ),
+      datePickerTheme: DatePickerThemeData(
+        backgroundColor: canvas,
+        surfaceTintColor: Colors.transparent,
+        headerBackgroundColor: muted,
+        headerForegroundColor: foreground,
+        headerHeadlineStyle: text.headlineMedium,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(color: border),
+        ),
+        dayShape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        ),
+      ),
+      dataTableTheme: DataTableThemeData(
+        headingRowColor: WidgetStatePropertyAll(shell),
+        headingTextStyle: text.labelLarge,
+        dataTextStyle: text.bodyMedium,
+        dividerThickness: 1,
+        horizontalMargin: 16,
+        columnSpacing: 28,
+        dataRowMinHeight: 52,
+        dataRowMaxHeight: 76,
+      ),
+      tooltipTheme: TooltipThemeData(
+        decoration: BoxDecoration(
+          color: foreground,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        textStyle: text.bodySmall?.copyWith(color: canvas),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       ),
       navigationRailTheme: NavigationRailThemeData(
         backgroundColor: shell,
