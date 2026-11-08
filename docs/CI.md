@@ -63,9 +63,10 @@ Do not use workflow-level `paths` filters for this required workflow.
   build directories. `macos` requires both. XCTest hosts remain serial because
   the application enforces a single instance; parallel hosts can exit before
   connecting to XCTest.
-- `ios-watchdog`, `ios-simulator`, `ios-build`: native watchdog contracts, bounded
-  real Simulator smoke and the unsigned release build run independently.
-  `ios` requires each selected shard, allowing only plan-authorized skips.
+- `ios-simulator`, `ios-build`: bounded real Simulator smoke and the unsigned
+  release build run independently; `ios-build` first runs the native watchdog
+  contracts on the same macOS runner. `ios` requires each selected shard,
+  allowing only plan-authorized skips.
 - `windows-verify`, `windows-bundle`: native Go vet/tests, SQL-store tests and both
   Flutter suites run separately from bundle build/smoke. `windows` requires both.
   When the authoritative plan also requires `core`, common metadata,

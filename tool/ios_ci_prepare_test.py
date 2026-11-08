@@ -98,7 +98,7 @@ class ConcurrentPreparationTests(unittest.TestCase):
     def test_stage_commands_keep_strict_native_readiness_and_all_prerequisites(self):
         commands = prepare.commands(self.path)
         self.assertEqual(commands["xcode-check"], (["make", "macos-check"], 180))
-        self.assertEqual(commands["backend-build"], (["make", "backend-server-build"], 180))
+        self.assertEqual(commands["backend-build"], (["make", "backend-server-build"], 360))
         self.assertEqual(commands["simulator-ready"][0][-3:],
                          ["ready", "--state", str(prepare.native_state(self.path))])
         self.assertEqual(commands["simulator-ready"][1], 330)

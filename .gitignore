@@ -49,6 +49,3 @@ app.*.map.json
 
 # FVM Version Cache
 .fvm/
-
-# Local project records (never commit)
-.internal/
