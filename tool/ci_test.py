@@ -124,7 +124,7 @@ class GateTests(unittest.TestCase):
 
 class VerificationResultsTests(unittest.TestCase):
     jobs = ("core-static", "core-go", "core-flutter", "core", "linux", "android-web",
-            "android-emulator", "macos-lifecycle", "macos-bundle", "macos", "ios-watchdog", "ios-build", "ios-simulator",
+            "android-emulator", "macos-lifecycle", "macos-bundle", "macos", "ios-build", "ios-simulator",
             "ios", "windows-verify", "windows-bundle", "windows", "release-package")
 
     def test_selected_platform_passes_with_only_intentional_skips(self):
@@ -184,7 +184,7 @@ class ShardGateTests(unittest.TestCase):
     groups = {"core": ("core-static", "core-go", "core-flutter"),
               "windows": ("windows-verify", "windows-bundle"),
               "macos": ("macos-lifecycle", "macos-bundle"),
-              "ios": ("ios-watchdog", "ios-build", "ios-simulator")}
+              "ios": ("ios-build", "ios-simulator")}
 
     def test_every_full_shard_failure_cancellation_skip_or_missing_result_blocks(self):
         for group, jobs in self.groups.items():
@@ -731,10 +731,12 @@ class WorkflowWiringTests(unittest.TestCase):
         self.assertIn('BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR:', body)
         self.assertNotIn('erase all', body)
         self.assertNotIn('shutdown all', body)
-        self.assertIn('make ios-simulator-watchdog-test', self.job('ios-watchdog'))
-        self.assertIn('ios_ci_smoke_test.py', self.job('ios-watchdog'))
-        self.assertIn('ios_ci_prepare_test.py', self.job('ios-watchdog'))
-        self.assertIn('ios_ci_xcrun_test.py', self.job('ios-watchdog'))
+        self.assertIn('make ios-simulator-watchdog-test', self.job('ios-build'))
+        self.assertIn('ios_ci_smoke_test.py', self.job('ios-build'))
+        self.assertIn('ios_ci_prepare_test.py', self.job('ios-build'))
+        self.assertIn('ios_ci_xcrun_test.py', self.job('ios-build'))
+        workflow = Path(__file__).with_name('ci.py').parent.parent / '.github/workflows/checks.yml'
+        self.assertNotIn('\n  ios-watchdog:\n', workflow.read_text())
         self.assertNotIn('ios_ci_smoke_test.py', self.job('core-static'))
         self.assertIn('make ios-build BACKEND_URL=', self.job('ios-build'))
 

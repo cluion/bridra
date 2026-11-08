@@ -63,7 +63,8 @@ def begin(path):
 def commands(path):
     return {
         "xcode-check": (["make", "macos-check"], 180),
-        "backend-build": (["make", "backend-server-build"], 180),
+        # Cold hosted-macOS Go caches plus concurrent Simulator boot exceeded 180 s.
+        "backend-build": (["make", "backend-server-build"], 360),
         "simulator-ready": ([sys.executable, str(ROOT / "tool/ios_simulator_prepare.py"),
                              "ready", "--state", str(native_state(path))], 330),
     }

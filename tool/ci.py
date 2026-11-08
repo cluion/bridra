@@ -19,7 +19,7 @@ SCOPES = ("core", "linux", "android", "web", "macos", "ios", "windows",
 PLATFORMS = ("linux", "android", "web", "macos", "ios", "windows")
 GROUPS = {
     "core": ("core-static", "core-go", "core-flutter"),
-    "ios": ("ios-watchdog", "ios-simulator", "ios-build"),
+    "ios": ("ios-simulator", "ios-build"),
     "windows": ("windows-verify", "windows-bundle"),
     "macos": ("macos-lifecycle", "macos-bundle"),
 }
@@ -243,7 +243,7 @@ def job_requirements(scope, full):
     for group, jobs in GROUPS.items():
         expected.update({job: expected[group] for job in jobs})
     expected["ios-build"] = full or scope["ios"]
-    expected["ios-watchdog"] = expected["ios-simulator"] = full or scope["ios_simulator"]
+    expected["ios-simulator"] = full or scope["ios_simulator"]
     return expected
 
 

@@ -338,15 +338,16 @@ jobs:
           CI_NEEDS: ${{ toJSON(needs) }}
         run: python3 tool/ci.py group --group macos --plan "$CI_PLAN" --full "$CI_FULL" --needs "$CI_NEEDS"
 
-  ios-watchdog:
-    if: inputs.full || fromJSON(inputs.plan).ios_simulator
+  ios-build:
+    if: inputs.full || fromJSON(inputs.plan).ios
     runs-on: macos-15
-    timeout-minutes: 5
+    timeout-minutes: 30
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+      # Watchdog contracts share this macOS runner instead of queueing for another one.
       - name: Test hosted Simulator preparation and cleanup contracts
         run: python3 -m unittest discover -s tool -p ios_simulator_prepare_test.py -v
       - name: Test concurrent iOS prerequisites and cleanup
@@ -357,16 +358,6 @@ jobs:
         run: python3 -m unittest discover -s tool -p ios_ci_xcrun_test.py -v
       - name: Test iOS Simulator watchdog
         run: make ios-simulator-watchdog-test
-
-  ios-build:
-    if: inputs.full || fromJSON(inputs.plan).ios
-    runs-on: macos-15
-    timeout-minutes: 30
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
@@ -449,7 +440,7 @@ jobs:
 
   ios:
     if: ${{ always() && (inputs.full || fromJSON(inputs.plan).ios || fromJSON(inputs.plan).ios_simulator) }}
-    needs: [ios-watchdog, ios-build, ios-simulator]
+    needs: [ios-build, ios-simulator]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -564,7 +555,7 @@ jobs:
 
   check-results:
     if: ${{ always() }}
-    needs: [core-static, core-go, core-flutter, core, linux, android-web, android-emulator, macos-lifecycle, macos-bundle, macos, ios-watchdog, ios-build, ios-simulator, ios, windows-verify, windows-bundle, windows, release-package]
+    needs: [core-static, core-go, core-flutter, core, linux, android-web, android-emulator, macos-lifecycle, macos-bundle, macos, ios-build, ios-simulator, ios, windows-verify, windows-bundle, windows, release-package]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
