@@ -77,7 +77,8 @@ change requires changelog, migration, deprecation, and rollback documentation.
 Use `main` as the long-lived branch and short-lived `feat/*`, `fix/*`,
 `refactor/*`, `docs/*`, or `chore/*` branches. Each PR owns one independently
 reviewable change; squash it to one Conventional Commit and delete the branch
-once merged. Do not use a routine `dev` integration or release-only PR layer.
+once merged. Do not use a routine `dev` integration branch; a release may add
+one short version-preparation PR (see [docs/RELEASING.md](docs/RELEASING.md)).
 
 Run the smallest sufficient local checks for the affected behavior. The PR
 workflow selects platform work and requires the stable `ci-gate`. Application/UI
