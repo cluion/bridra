@@ -2,7 +2,8 @@
 
 Bridra uses one long-lived `main`, short-lived work branches, squash merges,
 and tag-driven releases. Merging does not publish a version. There is no routine
-`main` push verification, release branch, or release-only Pull Request.
+`main` push verification or long-lived release branch; a release may use one
+short version-preparation Pull Request (see [RELEASING.md](RELEASING.md)).
 
 ## Pull Request checks
 

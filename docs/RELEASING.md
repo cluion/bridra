@@ -26,8 +26,9 @@ prepares and verifies a release, but only a Cluion repository owner may authoriz
 the first public release, package ownership, license, or canonical identity.
 
 Prepare necessary version data in the last substantive feature/fix Pull Request
-planned for the release. Do not create a routine release branch, release-only
-commit, or additional release Pull Request. The reviewed PR and release evidence
+planned for the release. When the release is decided after that work has merged,
+use one short preparation Pull Request instead. Do not create a long-lived
+release branch. The reviewed PR and release evidence
 record the release manager, target version, source SHA, support window, security
 status, artifact evidence, package owners, and final owner approval. CI success
 alone is not publication authorization.
@@ -70,12 +71,13 @@ alone is not publication authorization.
   `compatible` or a deliberately coordinated `versioned_break`; never release
   an `incompatible` result.
 
-## Prepare version data in the substantive Pull Request
+## Prepare version data
 
 Use the feature/fix branch that owns the final substantive change planned for
-this version. Preparation fixes may be separate commits on that branch; squash
-the complete reviewed result into `main`. Do not rewrite shared history or
-force a second release PR solely to group version changes.
+this version. If that change has already merged, open one preparation Pull
+Request containing only the version data and upgrade registration below.
+Preparation fixes may be separate commits on that branch; squash the complete
+reviewed result into `main`. Do not rewrite shared history.
 
 Choose the release version before this PR merges. If all work has already merged
 and the source version is wrong, a reviewed metadata correction is still needed;
@@ -165,7 +167,7 @@ gate requires new verification. A partial PR plan cannot replace the release's
 full platform evidence. Never reuse another SHA's release artifacts or treat a
 PR result as proof of final package identity. Evidence older than seven days,
 missing records, unavailable APIs and fork PRs all use the complete tag fallback.
-No new release-only PR or `main` push CI is required.
+No further PR or `main` push CI is required.
 
 Before environment approval, inspect the release verification decision, its
 source/run/tree evidence when reused, successful exact-tag packaging jobs and
@@ -225,7 +227,7 @@ by these attestations.
 
 ## Tag and publish
 
-Create the annotated Go submodule tag only after the substantive Pull Request
+Create the annotated Go submodule tag only after the version-preparing Pull Request
 is merged and the repository owner authorizes the version and SHA. Replace
 `FULL_APPROVED_MAIN_SHA` with that exact commit and read its version, rather than
 the version of a possibly different local checkout:
@@ -313,9 +315,22 @@ approval is not an administrative bypass.
 
 ## Post-release verification
 
-Verify public installation in one disposable consumer with fresh Go/Pub caches,
-without repository dependency overrides. Set `BRIDRA_VERSION` to the exact
-published version approved above:
+The release workflow has already verified the exact tag source, reproducible CLI
+builds, the Dart dry-run and the immutable candidate's digests before approval.
+Post-release checks confirm what users actually receive. Their depth depends on
+the release:
+
+| Release | Required checks |
+| --- | --- |
+| Patch | Public installation and version, plus attestations |
+| Minor, or a patch that changes migration or adoption behavior | Everything below |
+
+### Every release
+
+Confirm the Release run succeeded and that GitHub Releases and pub.dev both list
+the version. Install from the public proxy with fresh caches, without
+repository dependency overrides. Set `BRIDRA_VERSION` to the exact published
+version approved above:
 
 ```bash
 BRIDRA_ACCEPTANCE_DIR="$(mktemp -d)"
@@ -327,15 +342,10 @@ export PUB_CACHE="$BRIDRA_ACCEPTANCE_DIR/pub"
 export GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org GOWORK=off
 go install "github.com/cluion/bridra/backend/cmd/bridra@v${BRIDRA_VERSION}"
 "$GOBIN/bridra" version --json
-cd "$BRIDRA_ACCEPTANCE_DIR"
-"$GOBIN/bridra" create release_smoke --module example.com/acme/release-smoke
-cd release_smoke
-make verify
 ```
 
-Download the public archives and verify all six checksums. Verify both
-attestations for at least the native archive, while requiring the release
-workflow as signer:
+Verify both attestations for at least the native archive, while requiring the
+release workflow as signer:
 
 ```bash
 gh attestation verify bridra_VERSION_OS_ARCH.tar.gz \
@@ -347,24 +357,36 @@ gh attestation verify bridra_VERSION_OS_ARCH.tar.gz \
   --predicate-type https://spdx.dev/Document/v2.3
 ```
 
-Require the public Go module origin and archive manifest to match the approved
-source SHA. Compare the pub.dev archive/digest with that source separately from
-fresh-cache package-index resolution; inspect the consumer's lockfile for the
-intended hosted version. Verify the native public archive's version/SHA and both
-attestations. One generated consumer's full verification is sufficient; do not
+### Minor releases and migration-changing patches
+
+Using the same fresh caches, generate and verify one disposable consumer:
+
+```bash
+cd "$BRIDRA_ACCEPTANCE_DIR"
+"$GOBIN/bridra" create release_smoke --module example.com/acme/release-smoke
+cd release_smoke
+make verify
+```
+
+Download the public archives and verify all six checksums. Require the public Go
+module origin and archive manifest to match the approved source SHA. Compare the
+pub.dev archive/digest with that source separately from fresh-cache
+package-index resolution; inspect the consumer's lockfile for the intended
+hosted version. One generated consumer's full verification is sufficient; do not
 repeat it for local-source, squash-source and public-archive copies of the same
 release. Add an actual previous-version upgrade acceptance when migration or
 adoption behavior changes or an unresolved compatibility risk warrants it.
 
 The release is incomplete until the Go module, Dart package, CLI archives,
-checksums, SBOM, attestations, documentation and that external consumer agree.
+SBOM, attestations and documentation agree, plus the checksums and external
+consumer when they are required.
 
 After publication, confirm `SECURITY.md` and `SUPPORT.md` still match the
 supported line, verify GitHub installation instructions from a clean
 environment, and announce any deprecation or migration window. Keep the reviewed
-substantive PR, workflow artifacts, and GitHub Release as the evidence record.
+PRs, workflow artifacts, and GitHub Release as the evidence record.
 Delete completed work branches after merge; retain the release tag. There is no
-routine release branch to retain or clean up after publication.
+long-lived release branch to retain or clean up after publication.
 
 ## Failed or compromised release
 
