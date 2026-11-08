@@ -667,7 +667,17 @@ class WorkflowWiringTests(unittest.TestCase):
         self.assertEqual(body.count('ios_simulator_prepare.py device --state'), 2)
         self.assertEqual(body.count('ios_simulator_prepare.py ready --state'), 1)
         self.assertNotIn('outputs.device', body)
-        self.assertEqual(body.count('timeout-minutes: 12'), 2)
+        initial = re.search(r'id: ios_simulator_smoke\n(?:.*\n){1,3}?\s+timeout-minutes: (\d+)\n', body)
+        self.assertIsNotNone(initial)
+        self.assertIn("id: ios_simulator_retry\n        if: steps.ios_simulator_smoke.outcome == 'failure'\n"
+                      "        timeout-minutes: 12\n", body)
+        # The initial step must outlast its own prerequisite and Flutter watchdogs.
+        import ios_ci_prepare
+        prerequisites = max(limit for _, limit in ios_ci_prepare.commands(Path('state.json')).values())
+        smoke = Path(__file__).with_name('ios_simulator_smoke.sh').read_text()
+        flutter = int(re.search(r'BRIDRA_IOS_SIMULATOR_TIMEOUT_SECONDS:-(\d+)', smoke).group(1))
+        self.assertGreater(int(initial.group(1)) * 60, prerequisites + flutter)
+        self.assertIn('timeout-minutes: 35', body)
         self.assertIn('if: always()\n        run: python3 tool/ios_ci_prepare.py finish', body)
         self.assertIn('BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR:', body)
         self.assertNotIn('erase all', body)

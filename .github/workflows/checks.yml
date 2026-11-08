@@ -401,7 +401,8 @@ jobs:
       - name: Exercise iOS Simulator HTTP round trip
         id: ios_simulator_smoke
         continue-on-error: true
-        timeout-minutes: 12
+        # Outlast the prerequisite (360 s) and Flutter (540 s) watchdogs so they, not this step, decide.
+        timeout-minutes: 16
         env:
           BRIDRA_IOS_SIMULATOR_DIAGNOSTICS_DIR: ${{ runner.temp }}/bridra-ios-simulator-diagnostics/initial
         run: |
