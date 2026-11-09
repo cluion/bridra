@@ -245,15 +245,13 @@ use the same watchdog and cleanup behavior.
 CI runs `tool/ios_ci_smoke.sh` after readiness and validated device selection.
 Its optional preparation-state argument requires the successful source-bound
 results instead of executing the same prerequisites again. Without that argument
-(retry and the separate preboot experiment), it runs the original foreground
+(the retry), it runs the original foreground
 `macos-check` and `backend-server-build` before the unchanged native smoke.
 Prerequisite durations come from monotonic worker timers; native smoke retains
 its shell timer. Both print `Bridra iOS STAGE seconds: ...` and exit codes.
 The Flutter invocation adds `--verbose` to expose tool-reported phases; assertions,
 launch barrier and watchdogs are unchanged. Buffered log timestamps cannot be
-mistaken for internal build-start times. The optional preboot experiment retains
-its prior 20-second optional discovery probe and serial prerequisite control;
-results from its earlier implementation are not measurements of the new pipeline.
+mistaken for internal build-start times.
 
 macOS lifecycle XCTest and the signed Go sandbox fixture run serially on their
 own runner, concurrently with the separate release bundle runner. Each has a
@@ -277,8 +275,7 @@ project symlink exists.
 Only SDK versions, Pub hosted/git packages and Gradle dependencies are cached.
 SDK keys identify complete host profiles, and each writer pre-caches the entire
 profile before saving. macOS/iOS therefore cannot save different SDK artifact
-sets under the same immutable key. See the optional
-[XCTest comparison](IOS_XCTEST_EXPERIMENT.md) for controlled cold/warm measurements.
+sets under the same immutable key.
 Credentials, OIDC files, repository checkouts, test outcomes and release candidates
 are not dependency-cache entries. Go's existing setup-action cache remains enabled.
 
