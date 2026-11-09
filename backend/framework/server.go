@@ -59,7 +59,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	scanner.Buffer(make([]byte, 64*1024), MaxRequestBytes)
 	dispatchCtx, cancelDispatch := context.WithCancel(ctx)
 	defer cancelDispatch()
-	encoder := newServerResponseEncoder(s.Output, cancelDispatch)
+	encoder := newServerResponseEncoder(s.Output, s.Errors, cancelDispatch)
 	requests := newServerRequestRegistry()
 	jobs := make(chan *serverRequest, maxPendingRequests)
 	var workers sync.WaitGroup
@@ -569,33 +569,51 @@ func parseStreamWindow(value string) int {
 }
 
 type serverResponseEncoder struct {
-	mu      sync.Mutex
-	encoder *json.Encoder
-	cancel  context.CancelFunc
-	err     error
+	mu     sync.Mutex
+	output io.Writer
+	logs   io.Writer
+	cancel context.CancelFunc
+	err    error
 }
 
 func newServerResponseEncoder(
 	output io.Writer,
+	logs io.Writer,
 	cancel context.CancelFunc,
 ) *serverResponseEncoder {
 	return &serverResponseEncoder{
-		encoder: json.NewEncoder(output),
-		cancel:  cancel,
+		output: output,
+		logs:   logs,
+		cancel: cancel,
 	}
 }
 
+// Encode writes one response line. Only output failures stop the server; an
+// unencodable result is answered for its own request, logged, and returned.
 func (e *serverResponseEncoder) Encode(response Response) error {
+	encoded, err := marshalResponse(response)
+	if err != nil && encoded != nil && e.logs != nil {
+		// Logged outside the lock so a blocked log writer cannot stall stdout.
+		fmt.Fprintf(e.logs, "sidecar: %v\n", err)
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.err != nil {
 		return e.err
 	}
-	if err := e.encoder.Encode(response); err != nil {
-		e.err = err
-		e.cancel()
+	if encoded == nil {
+		return e.fail(err)
 	}
-	return e.err
+	if _, writeErr := e.output.Write(append(encoded, '\n')); writeErr != nil {
+		return e.fail(writeErr)
+	}
+	return err
+}
+
+func (e *serverResponseEncoder) fail(err error) error {
+	e.err = err
+	e.cancel()
+	return err
 }
 
 func (e *serverResponseEncoder) Err() error {

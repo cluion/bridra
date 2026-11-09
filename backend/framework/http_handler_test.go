@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -593,5 +594,61 @@ func TestHTTPHandlerTreatsNonCanonicalStreamMetadataAsUnary(t *testing.T) {
 		response.Error == nil ||
 		response.Error.Code != "streaming_required" {
 		t.Fatalf("response = %#v", response)
+	}
+}
+
+func TestHTTPHandlerAnswersUnencodableResults(t *testing.T) {
+	router := NewRouter()
+	router.Handle("bad.value", func(*Context) (any, error) { return math.NaN(), nil })
+	router.Handle("bad.stream", func(ctx *Context) (any, error) {
+		return ProduceStream(ctx, func(stream *StreamWriter) error {
+			if err := stream.Send("first"); err != nil {
+				return err
+			}
+			return stream.Send(math.Inf(1))
+		})
+	})
+	var logs bytes.Buffer
+	handler := &HTTPHandler{Router: router, Errors: &logs}
+	serve := func(body string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, "/rpc", strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+		}
+		return recorder
+	}
+
+	var unary Response
+	if err := json.NewDecoder(serve(`{"id":"1","method":"bad.value"}`).Body).Decode(&unary); err != nil {
+		t.Fatalf("decode unary response: %v", err)
+	}
+	if unary.ID != "1" || unary.Result != nil || unary.Error == nil ||
+		unary.Error.Code != "internal_error" {
+		t.Fatalf("unary response = %#v", unary)
+	}
+
+	decoder := json.NewDecoder(serve(`{"id":"2","method":"bad.stream","meta":{"stream":"1"}}`).Body)
+	var data, done Response
+	if err := decoder.Decode(&data); err != nil {
+		t.Fatalf("decode stream data: %v", err)
+	}
+	if err := decoder.Decode(&done); err != nil {
+		t.Fatalf("decode stream completion: %v", err)
+	}
+	if data.Result != "first" || data.Stream == nil || data.Stream.Kind != streamDataKind {
+		t.Fatalf("stream data = %#v", data)
+	}
+	if done.ID != "2" || done.Error == nil || done.Error.Code != "internal_error" ||
+		done.Stream == nil || done.Stream.Sequence != 2 || done.Stream.Kind != streamCompleteKind {
+		t.Fatalf("stream completion = %#v", done)
+	}
+	if decoder.More() {
+		t.Fatal("stream wrote frames after its completion")
+	}
+	if !strings.Contains(logs.String(), "unsupported value") {
+		t.Fatalf("logs = %q", logs.String())
 	}
 }

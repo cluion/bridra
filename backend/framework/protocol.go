@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 )
 
@@ -64,6 +65,33 @@ func NewError(code, message string) *RPCError {
 
 func NewErrorWithData(code, message string, data map[string]any) *RPCError {
 	return &RPCError{Code: code, Message: message, Data: data}
+}
+
+// marshalResponse encodes one response. A result JSON cannot represent, such
+// as NaN, becomes an internal_error reply for the same request (a terminal
+// frame for streams); the encoding error is still returned for logging and to
+// stop the stream. Bytes are nil only if that fallback cannot be encoded.
+func marshalResponse(response Response) ([]byte, error) {
+	encoded, err := json.Marshal(response)
+	if err == nil {
+		return encoded, nil
+	}
+	err = fmt.Errorf("framework: encode response %q: %w", response.ID, err)
+	fallback := Response{
+		ID:    response.ID,
+		Error: NewError("internal_error", "The Go backend could not complete the request."),
+	}
+	if response.Stream != nil {
+		fallback.Stream = &StreamFrame{
+			Sequence: response.Stream.Sequence,
+			Kind:     streamCompleteKind,
+		}
+	}
+	encoded, fallbackErr := json.Marshal(fallback)
+	if fallbackErr != nil {
+		return nil, errors.Join(err, fallbackErr)
+	}
+	return encoded, err
 }
 
 type Context struct {
