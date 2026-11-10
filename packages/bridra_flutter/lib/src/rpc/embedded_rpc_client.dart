@@ -467,10 +467,21 @@ final class EmbeddedRpcClient implements RpcClient {
         attempt++;
         String? handle;
         try {
-          final activeHandle = await _fileCall(
-            bridge.openDownload(file.id, received),
-            abort,
-          );
+          final opening = bridge.openDownload(file.id, received);
+          final String activeHandle;
+          try {
+            activeHandle = await _fileCall(opening, abort);
+          } on Object {
+            // An abort can win before the native open returns. Close that
+            // late handle so the file is not left busy; failures are ignored
+            // like the best-effort release below.
+            unawaited(
+              opening
+                  .then((late) => bridge.closeDownload(late, commit: false))
+                  .catchError((Object _) {}),
+            );
+            rethrow;
+          }
           handle = activeHandle;
           while (received < file.size) {
             final chunk = await _fileCall(

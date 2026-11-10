@@ -422,6 +422,36 @@ void main() {
     await client.close();
   });
 
+  test('releases a download handle that opens after cancellation', () async {
+    final content = Uint8List.fromList(utf8.encode('embedded download bytes'));
+    final openGate = Completer<void>();
+    final bridge = _TestFileBridge(downloadBytes: content)
+      ..holdDownloadOpen = openGate;
+    final client = EmbeddedRpcClient(token: 'token', bridge: bridge);
+    addTearDown(client.close);
+    final cancellation = RpcCancellationToken();
+    final download = client
+        .download(
+          _fileReference(
+            id: _TestFileBridge.downloadID,
+            name: 'result.txt',
+            bytes: content,
+          ),
+          cancellationToken: cancellation,
+        )
+        .drain<void>();
+    await bridge.downloadOpenStarted.future;
+
+    cancellation.cancel();
+    await expectLater(download, throwsA(isA<RpcCancelledException>()));
+    // The native open finishes only after the cancellation won the race.
+    openGate.complete();
+    await pumpEventQueue();
+
+    expect(bridge.closedDownloadHandles, ['download-1']);
+    expect(bridge.downloadCommits, [false]);
+  });
+
   test('rejects an embedded download with a mismatched digest', () async {
     final content = Uint8List.fromList(utf8.encode('unexpected'));
     final bridge = _TestFileBridge(downloadBytes: content);
@@ -656,6 +686,7 @@ final class _TestFileBridge
   final Uint8List downloadBytes;
   final List<int> downloadOffsets = [];
   final List<bool> downloadCommits = [];
+  final List<String> closedDownloadHandles = [];
   final List<int> appendSizes = [];
   final BytesBuilder _uploaded = BytesBuilder(copy: false);
   var failSecondDownloadRead = false;
@@ -663,6 +694,8 @@ final class _TestFileBridge
   var loseFirstUploadResponse = false;
   var uploadStatusCalls = 0;
   final Completer<void> downloadReadStarted = Completer<void>();
+  final Completer<void> downloadOpenStarted = Completer<void>();
+  Completer<void>? holdDownloadOpen;
   var _downloadOffset = 0;
   var _downloadReads = 0;
   String _uploadName = '';
@@ -690,6 +723,8 @@ final class _TestFileBridge
     expect(fileID, downloadID);
     downloadOffsets.add(offset);
     _downloadOffset = offset;
+    if (!downloadOpenStarted.isCompleted) downloadOpenStarted.complete();
+    await holdDownloadOpen?.future;
     return 'download-${downloadOffsets.length}';
   }
 
@@ -716,6 +751,7 @@ final class _TestFileBridge
 
   @override
   Future<void> closeDownload(String handle, {required bool commit}) async {
+    closedDownloadHandles.add(handle);
     downloadCommits.add(commit);
   }
 
