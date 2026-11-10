@@ -1,12 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.24.2 - 2026-11-10
 
 - Cancelling the subscription of `HttpRpcClient.stream()` or `download()` now
   aborts the request at once instead of waiting for the next frame or chunk.
 - `SidecarClient` and `EmbeddedRpcClient` streams whose token is cancelled
   before they are listened to fail with `RpcCancelledException` without
   starting the request.
+- Dependency upgrades preserve application-owned UI, native runners, RPC
+  protocol and adopted template baseline. Public Dart API signatures and RPC
+  payloads are unchanged.
 
 ## 0.24.1 - 2026-11-07
 

@@ -3,7 +3,7 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
-## [Unreleased]
+## [0.24.2] - 2026-11-10
 
 ### Fixed
 
@@ -17,6 +17,21 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
 - A sidecar or embedded `stream()` whose cancellation token is cancelled before
   the stream is listened to now fails with `RpcCancelledException` without
   starting the request, as the HTTP client already did.
+
+### Upgrade
+
+- Register the automatic `0.24.1` to `0.24.2` dependency transition. Existing
+  projects retain their UI, native runners, adopted template baseline and RPC
+  protocol. Public Go/Dart API signatures, the wire format, Project Template
+  `9`, Flutter metadata schema `3`, Web metadata schema `4` and the default RPC
+  protocol `1` remain unchanged.
+  See the [0.24.2 upgrade guide](docs/UPGRADING.md#framework-0241-to-0242).
+
+### Support
+
+- At publication, `0.24.2` becomes the latest supported patch in `0.24.x` on a
+  best-effort basis until the next minor line is published. Superseded patches
+  and unreleased candidates are unsupported.
 
 ## [0.24.1] - 2026-11-07
 

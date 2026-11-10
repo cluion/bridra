@@ -23,11 +23,13 @@ var dependencyOnlyReleases = []struct {
 	{"0.23.1", []string{"0.22.0", "0.23.0"}},
 	{"0.23.2", []string{"0.21.0", "0.22.0", "0.23.0", "0.23.1"}},
 	{"0.24.1", []string{"0.23.2", "0.24.0"}},
+	{"0.24.2", []string{"0.24.0", "0.24.1"}},
 }
 
 // Registered framework versions in catalog order from the last manual baseline.
 var releaseCatalogChain = []string{
 	"0.19.0", "0.20.0", "0.21.0", "0.22.0", "0.23.0", "0.23.1", "0.23.2", "0.24.0", "0.24.1",
+	"0.24.2",
 }
 
 // Starter files an application may own; dependency-only upgrades must keep them.
