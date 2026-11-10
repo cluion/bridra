@@ -11,6 +11,12 @@ Semantic Versioning; the RPC wire protocol is versioned independently.
   `internal_error` reply for that request (a terminal frame for streams) and a
   log line. Previously one such result stopped the whole desktop sidecar, and
   the HTTP backend sent an empty `200` body.
+- Cancelling the subscription of an HTTP `stream()` or `download()` now aborts
+  the request at once. Previously a quiet connection stayed open until the next
+  frame or chunk, or until the timeout.
+- A sidecar or embedded `stream()` whose cancellation token is cancelled before
+  the stream is listened to now fails with `RpcCancelledException` without
+  starting the request, as the HTTP client already did.
 
 ## [0.24.1] - 2026-11-07
 

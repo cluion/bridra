@@ -213,6 +213,15 @@ final class EmbeddedRpcClient implements RpcClient {
           });
           return;
         }
+        // The token may have been cancelled after stream() returned; its
+        // onCancel event does not replay for this late listener.
+        if (cancellationToken?.isCancelled ?? false) {
+          scheduleMicrotask(() {
+            controller.addError(RpcCancelledException(method));
+            unawaited(controller.close());
+          });
+          return;
+        }
         state = _EmbeddedStreamState(controller);
         _streams[id] = state;
         unawaited(

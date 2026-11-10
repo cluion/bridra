@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Cancelling the subscription of `HttpRpcClient.stream()` or `download()` now
+  aborts the request at once instead of waiting for the next frame or chunk.
+- `SidecarClient` and `EmbeddedRpcClient` streams whose token is cancelled
+  before they are listened to fail with `RpcCancelledException` without
+  starting the request.
+
 ## 0.24.1 - 2026-11-07
 
 - Align package metadata with the Flutter starter's shadcn-inspired themes,

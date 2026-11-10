@@ -472,6 +472,15 @@ class SidecarClient implements RpcClient {
     output = StreamController<RpcStreamEvent<RpcReply>>(
       sync: true,
       onListen: () {
+        // The token may have been cancelled after stream() returned; its
+        // onCancel event does not replay for this late listener.
+        if (cancellationToken?.isCancelled ?? false) {
+          scheduleMicrotask(() {
+            output.addError(RpcCancelledException(method));
+            unawaited(output.close());
+          });
+          return;
+        }
         _streams[id] = pending;
         pending.timeout = Timer(
           timeout,
