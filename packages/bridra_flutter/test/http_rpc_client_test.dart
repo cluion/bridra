@@ -620,6 +620,77 @@ void main() {
     await expectLater(cancelledUpload, throwsA(isA<RpcCancelledException>()));
     await cancelledUploadClient.close();
   });
+
+  test('cancelling a quiet stream or download aborts its request', () async {
+    final streamTransport = QuietBodyClient(
+      (id) => utf8.encode(
+        '${jsonEncode({
+          'id': id,
+          'result': 1,
+          'meta': <String, Object?>{},
+          'stream': {'sequence': 1, 'kind': 'data'},
+        })}\n',
+      ),
+    );
+    final streamClient = HttpRpcClient(
+      endpoint: Uri.parse('https://backend.example/rpc'),
+      token: 'remote-token',
+      client: streamTransport,
+    );
+    addTearDown(streamClient.close);
+    final firstEvent = Completer<void>();
+    final streamSubscription = streamClient.stream('logs.watch').listen((_) {
+      if (!firstEvent.isCompleted) firstEvent.complete();
+    });
+    await firstEvent.future;
+    // Let the stream wait on the quiet body, as an idle consumer would.
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    await streamSubscription.cancel().timeout(const Duration(seconds: 1));
+    await streamTransport.aborted.future.timeout(const Duration(seconds: 1));
+
+    final content = utf8.encode('quiet-file');
+    final downloadTransport = QuietBodyClient((_) => content.sublist(0, 4));
+    final downloadClient = HttpRpcClient(
+      endpoint: Uri.parse('https://backend.example/rpc'),
+      token: 'remote-token',
+      client: downloadTransport,
+    );
+    addTearDown(downloadClient.close);
+    final firstChunk = Completer<void>();
+    final downloadSubscription = downloadClient
+        .download(_httpFileReference(content))
+        .listen((_) {
+          if (!firstChunk.isCompleted) firstChunk.complete();
+        });
+    await firstChunk.future;
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    await downloadSubscription.cancel().timeout(const Duration(seconds: 1));
+    await downloadTransport.aborted.future.timeout(const Duration(seconds: 1));
+  });
+}
+
+/// Sends one body chunk, then keeps the response open until it is aborted.
+class QuietBodyClient extends http.BaseClient {
+  QuietBodyClient(this.firstChunk);
+
+  final List<int> Function(Object? requestID) firstChunk;
+  final aborted = Completer<void>();
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final abortTrigger = (request as http.Abortable).abortTrigger!;
+    final body = (request as http.Request).body;
+    final requestID = body.isEmpty ? null : (jsonDecode(body) as Map)['id'];
+    final response = StreamController<List<int>>()..add(firstChunk(requestID));
+    unawaited(
+      abortTrigger.then((_) {
+        aborted.complete();
+        response.addError(http.RequestAbortedException(request.url));
+        unawaited(response.close());
+      }),
+    );
+    return http.StreamedResponse(response.stream, 200);
+  }
 }
 
 class AbortObservingClient extends http.BaseClient {

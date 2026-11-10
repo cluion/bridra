@@ -19,6 +19,21 @@ void main() {
     },
   );
 
+  test('a stream cancelled before it is listened to never starts', () async {
+    final bridge = _TestStreamingBridge((request) => const Stream.empty());
+    final client = EmbeddedRpcClient(token: 'token', bridge: bridge);
+    addTearDown(client.close);
+    final cancellationToken = RpcCancellationToken();
+    final stream = client.stream(
+      'logs.watch',
+      cancellationToken: cancellationToken,
+    );
+    cancellationToken.cancel();
+
+    await expectLater(stream, emitsError(isA<RpcCancelledException>()));
+    expect(bridge.requests, isEmpty);
+  });
+
   test(
     'subscription replay uses embedded frames and preserves the cursor',
     () async {

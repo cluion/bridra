@@ -718,6 +718,22 @@ void main() {
     expect(process.receivedRequestCount, 0);
   });
 
+  test('a stream cancelled before it is listened to is not sent', () async {
+    final process = FakeSidecarProcess();
+    final client = await _startClient(process);
+    addTearDown(client.close);
+    final cancellationToken = RpcCancellationToken();
+    final stream = client.stream(
+      'reports.build',
+      timeout: const Duration(seconds: 1),
+      cancellationToken: cancellationToken,
+    );
+    cancellationToken.cancel();
+
+    await expectLater(stream, emitsError(isA<RpcCancelledException>()));
+    expect(process.receivedRequestCount, 0);
+  });
+
   test('launch handshake write failures stop the process safely', () async {
     final process = FailingWriteSidecarProcess();
     await expectLater(

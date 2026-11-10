@@ -132,7 +132,17 @@ class HttpRpcClient implements RpcClient {
     Map<String, Object?> params = const {},
     Duration timeout = const Duration(minutes: 5),
     RpcCancellationToken? cancellationToken,
-  }) async* {
+  }) => _abortOnCancel(
+    cancellationToken,
+    (token) => _stream(method, params, timeout, token),
+  );
+
+  Stream<RpcStreamEvent<RpcReply>> _stream(
+    String method,
+    Map<String, Object?> params,
+    Duration timeout,
+    RpcCancellationToken? cancellationToken,
+  ) async* {
     if (_closed) throw const BackendClosedException();
     if (cancellationToken?.isCancelled ?? false) {
       throw RpcCancelledException(method);
@@ -262,7 +272,17 @@ class HttpRpcClient implements RpcClient {
     Duration timeout = const Duration(minutes: 15),
     RpcCancellationToken? cancellationToken,
     int maxAttempts = 3,
-  }) async* {
+  }) => _abortOnCancel(
+    cancellationToken,
+    (token) => _download(file, timeout, token, maxAttempts),
+  );
+
+  Stream<List<int>> _download(
+    RpcFileReference file,
+    Duration timeout,
+    RpcCancellationToken? cancellationToken,
+    int maxAttempts,
+  ) async* {
     if (maxAttempts < 1) {
       throw ArgumentError.value(
         maxAttempts,
@@ -729,4 +749,45 @@ final class _AbortableFileRequest extends http.BaseRequest with http.Abortable {
     super.finalize();
     return http.ByteStream(source);
   }
+}
+
+/// Lets a consumer's subscription cancel abort an `async*` request [body].
+///
+/// Cancelling an `async*` stream only takes effect at its next `yield`, so a
+/// body waiting on a quiet response would keep the request open until the next
+/// frame or its timeout. The body watches a token that is also cancelled when
+/// the consumer cancels, which aborts the request right away.
+Stream<T> _abortOnCancel<T>(
+  RpcCancellationToken? cancellationToken,
+  Stream<T> Function(RpcCancellationToken token) body,
+) {
+  final linked = RpcCancellationToken();
+  StreamSubscription<void>? forward;
+  StreamSubscription<T>? source;
+  late final StreamController<T> output;
+  output = StreamController<T>(
+    sync: true,
+    onListen: () {
+      if (cancellationToken?.isCancelled ?? false) {
+        linked.cancel();
+      } else {
+        forward = cancellationToken?.onCancel.listen((_) => linked.cancel());
+      }
+      source = body(
+        linked,
+      ).listen(output.add, onError: output.addError, onDone: output.close);
+    },
+    onPause: () => source?.pause(),
+    onResume: () => source?.resume(),
+    onCancel: () {
+      linked.cancel();
+      unawaited(forward?.cancel());
+      // The body ends with the cancellation this subscription just requested.
+      return source?.cancel().catchError(
+        (Object _) {},
+        test: (error) => error is RpcCancelledException,
+      );
+    },
+  );
+  return output.stream;
 }
