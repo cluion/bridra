@@ -65,6 +65,51 @@ The historical sections below describe each release's full migration scope.
 The current planner filters their classified platform requirements as described
 above; it does not rewrite application-owned files.
 
+## Framework 0.24.1 to 0.24.2
+
+Version `0.24.2` fixes transport reliability:
+
+- A handler result that JSON cannot encode, such as `NaN`, now returns an
+  `internal_error` reply for that request. It no longer stops the desktop
+  sidecar or sends an empty HTTP body.
+- Cancelling an HTTP stream or download subscription aborts its request at once.
+- A sidecar or embedded stream whose token was cancelled before it was listened
+  to is not sent.
+
+Public Go/Dart API signatures, the wire format, Project Template `9`, Flutter
+metadata schema `3`, Web metadata schema `4` and the default RPC protocol `1`
+remain unchanged.
+
+After publication, install the exact CLI and review the dependency transition:
+
+```bash
+go install github.com/cluion/bridra/backend/cmd/bridra@v0.24.2
+bridra upgrade --plan --json --to 0.24.2
+```
+
+The `0.24.1` to `0.24.2` step is automatic when earlier required adoption is
+complete. If the report shows `"applyAvailable": true`, apply it and confirm
+the resulting plan reports `current`:
+
+```bash
+bridra upgrade --apply --to 0.24.2
+bridra upgrade --plan --to 0.24.2
+```
+
+Apply updates dependency manifests, lockfiles and framework metadata, then runs
+the project's `make verify`. It preserves UI, native runners, schema/generated
+contracts, custom RPC protocol and the adopted template baseline. A failed
+resolution or verification restores the managed dependency files and metadata.
+
+Applications that relied on a stream or download continuing after its
+subscription was cancelled should keep the subscription instead. Code that
+expected an empty HTTP body or a sidecar restart for an unencodable result
+should handle the `internal_error` reply.
+
+To roll back, restore the previous managed manifests, lockfiles and framework
+metadata from version control, resolve dependencies and run the application's
+verification.
+
 ## Framework 0.24.0 to 0.24.1
 
 Version `0.24.1` updates the application-owned Flutter starter with consistent
