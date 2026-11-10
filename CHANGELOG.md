@@ -3,6 +3,15 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
+## [Unreleased]
+
+### Fixed
+
+- Answer a handler result that JSON cannot encode, such as `NaN`, with an
+  `internal_error` reply for that request (a terminal frame for streams) and a
+  log line. Previously one such result stopped the whole desktop sidecar, and
+  the HTTP backend sent an empty `200` body.
+
 ## [0.24.1] - 2026-11-07
 
 ### Added

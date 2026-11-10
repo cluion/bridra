@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -1034,4 +1035,73 @@ type failingWriter struct{}
 
 func (failingWriter) Write([]byte) (int, error) {
 	return 0, errWriteFailed
+}
+
+func TestServerAnswersUnencodableResultsAndKeepsServing(t *testing.T) {
+	router := NewRouter()
+	router.Handle("bad.value", func(*Context) (any, error) { return math.NaN(), nil })
+	router.Handle("bad.stream", func(ctx *Context) (any, error) {
+		return ProduceStream(ctx, func(stream *StreamWriter) error {
+			if err := stream.Send("first"); err != nil {
+				return err
+			}
+			return stream.Send(math.Inf(1))
+		})
+	})
+	router.Handle("echo", func(*Context) (any, error) { return "ok", nil })
+
+	// Input stays open until every response arrives; EOF would cancel the stream.
+	inputReader, inputWriter := io.Pipe()
+	outputReader, outputWriter := io.Pipe()
+	var logs bytes.Buffer
+	server := &Server{
+		Router:                router,
+		Input:                 inputReader,
+		Output:                outputWriter,
+		Errors:                &logs,
+		MaxConcurrentRequests: 1,
+	}
+	result := make(chan error, 1)
+	go func() {
+		err := server.Serve(context.Background())
+		_ = outputWriter.CloseWithError(err)
+		result <- err
+	}()
+	writeServerRequest(t, inputWriter, `{"id":"1","method":"bad.value"}`)
+	writeServerRequest(t, inputWriter, `{"id":"2","method":"bad.stream","meta":{"stream":"1"}}`)
+	writeServerRequest(t, inputWriter, `{"id":"3","method":"echo"}`)
+
+	decoder := json.NewDecoder(outputReader)
+	responses := make([]Response, 4)
+	for index := range responses {
+		if err := decoder.Decode(&responses[index]); err != nil {
+			t.Fatalf("decode response %d: %v", index+1, err)
+		}
+	}
+	if err := inputWriter.Close(); err != nil {
+		t.Fatalf("close input: %v", err)
+	}
+	if err := <-result; err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+
+	if unary := responses[0]; unary.ID != "1" || unary.Result != nil ||
+		unary.Error == nil || unary.Error.Code != "internal_error" {
+		t.Fatalf("unary response = %#v", unary)
+	}
+	if data := responses[1]; data.ID != "2" || data.Result != "first" ||
+		data.Stream == nil || data.Stream.Sequence != 1 || data.Stream.Kind != streamDataKind {
+		t.Fatalf("stream data = %#v", data)
+	}
+	if done := responses[2]; done.ID != "2" || done.Error == nil ||
+		done.Error.Code != "internal_error" || done.Stream == nil ||
+		done.Stream.Sequence != 2 || done.Stream.Kind != streamCompleteKind {
+		t.Fatalf("stream completion = %#v", done)
+	}
+	if next := responses[3]; next.ID != "3" || next.Result != "ok" {
+		t.Fatalf("next response = %#v", next)
+	}
+	if strings.Count(logs.String(), "unsupported value") != 2 {
+		t.Fatalf("logs = %q", logs.String())
+	}
 }

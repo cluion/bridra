@@ -157,19 +157,24 @@ func (h *HTTPHandler) writeStream(
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
-	encoder := json.NewEncoder(w)
 	err := h.Router.DispatchStream(
 		r.Context(),
 		request,
 		func(response Response) error {
-			if response.Error != nil {
+			encoded, encodeErr := marshalResponse(response)
+			if encoded == nil {
+				return encodeErr
+			}
+			if encodeErr != nil {
+				markHTTPObservationError(w, "internal_error")
+			} else if response.Error != nil {
 				markHTTPObservationError(w, response.Error.Code)
 			}
-			if err := encoder.Encode(response); err != nil {
+			if _, err := w.Write(append(encoded, '\n')); err != nil {
 				return err
 			}
 			flusher.Flush()
-			return nil
+			return encodeErr
 		},
 	)
 	if err != nil && r.Context().Err() == nil {
@@ -251,11 +256,22 @@ func (h *HTTPHandler) writeError(w http.ResponseWriter, status int, code, messag
 	h.writeJSON(w, status, Response{Error: NewError(code, message)})
 }
 
+// writeJSON encodes before writing headers, so an unencodable result still
+// produces a complete internal_error body instead of an empty 200.
 func (h *HTTPHandler) writeJSON(w http.ResponseWriter, status int, response Response) {
+	encoded, err := marshalResponse(response)
+	if err != nil {
+		h.logf("http backend: %v\n", err)
+		if encoded == nil {
+			http.Error(w, "", http.StatusInternalServerError)
+			return
+		}
+		markHTTPObservationError(w, "internal_error")
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		h.logf("http backend: encode response: %v\n", err)
+	if _, err := w.Write(append(encoded, '\n')); err != nil {
+		h.logf("http backend: write response: %v\n", err)
 	}
 }
 
