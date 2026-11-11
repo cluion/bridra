@@ -3,6 +3,14 @@
 All notable Bridra changes will be documented in this file. Bridra follows
 Semantic Versioning; the RPC wire protocol is versioned independently.
 
+## [Unreleased]
+
+### Fixed
+
+- Close an embedded download handle whose native open finishes after the
+  download was cancelled or timed out. Previously the file stayed busy, so
+  downloading it again failed until the embedded runtime closed.
+
 ## [0.24.2] - 2026-11-10
 
 ### Fixed

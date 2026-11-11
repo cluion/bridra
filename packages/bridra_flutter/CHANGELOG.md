@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- `EmbeddedRpcClient` closes a download handle whose native open finishes after
+  the download was cancelled or timed out, so the file can be downloaded again.
+
 ## 0.24.2 - 2026-11-10
 
 - Cancelling the subscription of `HttpRpcClient.stream()` or `download()` now
